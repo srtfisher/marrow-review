@@ -1006,3 +1006,28 @@ describe('commenting on a line', () => {
     expect(saved.at(-1)?.comments[0]).toMatchObject({ line: 2, side: 'RIGHT' });
   });
 });
+
+describe('esc comes back out of the diff', () => {
+  test('the sidebar returns and the list takes the cursor again', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    // Reviewing: the diff owns the terminal.
+    expect(app.frame()).not.toContain('Alpha rendering');
+
+    await app.press(ESC);
+    // Keying the sidebar on "a pull request is loaded" rather than on the mode
+    // left it hidden here, and esc looked like a dead key.
+    expect(app.frame()).toContain('Alpha rendering');
+    expect(app.frame()).toContain('Gamma parsing');
+  });
+
+  test('and the hint bar goes back to the list verbs', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    expect(app.frame()).toContain('comment on this line');
+
+    await app.press(ESC);
+    expect(app.frame()).toContain('search');
+    expect(app.frame()).not.toContain('comment on this line');
+  });
+});

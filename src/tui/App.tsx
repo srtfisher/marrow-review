@@ -281,10 +281,15 @@ export function App(props: AppProps) {
 
   // One row for the horizontal rule, one for the status line.
   const bodyHeight = Math.max(1, rows - 2);
-  // With a pull request open the sidebar goes away and the diff owns the
-  // terminal: on a 17-file monorepo change the paths are the content, and a
-  // 32-column column truncated every one of them to `#546 feat(packages): resolv…`.
-  const reviewing = props.pr !== null && props.meat !== null;
+  // While reviewing, the sidebar goes away and the diff owns the terminal: on a
+  // 17-file monorepo change the paths are the content, and a 32-column column
+  // truncated every one of them to `#546 feat(packages): resolv…`.
+  //
+  // Keyed on the mode, not merely on a pull request being loaded. `esc` from
+  // the diff sets the mode back to `list` without unloading it, so keying on
+  // the pull request alone left the sidebar hidden and `esc` looking dead.
+  const browsing = mode === 'list' || mode === 'search';
+  const reviewing = props.pr !== null && props.meat !== null && !browsing;
   const detailWidth = Math.max(
     1,
     columns - (reviewing ? 2 : theme.layout.sidebarWidth + 3),
