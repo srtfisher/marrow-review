@@ -31,10 +31,11 @@ export interface DiffLinesProps {
   gutterWidth: number;
 }
 
+/** Lines only. The header belongs to `Detail`, which owns the cursor mark that
+ *  sits on it — rendering it here too printed every hunk header twice. */
 export function DiffLines({ hunk, gutterWidth }: DiffLinesProps) {
   return (
     <Box flexDirection="column">
-      <Text dimColor>{hunk.header}</Text>
       {hunk.lines.map((line, i) => (
         <Text key={i}>
           <Text dimColor>{formatGutter(line, gutterWidth)}</Text>{' '}

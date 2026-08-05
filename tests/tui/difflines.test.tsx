@@ -39,8 +39,10 @@ describe('DiffLines', () => {
     expect(out).toContain('+fresh();');
   });
 
-  test('renders the hunk header', () => {
+  // Detail renders the header, because the header is where the cursor mark and
+  // the keep-reason live. Printing it here as well put it on screen twice.
+  test('leaves the hunk header to Detail', () => {
     const out = renderToString(<DiffLines hunk={hunk} gutterWidth={4} />);
-    expect(out).toContain('@@ -10,2 +10,3 @@');
+    expect(out).not.toContain('@@ -10,2 +10,3 @@');
   });
 });
