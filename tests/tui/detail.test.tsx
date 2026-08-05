@@ -32,6 +32,7 @@ const meatFile: MeatFile = {
 const meat: MeatResult = {
   summary: 'Adds a constant.', files: [meatFile],
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 2,
+  unclassified: 0,
 };
 
 const units = buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set() });
@@ -97,6 +98,14 @@ describe('Detail', () => {
     expect(render()).toContain('opus');
     expect(render()).not.toContain('diff-only');
     expect(render({ worktreeOk: false })).toContain('diff-only');
+  });
+
+  test('says so when the classifier left hunks unjudged', () => {
+    // A gauge reading 1038/1040 looks like a judgment and can be a shortfall.
+    // The reviewer has to be able to tell those apart at a glance.
+    expect(render()).not.toContain('unclassified');
+    expect(render({ meat: { ...meat, unclassified: 12 } })).toContain('12 hunks unclassified');
+    expect(render({ meat: { ...meat, unclassified: 1 } })).toContain('1 hunk unclassified');
   });
 
   test('lists every file, checked off or not', () => {

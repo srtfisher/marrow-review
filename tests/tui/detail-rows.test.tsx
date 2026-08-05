@@ -44,6 +44,7 @@ function bigMeat(files = 5, hunks = 4, lines = 12): MeatResult {
     summary: 'A large change.', files: meatFiles,
     keptLines: files * hunks * lines, totalLines: files * hunks * lines,
     keptFiles: files, totalFiles: files,
+    unclassified: 0,
   };
 }
 

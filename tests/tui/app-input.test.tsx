@@ -223,6 +223,7 @@ const meatFile: MeatFile = {
 const meat: MeatResult = {
   summary: 'Caches the lookup.', files: [meatFile],
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 1,
+  unclassified: 0,
 };
 
 const rawFinding: RawFinding = {
@@ -463,6 +464,7 @@ const secondFile: MeatFile = {
 const twoFileMeat: MeatResult = {
   summary: 'Caches the lookup.', files: [meatFile, secondFile],
   keptLines: 2, totalLines: 4, keptFiles: 2, totalFiles: 2,
+  unclassified: 0,
 };
 
 /** A transport that answers nothing until the test says so, so a question can
@@ -624,6 +626,7 @@ describe('the app fits the terminal it was given', () => {
       })),
     }],
     keptLines: 144, totalLines: 144, keptFiles: 1, totalFiles: 1,
+    unclassified: 0,
   };
 
   function frameRows(frame: string): number {
@@ -878,6 +881,7 @@ describe('reviewing a large diff', () => {
       },
     ],
     keptLines: 202, totalLines: 204, keptFiles: 3, totalFiles: 3,
+    unclassified: 0,
   };
 
   test('fills the pane with the diff instead of one file header', async () => {

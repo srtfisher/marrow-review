@@ -25,6 +25,7 @@ function meat(): MeatResult {
       ],
     }],
     keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 1,
+    unclassified: 0,
   };
 }
 

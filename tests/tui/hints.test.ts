@@ -23,6 +23,7 @@ const meat: MeatResult = {
     }],
   }],
   keptLines: 1, totalLines: 1, keptFiles: 1, totalFiles: 1,
+  unclassified: 0,
 };
 
 const finding: VerifiedFinding = {

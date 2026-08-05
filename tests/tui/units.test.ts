@@ -61,6 +61,7 @@ function result(files: MeatFile[]): MeatResult {
   return {
     summary: 's', files,
     keptLines: 0, totalLines: 0, keptFiles: 0, totalFiles: files.length,
+    unclassified: 0,
   };
 }
 

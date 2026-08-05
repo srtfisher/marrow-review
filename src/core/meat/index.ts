@@ -8,7 +8,13 @@ export interface MeatHunk {
   hunk: Hunk;
   keep: boolean;
   reason: string;
-  source: 'rule' | 'model' | 'cache';
+  /**
+   * `fallback` means no verdict came back for this hunk and it was kept
+   * because keeping is the safe default — not because anything judged it
+   * worth reading. Distinct from `model` so the pane can say how much of an
+   * abridgement is real.
+   */
+  source: 'rule' | 'model' | 'cache' | 'fallback';
 }
 
 export interface MeatFile {
@@ -25,6 +31,16 @@ export interface MeatResult {
   totalLines: number;
   keptFiles: number;
   totalFiles: number;
+  /**
+   * Hunks kept because no verdict came back for them.
+   *
+   * A run that succeeds but returns fewer verdicts than it was asked for
+   * leaves these behind, and the result — nearly every line "kept" — is
+   * indistinguishable from a pull request the classifier judged to be entirely
+   * meaningful. It read as the abridgement being broken. Counted here so the
+   * pane can say so out loud instead.
+   */
+  unclassified: number;
 }
 
 export interface ComputeMeatOptions {
@@ -122,6 +138,7 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
       if (!entry) continue;
       entry.keep = verdict.keep;
       entry.reason = verdict.reason;
+      if (verdict.synthetic === true) entry.source = 'fallback';
       // Synthetic verdicts are fallbacks, not judgments. The cache is permanent
       // and has no expiry, so persisting one would disable abridgement for this
       // hunk forever on the strength of a single degraded run.
@@ -134,12 +151,14 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
   let keptLines = 0;
   let totalLines = 0;
   let keptFiles = 0;
+  let unclassified = 0;
 
   for (const meatFile of staged) {
     let fileKept = 0;
     for (const h of meatFile.hunks) {
       const count = changedLineCount(h.hunk);
       totalLines += count;
+      if (h.source === 'fallback') unclassified += 1;
       if (h.keep) {
         keptLines += count;
         fileKept += count;
@@ -155,5 +174,6 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
     totalLines,
     keptFiles,
     totalFiles: staged.length,
+    unclassified,
   };
 }

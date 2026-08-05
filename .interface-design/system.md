@@ -45,6 +45,12 @@ Colors carry meaning; they are never decoration.
 
 Four text tiers, the hierarchy backbone:
 
+One glyph is drawn rather than typed: the wordmark on the welcome panel, in the same
+half-block characters the meat gauge uses, in `primary` — not the cyan `structure` token,
+which means position and navigation everywhere else, and a logo is neither. Three rows,
+and the first thing dropped when the pane is short: it is decoration, and the three
+questions that panel answers are not.
+
 | Tier | ANSI | Use |
 |---|---|---|
 | `primary` | bold, default fg | The one thing per view that matters — PR title, the kept-lines figure |
@@ -119,6 +125,51 @@ does not.
 This joins chat as the second place progress may be shown. The rule is unchanged in
 substance: **show progress only when the user is genuinely blocked on something**, never
 as decoration.
+
+## Revision, after reviewing a real 17-file pull request
+
+The first large diff put through the tool exposed four things, and the fixes changed the
+layout enough to be worth recording as rules.
+
+**The pane scrolls by row, not by unit.** The viewport windowed on whole units — a file
+header, a whole hunk — which cannot hold: a design-doc change is one file with one
+thousand-line hunk, and a forty-row pane obeying "whole units only" showed either that
+hunk alone or, at the top of a diff, the one-row file header and thirty-nine blank rows.
+Rows are now what renders, what scrolls, and what the cursor points at. Consequence: **no
+row may ever wrap.** Everything truncates. A wrapped line pushes every row below it down
+by one and the cursor stops pointing at what the reviewer sees.
+
+**The cursor is a line, so `C` comments on a line.** It used to anchor to the hunk's last
+changed line whatever was under the cursor, which is not what "comment on this line"
+means.
+
+**The sidebar goes away once a pull request is open.** It exists to choose one. After that
+it is 32 columns spent on a list nobody is reading, taken from the diff. The header takes
+over its job: title, number, and **an index of every file in the change**, laid out as a
+grid of file *names* — full paths force one column and seventeen rows, and truncating them
+to fit identifies nothing. A name shared by two files gets its parent directory back.
+
+**Reading progress is a check in that index**, green, set when the cursor passes a file's
+last row and toggleable with `m`. Files are the unit a reviewer thinks in.
+
+## The bottom row is verbs, not metadata
+
+It used to restate the repository, the number, and the meat gauge — all three already in
+the header — while the keys that operate the tool lived only behind `?`. It is now a hint
+bar of what applies to the row under the cursor: a finding offers accept and drop, a diff
+line offers comment and suggest. Keys take the `structure` token, labels stay muted, so
+the eye lands on what to press.
+
+It degrades from the back, never mid-word. `?` always survives, because it is the way out
+of not knowing the rest, and plain truncation ate it first.
+
+## Say when a pass fell short
+
+`kept 1038/1040 lines` reads as a judgment and can be a shortfall — a classification run
+that returned fewer verdicts than it was asked for leaves every hunk it skipped kept by
+default. The header names the count out loud in `pending` yellow. Same principle as the
+folded-noise rule and `diff-only`: **degradation is stated, never inferred from a number
+that looks healthy.**
 
 ## Density and proportion
 

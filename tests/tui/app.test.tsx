@@ -48,6 +48,7 @@ const meatFile: MeatFile = {
 const meat: MeatResult = {
   summary: 'Adds a constant.', files: [meatFile],
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 2,
+  unclassified: 0,
 };
 
 const units = buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set() });

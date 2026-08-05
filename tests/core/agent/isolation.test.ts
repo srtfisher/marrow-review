@@ -32,6 +32,7 @@ function recordingQuery(seen: Options[]) {
 
 const meat: MeatResult = {
   summary: '', files: [], keptLines: 0, totalLines: 0, keptFiles: 0, totalFiles: 0,
+  unclassified: 0,
 };
 
 describe('SdkTransport isolation', () => {

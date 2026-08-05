@@ -8,7 +8,7 @@ import { initTriage } from '../../src/core/findings/triage.js';
 import type { DiffLine } from '../../src/core/diff/types.js';
 import type { ReviewThread } from '../../src/core/github/types.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
-import type { VerifiedFinding } from '../../src/core/findings/verify.js';
+import type { Refutation, VerifiedFinding } from '../../src/core/findings/verify.js';
 
 function add(n: number): DiffLine {
   return { kind: 'add', text: `line ${n}`, oldLine: null, newLine: n, noNewlineAtEof: false };
@@ -35,7 +35,10 @@ function file(path: string, hunks: number, lines: number, dropSome = false): Mea
 }
 
 function meatOf(files: MeatFile[]): MeatResult {
-  return { summary: '', files, keptLines: 1, totalLines: 1, keptFiles: files.length, totalFiles: files.length };
+  return {
+    summary: '', files, keptLines: 1, totalLines: 1,
+    keptFiles: files.length, totalFiles: files.length, unclassified: 0,
+  };
 }
 
 function rowsOf(files: MeatFile[], findings: VerifiedFinding[] = []) {
@@ -112,9 +115,9 @@ describe('a finding occupies as many rows as it draws', () => {
   });
 
   test('one more for every refutation, and only when refuted', () => {
-    const refutations = [
+    const refutations: Refutation[] = [
       { lens: 'reachability', refuted: true, reasoning: 'guarded' },
-      { lens: 'correctness', refuted: true, reasoning: 'pooled' },
+      { lens: 'reproduction', refuted: true, reasoning: 'pooled' },
     ];
     const shown = rowsOf([file('a.ts', 1, 4)], [{ ...finding, verdict: 'refuted', refutations }]);
     expect(shown.filter((r) => r.kind === 'finding')).toHaveLength(4);

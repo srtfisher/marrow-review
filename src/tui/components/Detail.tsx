@@ -223,6 +223,13 @@ export function Detail({
         <Text color={fullDiff ? theme.color.pending : theme.color.structure}>
           {fullDiff ? 'full diff' : 'meat'}
         </Text>
+        {/* Said out loud, because the alternative is a gauge reading 1038/1040
+            that looks like a judgment and is actually a shortfall. */}
+        {meat.unclassified > 0 && (
+          <Text color={theme.color.pending}>
+            {`  ${meat.unclassified} hunk${meat.unclassified === 1 ? '' : 's'} unclassified`}
+          </Text>
+        )}
       </Text>
 
       {/* Every file in the pull request, always. The reviewer's map. */}
