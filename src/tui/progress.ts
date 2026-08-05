@@ -120,10 +120,20 @@ export function failStep(
   }));
 }
 
-/** How long the step has been running, or ran for. Null while pending. */
+/**
+ * How long the step has been running, or ran for. Null when there is no
+ * answer — a step that has not started has not taken any time.
+ *
+ * Null rather than a number for every absent case, including a `startedAt`
+ * that arrived as `undefined` or a clock that is not a number. The arithmetic
+ * yields `NaN` there, and `NaN` printed beside a step on a screen whose whole
+ * job is to say nothing is broken is worse than printing nothing at all.
+ */
 export function elapsedMs(step: ProgressStep, now: number): number | null {
-  if (step.startedAt === null) return null;
-  return Math.max(0, (step.endedAt ?? now) - step.startedAt);
+  if (step.state === 'pending') return null;
+  if (typeof step.startedAt !== 'number') return null;
+  const ms = Math.max(0, (step.endedAt ?? now) - step.startedAt);
+  return Number.isFinite(ms) ? ms : null;
 }
 
 /**
@@ -132,6 +142,8 @@ export function elapsedMs(step: ProgressStep, now: number): number | null {
  * abridging pass readable.
  */
 export function formatElapsed(ms: number): string {
+  // Nothing, rather than `NaNm NaNs`, for a duration that is not a duration.
+  if (!Number.isFinite(ms)) return '';
   const seconds = ms / 1000;
   if (seconds < 60) return `${seconds.toFixed(1)}s`;
   const minutes = Math.floor(seconds / 60);

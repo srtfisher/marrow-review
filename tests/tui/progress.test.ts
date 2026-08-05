@@ -76,6 +76,20 @@ describe('elapsedMs', () => {
     expect(elapsedMs(byId(steps, STEP.pull), 3_400)).toBe(2_400);
   });
 
+  // `number | null` on the type does not stop `undefined` arriving from a
+  // hand-built step, and the arithmetic turned it into NaN on screen.
+  test('is null for a start time that is not a number', () => {
+    const step = { ...loadSteps()[0]!, state: 'running' as const };
+    expect(elapsedMs({ ...step, startedAt: undefined as unknown as null }, 5_000)).toBeNull();
+    expect(elapsedMs({ ...step, startedAt: Number.NaN }, 5_000)).toBeNull();
+    expect(elapsedMs({ ...step, startedAt: 0 }, Number.NaN)).toBeNull();
+  });
+
+  test('is null for a step marked pending however it got there', () => {
+    const stale = { ...loadSteps()[0]!, startedAt: 1_000 };
+    expect(elapsedMs(stale, 5_000)).toBeNull();
+  });
+
   test('freezes at the end time once settled', () => {
     const steps = finishStep(startStep(loadSteps(), STEP.pull, 1_000), STEP.pull, 1_600);
     expect(elapsedMs(byId(steps, STEP.pull), 90_000)).toBe(600);
@@ -92,5 +106,10 @@ describe('formatElapsed', () => {
   test('minutes and padded seconds past a minute', () => {
     expect(formatElapsed(60_000)).toBe('1m 00s');
     expect(formatElapsed(124_000)).toBe('2m 04s');
+  });
+
+  test('nothing at all for a duration that is not a duration', () => {
+    expect(formatElapsed(Number.NaN)).toBe('');
+    expect(formatElapsed(Number.POSITIVE_INFINITY)).toBe('');
   });
 });

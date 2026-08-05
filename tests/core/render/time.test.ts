@@ -52,6 +52,14 @@ describe('relativeTime', () => {
     expect(relativeTime('not a date', now)).toBe('unknown');
   });
 
+  // The same class of bug as the loading screen's `NaNm NaNs`: an absent value
+  // fell through every comparison and came out formatted as `NaNy ago`.
+  test('an invalid clock says unknown, not NaN', () => {
+    const broken = relativeTime(ago(60), new Date('nope'));
+    expect(broken).toBe('unknown');
+    expect(broken).not.toContain('NaN');
+  });
+
   test('defaults to the real clock when no now is supplied', () => {
     expect(relativeTime(new Date().toISOString())).toBe('just now');
   });

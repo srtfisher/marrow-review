@@ -64,8 +64,10 @@ function StepRow({ step, now }: { step: ProgressStep; now: number }) {
   return (
     <Text wrap="truncate">
       {marker(step)}
-      <Text {...tone}>{step.label.padEnd(LABEL_WIDTH)}</Text>
-      <Text {...theme.tier.muted}>{time}</Text>
+      {/* Padded into a column only when there is a time to line up against;
+          a step that has not started shows no time and needs no column. */}
+      <Text {...tone}>{time === '' ? step.label : step.label.padEnd(LABEL_WIDTH)}</Text>
+      {time !== '' && <Text {...theme.tier.muted}>{time}</Text>}
     </Text>
   );
 }

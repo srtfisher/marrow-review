@@ -51,6 +51,37 @@ describe('LoadingSteps', () => {
     expect(out).not.toContain('✓');
   });
 
+  // `NaN` beside a step, on the one screen whose job is to say nothing is
+  // broken, is worse than saying nothing. It reached the render when a step
+  // carried `undefined` for `startedAt` rather than `null` — the type says
+  // `number | null`, but nothing stops a hand-built or round-tripped step.
+  test('never renders NaN, whatever shape a pending step arrives in', () => {
+    const hand: ProgressStep[] = [
+      ...midFlight(),
+      { id: 'x', label: 'abridging 12 files', state: 'pending', reason: null,
+        startedAt: undefined as unknown as null, endedAt: undefined as unknown as null },
+      { id: 'y', label: 'finding issues', state: 'pending', reason: null,
+        startedAt: Number.NaN, endedAt: null },
+    ];
+    const out = renderToString(<LoadingSteps progress={progress(hand)} now={3_900} />);
+
+    expect(out).not.toContain('NaN');
+    expect(out).toContain('abridging 12 files');
+    expect(out).toContain('finding issues');
+  });
+
+  test('renders without a React key warning', () => {
+    const warnings: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); };
+    try {
+      renderToString(<LoadingSteps progress={progress(midFlight())} now={3_900} />);
+    } finally {
+      console.error = realError;
+    }
+    expect(warnings).toEqual([]);
+  });
+
   test('a failed step names its reason and the rest still run', () => {
     let steps: readonly ProgressStep[] = startStep(loadSteps(), STEP.worktree, 0);
     steps = failStep(steps, STEP.worktree, 'no space left on device', 400);

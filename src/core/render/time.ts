@@ -20,6 +20,9 @@ export function relativeTime(iso: string, now: Date = new Date()): string {
   if (Number.isNaN(then)) return 'unknown';
 
   const seconds = Math.floor((now.getTime() - then) / 1000);
+  // An Invalid Date for `now` fell through every comparison below and came out
+  // as `NaNy ago`. Absent is `unknown`; it is never a number we do not have.
+  if (!Number.isFinite(seconds)) return 'unknown';
   if (seconds < MINUTE) return 'just now';
   if (seconds < HOUR) return `${Math.floor(seconds / MINUTE)}m ago`;
   if (seconds < DAY) return `${Math.floor(seconds / HOUR)}h ago`;
