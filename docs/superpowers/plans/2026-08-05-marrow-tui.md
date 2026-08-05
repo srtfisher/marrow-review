@@ -682,9 +682,22 @@ describe('list mode', () => {
     expect(resolveAction('3', noKey, 'list')).toEqual({ type: 'filter', filter: 'all' });
   });
 
+  test('slash starts a search', () => {
+    expect(resolveAction('/', noKey, 'list')).toEqual({ type: 'search' });
+  });
+
   test('detail-only keys do nothing in list mode', () => {
     expect(resolveAction('z', noKey, 'list')).toBeNull();
     expect(resolveAction('!', noKey, 'list')).toBeNull();
+  });
+});
+
+describe('search mode', () => {
+  test('swallows every key except escape, so typing a query is never a command', () => {
+    expect(resolveAction('', { escape: true }, 'search')).toEqual({ type: 'back' });
+    for (const ch of 'jkq?!123/') {
+      expect(resolveAction(ch, noKey, 'search')).toBeNull();
+    }
   });
 });
 
@@ -731,7 +744,7 @@ Expected: FAIL — cannot resolve `keymap.js`.
 ```ts
 import type { PullFilter } from '../core/github/types.js';
 
-export type Mode = 'list' | 'detail' | 'comment' | 'submit' | 'help';
+export type Mode = 'list' | 'detail' | 'comment' | 'submit' | 'help' | 'search';
 
 export type Action =
   | { type: 'move'; delta: number }
@@ -749,6 +762,7 @@ export type Action =
   | { type: 'suggest' }
   | { type: 'submit-screen' }
   | { type: 'filter'; filter: PullFilter }
+  | { type: 'search' }
   | { type: 'help' }
   | { type: 'quit' }
   | { type: 'refresh' }
@@ -779,10 +793,11 @@ export const KEY_HELP: ReadonlyArray<{ keys: string; description: string; modes:
   { keys: '!', description: 'open the submit screen', modes: ['detail'] },
   { keys: 'enter', description: 'open the selected pull request', modes: ['list'] },
   { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'] },
+  { keys: '/', description: 'search by title, author, or number', modes: ['list'] },
   { keys: 'R', description: 'refetch from GitHub', modes: ['list', 'detail'] },
   { keys: '?', description: 'this help', modes: ['list', 'detail'] },
   { keys: 'q', description: 'quit', modes: ['list', 'detail'] },
-  { keys: 'esc', description: 'back', modes: ['comment', 'submit', 'help'] },
+  { keys: 'esc', description: 'back', modes: ['comment', 'submit', 'help', 'search'] },
 ];
 
 const FILTERS: Record<string, PullFilter> = {
@@ -794,7 +809,7 @@ const FILTERS: Record<string, PullFilter> = {
 export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
   // Text-entry modes swallow everything except an explicit escape, so a stray
   // '!' or 'q' while typing a comment can never trigger a command.
-  if (mode === 'comment') {
+  if (mode === 'comment' || mode === 'search') {
     return key.escape ? { type: 'back' } : null;
   }
 
@@ -820,6 +835,7 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
 
   if (mode === 'list') {
     if (key.return) return { type: 'open' };
+    if (input === '/') return { type: 'search' };
     const filter = FILTERS[input];
     if (filter) return { type: 'filter', filter };
     return null;
@@ -1295,15 +1311,124 @@ git commit -m "feat: persist review drafts and carry them across new commits"
 
 ---
 
-### Task 7: PR list pane
+### Task 7: PR list pane and search
+
+This is the app's front door: `marrow` with no arguments lands here, so selecting and
+finding a pull request has to be fast.
 
 **Files:**
-- Create: `src/tui/components/PrList.tsx`
-- Test: `tests/tui/prlist.test.tsx`
+- Create: `src/tui/search.ts`, `src/tui/components/PrList.tsx`
+- Test: `tests/tui/search.test.ts`, `tests/tui/prlist.test.tsx`
 
 **Interfaces:**
 - Consumes: `PullRequestSummary`, `PullFilter`; `Viewport`; `theme`.
-- Produces: `<PrList prs={PullRequestSummary[]} cursor={number} scrollTop={number} height={number} filter={PullFilter} width={number} />`, `function filterLabel(filter: PullFilter): string`.
+- Produces:
+  - `function matchesQuery(pr: PullRequestSummary, query: string): boolean`
+  - `function filterPrs(prs: PullRequestSummary[], query: string): PullRequestSummary[]`
+  - `<PrList prs={PullRequestSummary[]} cursor={number} scrollTop={number} height={number} filter={PullFilter} width={number} query={string} searching={boolean} />`
+  - `function filterLabel(filter: PullFilter): string`
+
+**Design note:** matching is case-insensitive substring across title, author, and PR
+number — deliberately not fuzzy. When you are scanning a list of your team's PRs, a
+predictable substring match is easier to steer than a fuzzy ranker that reorders results
+as you type. `#` is stripped so both `142` and `#142` work.
+
+- [ ] **Step 0: Write the failing search tests**
+
+`tests/tui/search.test.ts`:
+
+```ts
+import { test, expect, describe } from 'bun:test';
+import { filterPrs, matchesQuery } from '../../src/tui/search.js';
+import type { PullRequestSummary } from '../../src/core/github/types.js';
+
+function pr(number: number, title: string, author: string): PullRequestSummary {
+  return {
+    number, title, author, state: 'open', isDraft: false,
+    headSha: 'abc', baseRef: 'main', headRef: 'x',
+    updatedAt: '2026-08-01T00:00:00Z', additions: 1, deletions: 0, changedFiles: 1,
+  };
+}
+
+const prs = [
+  pr(142, 'Fix thematic-break rendering', 'hazadus'),
+  pr(143, 'Add mermaid diagrams', 'darvell'),
+  pr(144, 'Bump dependencies', 'dependabot[bot]'),
+];
+
+describe('matchesQuery', () => {
+  test('an empty query matches everything', () => {
+    expect(matchesQuery(prs[0]!, '')).toBe(true);
+    expect(matchesQuery(prs[0]!, '   ')).toBe(true);
+  });
+
+  test('matches the title case-insensitively', () => {
+    expect(matchesQuery(prs[0]!, 'THEMATIC')).toBe(true);
+    expect(matchesQuery(prs[0]!, 'mermaid')).toBe(false);
+  });
+
+  test('matches the author', () => {
+    expect(matchesQuery(prs[1]!, 'darvell')).toBe(true);
+  });
+
+  test('matches the number with or without a leading hash', () => {
+    expect(matchesQuery(prs[0]!, '142')).toBe(true);
+    expect(matchesQuery(prs[0]!, '#142')).toBe(true);
+    expect(matchesQuery(prs[0]!, '143')).toBe(false);
+  });
+});
+
+describe('filterPrs', () => {
+  test('returns every PR for an empty query', () => {
+    expect(filterPrs(prs, '')).toHaveLength(3);
+  });
+
+  test('narrows to matches and preserves input order', () => {
+    const found = filterPrs(prs, 'a');
+    expect(found.map((p) => p.number)).toEqual(
+      prs.filter((p) => matchesQuery(p, 'a')).map((p) => p.number),
+    );
+  });
+
+  test('returns nothing when a query matches nothing', () => {
+    expect(filterPrs(prs, 'zzzz')).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 0b: Run to verify failure, then implement search**
+
+Run: `bun test tests/tui/search.test.ts` → FAIL (cannot resolve `search.js`).
+
+`src/tui/search.ts`:
+
+```ts
+import type { PullRequestSummary } from '../core/github/types.js';
+
+/**
+ * Case-insensitive substring match across title, author, and number.
+ * Deliberately not fuzzy: when scanning a team's pull requests, a predictable
+ * substring is easier to steer than a ranker that reshuffles as you type.
+ */
+export function matchesQuery(pr: PullRequestSummary, query: string): boolean {
+  const q = query.trim().toLowerCase().replace(/^#/, '');
+  if (q.length === 0) return true;
+  return (
+    pr.title.toLowerCase().includes(q) ||
+    pr.author.toLowerCase().includes(q) ||
+    String(pr.number).includes(q)
+  );
+}
+
+export function filterPrs(
+  prs: PullRequestSummary[],
+  query: string,
+): PullRequestSummary[] {
+  return prs.filter((pr) => matchesQuery(pr, query));
+}
+```
+
+Run again → 7 tests PASS.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1361,9 +1486,28 @@ describe('PrList', () => {
 
   test('renders an explicit empty state rather than a blank pane', () => {
     const out = renderToString(
-      <PrList prs={[]} cursor={0} scrollTop={0} height={10} filter="open" width={40} />,
+      <PrList prs={[]} cursor={0} scrollTop={0} height={10} filter="open" width={40}
+        query="" searching={false} />,
     );
     expect(out.toLowerCase()).toContain('no pull requests');
+  });
+
+  test('shows the query and the narrowed count while searching', () => {
+    const out = renderToString(
+      <PrList prs={prs} cursor={0} scrollTop={0} height={10} filter="open" width={40}
+        query="caching" searching />,
+    );
+    expect(out).toContain('caching');
+    expect(out).toContain('Add caching');
+    expect(out).not.toContain('Fix rendering');
+  });
+
+  test('says so when a search matches nothing, rather than looking broken', () => {
+    const out = renderToString(
+      <PrList prs={prs} cursor={0} scrollTop={0} height={10} filter="open" width={40}
+        query="zzzz" searching />,
+    );
+    expect(out.toLowerCase()).toContain('no match');
   });
 });
 ```
@@ -1396,19 +1540,46 @@ export interface PrListProps {
   height: number;
   filter: PullFilter;
   width: number;
+  /** Live search text. Empty means no narrowing. */
+  query: string;
+  /** True while the user is typing a query, so the input line is shown. */
+  searching: boolean;
 }
 
-export function PrList({ prs, cursor, scrollTop, height, filter, width }: PrListProps) {
+export function PrList({
+  prs, cursor, scrollTop, height, filter, width, query, searching,
+}: PrListProps) {
+  const visible = filterPrs(prs, query);
+
+  const header = (
+    <>
+      <Text color={theme.accent}>
+        {filterLabel(filter)} · {visible.length}
+        {query.length > 0 && visible.length !== prs.length ? ` of ${prs.length}` : ''}
+      </Text>
+      {searching && <Text color={theme.heading}>/{query}</Text>}
+    </>
+  );
+
   if (prs.length === 0) {
     return (
       <Box flexDirection="column" width={width}>
-        <Text color={theme.accent}>{filterLabel(filter)} · 0</Text>
+        {header}
         <Text color={theme.muted}>No pull requests.</Text>
       </Box>
     );
   }
 
-  const items = prs.map((pr, i) => {
+  if (visible.length === 0) {
+    return (
+      <Box flexDirection="column" width={width}>
+        {header}
+        <Text color={theme.muted}>No match for “{query}”.</Text>
+      </Box>
+    );
+  }
+
+  const items = visible.map((pr, i) => {
     const selected = i === cursor;
     return (
       <Text key={pr.number} inverse={selected} wrap="truncate">
@@ -1419,14 +1590,28 @@ export function PrList({ prs, cursor, scrollTop, height, filter, width }: PrList
 
   return (
     <Box flexDirection="column" width={width}>
-      <Text color={theme.accent}>
-        {filterLabel(filter)} · {prs.length}
-      </Text>
-      <Viewport items={items} height={Math.max(0, height - 1)} cursor={cursor} scrollTop={scrollTop} />
+      {header}
+      <Viewport
+        items={items}
+        height={Math.max(0, height - (searching ? 2 : 1))}
+        cursor={cursor}
+        scrollTop={scrollTop}
+      />
     </Box>
   );
 }
 ```
+
+Add the import at the top of `PrList.tsx`:
+
+```ts
+import { filterPrs } from '../search.js';
+```
+
+**Note for Task 11:** the cursor indexes into the *filtered* list, so `App.tsx` must clamp
+the cursor whenever the query changes — otherwise narrowing a 40-PR list to 2 results
+leaves the cursor pointing past the end. Opening a PR must resolve through the filtered
+list, never the unfiltered one.
 
 - [ ] **Step 4: Verify**
 
