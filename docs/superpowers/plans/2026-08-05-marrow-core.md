@@ -1886,8 +1886,13 @@ export function evaluateFile(file: DiffFile, ctx: RuleContext): RuleVerdict | nu
   return null;
 }
 
+// The bare `use ...;` branch is deliberately anchored to column 0 while the
+// other forms tolerate indentation. PHP's namespace import is always
+// unindented; PHP's in-class trait use (`    use HasFactory;`) is always
+// indented and is a real behavior change that must NOT be dropped. Rust's
+// top-level `use std::fmt;` stays covered by the unindented branch.
 const IMPORT_RE =
-  /^\s*(?:import\b|export\s+(?:\*|\{)[^;]*\bfrom\b|from\s+\S+\s+import\b|use\s+[\w\\:{}, ]+;|require\s*\(|#include\b)/;
+  /^(?:use\s+[\w\\:{}, ]+;|\s*(?:import\b|export\s+(?:\*|\{)[^;]*\bfrom\b|from\s+\S+\s+import\b|require\s*\(|#include\b))/;
 
 const LICENSE_RE = /copyright|licensed under|spdx-license-identifier|all rights reserved/i;
 
@@ -1906,11 +1911,12 @@ export function evaluateHunk(hunk: Hunk): RuleVerdict | null {
   const adds = lines.filter((l) => l.kind === 'add').map((l) => normalize(l.text));
   const dels = lines.filter((l) => l.kind === 'del').map((l) => normalize(l.text));
 
-  // Whitespace-only: the multiset of normalized added and deleted lines matches.
+  // Whitespace-only: normalized added and deleted lines match POSITIONALLY.
+  // Do not compare as sorted multisets — that drops a hunk which merely
+  // reorders two side-effecting statements, which is a real semantic change
+  // a reviewer must see. Positional comparison still drops a pure reindent.
   if (adds.length === dels.length && adds.length > 0) {
-    const sortedAdds = [...adds].sort();
-    const sortedDels = [...dels].sort();
-    if (sortedAdds.every((a, i) => a === sortedDels[i])) {
+    if (adds.every((a, i) => a === dels[i])) {
       return { drop: true, rule: 'whitespace-only' };
     }
   }
@@ -3754,7 +3760,9 @@ async function meat() {
 test('shows the summary and the kept counter', async () => {
   const out = renderMeat(await meat());
   expect(out).toContain('Flips an operator.');
-  expect(out).toContain('kept 1/2 changed lines in 1/2 files');
+  // computeMeat counts every added and deleted line, not one per hunk. This
+  // fixture has two single-line hunks, so 4 changed lines total, 2 kept.
+  expect(out).toContain('kept 2/4 changed lines in 1/2 files');
 });
 
 test('shows kept hunk content', async () => {
@@ -3988,12 +3996,16 @@ Expected: all tests PASS; typecheck clean; no boundary violations; `dist/cli.js`
 
 - [ ] **Step 11: Smoke-test against a real PR**
 
-Run from inside any GitHub clone you have:
+**This repository has no `origin` remote**, so it cannot exercise the live path.
+Run the smoke test from a clone that does have a `github.com` origin — either an
+existing checkout, or a scratch shallow clone of any public repo:
 
 ```bash
-node dist/cli.js --help
-node dist/cli.js --filter open
-node dist/cli.js --dry-run <a real PR number in that repo>
+node dist/cli.js --help          # works anywhere
+
+cd /tmp && git clone --depth 1 https://github.com/<owner>/<repo> smoke && cd smoke
+node <path-to-marrow>/dist/cli.js --filter open
+node <path-to-marrow>/dist/cli.js --dry-run <a real PR number in that repo>
 ```
 
 Expected: help renders; the PR list prints; the dry run prints a summary, a
