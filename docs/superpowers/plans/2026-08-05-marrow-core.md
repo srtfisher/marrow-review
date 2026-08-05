@@ -534,10 +534,16 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       draft = newDraft();
       hunk = null;
       // Fall back to the paths on the diff --git line; ---/+++ overrides below.
-      const parts = raw.slice('diff --git '.length).split(' ');
-      if (parts.length === 2) {
-        draft.oldPath = stripPrefix(parts[0]!);
-        draft.path = stripPrefix(parts[1]!);
+      // Do NOT split on spaces: a filename containing a space would leave path
+      // null, and while a text file recovers via its ---/+++ lines, a BINARY
+      // file has neither and would be dropped from the results entirely.
+      // Split on the last ' b/' instead.
+      const prefix = 'diff --git ';
+      const content = raw.slice(prefix.length);
+      const bSeparatorIdx = content.lastIndexOf(' b/');
+      if (bSeparatorIdx > 0) {
+        draft.oldPath = stripPrefix(content.slice(0, bSeparatorIdx));
+        draft.path = stripPrefix(content.slice(bSeparatorIdx + 1));
       }
       continue;
     }
@@ -612,6 +618,9 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       continue;
     }
 
+    // Skip empty lines (e.g. the trailing newline at the end of the diff).
+    if (raw.length === 0) continue;
+
     const marker = raw[0];
     const text = raw.slice(1);
     let line: DiffLine | null = null;
@@ -624,8 +633,15 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       draft.deletions += 1;
     } else if (marker === ' ') {
       line = { kind: 'context', text, oldLine: oldNo++, newLine: newNo++, noNewlineAtEof: false };
+    } else {
+      // Fail loud. Silently skipping an unrecognized prefix would leave the
+      // line counters unadvanced, so every later line in this hunk would carry
+      // a wrong number with no error — and GitHub rejects a whole review when
+      // one anchor is wrong. A thrown error is far cheaper than that.
+      throw new Error(
+        `Unrecognized line prefix '${marker}' in hunk starting at ${hunk.header}\nOffending line: ${raw}`,
+      );
     }
-    // Any other leading character is not part of a hunk body; ignore it.
 
     if (line) hunk.lines.push(line);
   }
