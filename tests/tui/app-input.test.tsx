@@ -4,6 +4,7 @@ import { PassThrough } from 'node:stream';
 import { render, type Instance } from 'ink';
 import { App } from '../../src/tui/App.js';
 import { FakeTransport } from '../../src/core/agent/fake.js';
+import { findingId } from '../../src/core/findings/find.js';
 import type { PullRequestDetail, PullRequestSummary } from '../../src/core/github/types.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
 import type { RawFinding } from '../../src/core/findings/types.js';
@@ -299,22 +300,28 @@ describe('App findings', () => {
     expect(app.frame()).toContain('0 staged');
   });
 
-  test('e rewrites a finding in the reviewer own words', async () => {
+  test('e rewrites a finding in the reviewer own editor', async () => {
     const submitted: ReviewDraft[] = [];
+    const opened: string[] = [];
     const app = mount({
       pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree',
       onSubmit: (draft) => submitted.push(draft),
+      editText: async (initial) => {
+        opened.push(initial);
+        return `${initial} Use an LRU.`;
+      },
     });
     await delay(80);
 
     await app.press('n');
     await app.press('e');
-    // The editor opens on the model's wording rather than a blank line, so a
-    // reviewer can amend it instead of retyping it.
-    expect(app.frame()).toContain('Nothing ever evicts');
+    await delay(60);
 
-    await app.press(' Use an LRU.');
-    await app.press('\r');
+    // The editor opens on the model's wording rather than a blank buffer, so a
+    // reviewer can amend it instead of retyping it.
+    expect(opened).toHaveLength(1);
+    expect(opened[0]).toContain('Nothing ever evicts');
+
     // Editing implies keeping, so it is staged without pressing `a`.
     expect(app.frame()).toContain('1 staged');
 
@@ -323,6 +330,39 @@ describe('App findings', () => {
     await app.press('!');
     await app.press('\r');
     expect(submitted[0]?.comments[0]?.body).toEndWith(' Use an LRU.');
+  });
+
+  test('an editor that comes back unchanged stages nothing', async () => {
+    const app = mount({
+      pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree',
+      // What `editInEditor` returns when the editor exits non-zero.
+      editText: async (initial) => initial,
+    });
+    await delay(80);
+
+    await app.press('n');
+    await app.press('e');
+    await delay(60);
+    expect(app.frame()).toContain('0 staged');
+  });
+
+  test('an editor that cannot be spawned leaves the review untouched', async () => {
+    const app = mount({
+      pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree',
+      editText: async () => {
+        throw new Error('no such editor');
+      },
+    });
+    await delay(80);
+
+    await app.press('n');
+    await app.press('e');
+    await delay(60);
+    expect(app.frame()).toContain('0 staged');
+
+    // Still usable afterwards: keys land on the diff, not into a dead overlay.
+    await app.press('a');
+    expect(app.frame()).toContain('1 staged');
   });
 
   test('a refuted finding collapses out of the way and v brings it back', async () => {
@@ -554,6 +594,143 @@ describe('a failed model pass is stated, not swallowed', () => {
     await delay(120);
     expect(app.frame()).toContain('Unbounded cache');
     expect(app.frame().toLowerCase()).not.toContain('model pass failed');
+  });
+});
+
+describe('unsubmitted work survives the session', () => {
+  test('a restored draft is staged the moment the pull request opens', async () => {
+    const app = mount({
+      pr: detail,
+      meat,
+      initialDraft: {
+        verdict: null,
+        body: '',
+        comments: [{
+          id: 'c1', path: 'src/cache.ts', line: 2, side: 'RIGHT',
+          startLine: null, body: 'From last time.', suggestion: null,
+        }],
+      },
+    });
+    await delay(60);
+    expect(app.frame()).toContain('1 staged');
+  });
+
+  test('a restored comment and the finding it came from are not staged twice', async () => {
+    // The id `findingId` gives this exact finding, which is also the id
+    // `toStagedComments` puts on the comment accepting it produces.
+    const sameId = findingId(rawFinding);
+    const app = mount({
+      pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree',
+      initialDraft: {
+        verdict: null,
+        body: '',
+        comments: [{
+          id: sameId, path: 'src/cache.ts', line: 2, side: 'RIGHT',
+          startLine: null, body: 'From last time.', suggestion: null,
+        }],
+      },
+    });
+    await delay(80);
+    expect(app.frame()).toContain('1 staged');
+
+    // Accepting the finding the restored comment already came from must not
+    // post the same note to the same line twice.
+    await app.press('n');
+    await app.press('a');
+    expect(app.frame()).toContain('1 staged');
+  });
+
+  test('staged work is written through as it changes', async () => {
+    const saved: ReviewDraft[] = [];
+    const app = mount({
+      pr: detail, meat, onPersist: (d) => saved.push(d),
+    });
+    await delay(60);
+    // Nothing to save yet: an empty record for every pull request merely opened
+    // would bury the ones that matter.
+    expect(saved).toHaveLength(0);
+
+    await app.press('C');
+    await app.press('Needs a test.');
+    await app.press('\r');
+    await delay(40);
+
+    expect(saved.length).toBeGreaterThan(0);
+    expect(saved.at(-1)?.comments[0]?.body).toBe('Needs a test.');
+  });
+
+  test('q with nothing staged just quits', async () => {
+    const app = mount({ pr: detail, meat });
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+    await app.press('q');
+    await delay(40);
+    expect(exited).toBe(true);
+  });
+
+  test('q with unsubmitted work asks first, and esc goes back to the review', async () => {
+    const app = mount({ pr: detail, meat });
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+
+    await app.press('C');
+    await app.press('Needs a test.');
+    await app.press('\r');
+    await app.press('q');
+    await delay(40);
+
+    expect(exited).toBe(false);
+    expect(app.frame()).toContain('1 unsubmitted comment(s)');
+
+    await app.press(ESC);
+    expect(app.frame()).toContain('1 staged');
+    expect(exited).toBe(false);
+  });
+
+  test('enter at the confirm saves the draft and quits', async () => {
+    const saved: ReviewDraft[] = [];
+    const discarded: number[] = [];
+    const app = mount({
+      pr: detail, meat, onPersist: (d) => saved.push(d), onDiscard: () => discarded.push(1),
+    });
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+
+    await app.press('C');
+    await app.press('Needs a test.');
+    await app.press('\r');
+    await app.press('q');
+    await app.press('\r');
+    await delay(40);
+
+    expect(exited).toBe(true);
+    expect(saved.at(-1)?.comments[0]?.body).toBe('Needs a test.');
+    expect(discarded).toHaveLength(0);
+  });
+
+  test('x at the confirm discards deliberately', async () => {
+    const discarded: number[] = [];
+    const app = mount({ pr: detail, meat, onDiscard: () => discarded.push(1) });
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+
+    await app.press('C');
+    await app.press('Needs a test.');
+    await app.press('\r');
+    await app.press('q');
+    await app.press('x');
+    await delay(40);
+
+    expect(exited).toBe(true);
+    expect(discarded).toHaveLength(1);
   });
 });
 

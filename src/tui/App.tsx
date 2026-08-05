@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
+import { Box, Text, useApp, useInput, useStdin, useWindowSize } from 'ink';
 import TextInput from 'ink-text-input';
 import type { AgentTransport } from '../core/agent/types.js';
 import type { Hunk } from '../core/diff/types.js';
@@ -19,6 +19,7 @@ import type { ReviewDraft, Side, StagedComment, Verdict } from '../core/review/t
 import {
   buildUnits, nextFileIndex, nextFindingIndex, prevFileIndex, prevFindingIndex, type ReviewUnit,
 } from './units.js';
+import { editInEditor } from './editor.js';
 import { indexAtRow, nextRowScrollTop, nextScrollTop, rowOffsets } from './viewport.js';
 import { resolveAction, type Mode } from './keymap.js';
 import { filterPrs } from './search.js';
@@ -61,11 +62,25 @@ export interface AppProps {
    * reason confidently about code that is not in this pull request.
    */
   cwd?: string | null;
+  /**
+   * A draft recovered from disk for this pull request, or carried over from an
+   * earlier head. Null starts clean.
+   */
+  initialDraft?: ReviewDraft | null;
   onOpenPr: (number: number) => void;
   onSubmit: (draft: ReviewDraft, verdict: Verdict) => void;
   onFilter?: (filter: PullFilter) => void;
   onRefresh?: () => void;
   onOpenUrl?: (url: string) => void;
+  /** Called whenever staged work changes, and once more before quitting. */
+  onPersist?: (draft: ReviewDraft) => void;
+  /** The reviewer chose to throw the draft away rather than keep it. */
+  onDiscard?: () => void;
+  /**
+   * Opens `initial` in the reviewer's editor. Injected only by tests — the
+   * default really does spawn `$EDITOR`, which no test may do.
+   */
+  editText?: (initial: string) => Promise<string>;
 }
 
 /** Where a staged comment attaches, in GitHub's own terms. */
@@ -187,6 +202,7 @@ function ChatOverlay({ session, pending, onAsk, onClose }: ChatOverlayProps) {
 
 export function App(props: AppProps) {
   const { exit } = useApp();
+  const { setRawMode, isRawModeSupported } = useStdin();
   const { columns, rows } = useWindowSize();
 
   const [mode, setMode] = useState<Mode>(props.pr ? 'detail' : 'list');
@@ -203,6 +219,10 @@ export function App(props: AppProps) {
   const [draft, setDraft] = useState<ReviewDraft>({ verdict: null, body: '', comments: [] });
   const [verdict, setVerdict] = useState<Verdict>('COMMENT');
   const [pending, setPending] = useState<{ anchor: CommentAnchor; isSuggestion: boolean } | null>(null);
+  /** True while `$EDITOR` owns the terminal; Ink must not repaint over it. */
+  const [editorOpen, setEditorOpen] = useState(false);
+  /** Set by `q` when there is work on screen that has not been submitted. */
+  const [confirmQuit, setConfirmQuit] = useState(false);
   const [findings, setFindings] = useState<TriagedFinding[]>([]);
   /**
    * `ok` and `failed` are the whole point: `runFindings` returns `[]` both when
@@ -213,8 +233,6 @@ export function App(props: AppProps) {
   /** Bumped by `R`, which is what re-runs the pass after a failure. */
   const [findingsAttempt, setFindingsAttempt] = useState(0);
   const [showRefuted, setShowRefuted] = useState(false);
-  /** Which finding the comment editor is rewriting, when it is not a new comment. */
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatSession>({ id: null, turns: [] });
   const [chatPending, setChatPending] = useState(false);
   /** The hunk the open chat is about; moving to another one starts fresh. */
@@ -281,8 +299,16 @@ export function App(props: AppProps) {
     if (openNumber === null) return;
     setUnitCursor(0);
     setUnitScroll(0);
+    setConfirmQuit(false);
     setMode('detail');
   }, [openNumber]);
+
+  // A draft recovered from disk, or carried over from an earlier head. Keyed on
+  // the object rather than the number: it arrives after the pull request does.
+  const { initialDraft } = props;
+  useEffect(() => {
+    setDraft(initialDraft ?? { verdict: null, body: '', comments: [] });
+  }, [initialDraft]);
 
   // The two agent passes. Both swallow their own failures and yield nothing on
   // one, so every branch below renders identically whether they succeed, come
@@ -339,6 +365,17 @@ export function App(props: AppProps) {
     // Threads and checks arrive with the pull request itself; keying on them
     // too would only re-bill the model for a review it already did.
   }, [openPr, openMeat, transport, cwd, model, findingsAttempt]);
+
+  // Triage and staged comments are written through as they change, so closing
+  // the laptop is not the same as throwing the review away. Nothing is written
+  // for a review with no work in it — an empty file for every pull request
+  // merely opened would make `findPreviousHead` useless.
+  const { onPersist } = props;
+  const hasUnsubmittedWork = staged.length > 0 || draft.body.trim().length > 0;
+  useEffect(() => {
+    if (!openPr || !hasUnsubmittedWork) return;
+    onPersist?.(fullDraft);
+  }, [fullDraft, openPr, hasUnsubmittedWork, onPersist]);
 
   // Findings arriving grows the unit list under the cursor and `v` shrinks it
   // again. The cursor indexes that list, so it and the viewport are pulled back
@@ -426,12 +463,43 @@ export function App(props: AppProps) {
     if (finding) setFindings((list) => change(list, finding.id));
   }
 
-  function startEdit() {
+  /**
+   * Rewrites a finding in the reviewer's real editor, not a one-line input —
+   * these become review comments, and a comment worth writing is worth writing
+   * in vim.
+   *
+   * Raw mode is suspended here rather than inside `editInEditor`, because the
+   * terminal belongs to Ink and `editInEditor` must stay testable without one.
+   * `null` is rendered meanwhile so Ink does not repaint over the editor.
+   */
+  async function startEdit() {
     const finding = currentFinding();
     if (!finding) return;
+    const initial = finding.editedBody ?? finding.body;
+    const open = props.editText ?? editInEditor;
+
     setPending(null);
-    setEditingId(finding.id);
-    enterOverlay('comment');
+    setEditorOpen(true);
+    if (isRawModeSupported) setRawMode(false);
+
+    let edited = initial;
+    try {
+      edited = await open(initial);
+    } catch {
+      // No editor on this machine, or it could not be spawned. The finding is
+      // untouched, which is the same outcome as quitting without saving.
+    } finally {
+      if (isRawModeSupported) setRawMode(true);
+      setEditorOpen(false);
+    }
+
+    // `editInEditor` returns the original text on a non-zero exit, so text that
+    // came back unchanged is indistinguishable from a cancel and is treated as
+    // one. Keeping the model's exact wording is what `a` is for.
+    const body = edited.trim();
+    if (body.length > 0 && body !== initial) {
+      setFindings((list) => edit(list, finding.id, body));
+    }
   }
 
   function openChat() {
@@ -472,13 +540,6 @@ export function App(props: AppProps) {
   }
 
   function saveComment(body: string) {
-    if (editingId !== null) {
-      if (body.trim().length > 0) setFindings((list) => edit(list, editingId, body));
-      setEditingId(null);
-      setMode('detail');
-      return;
-    }
-
     if (pending && body.trim().length > 0) {
       const comment: StagedComment = {
         id: `${pending.anchor.path}:${pending.anchor.line}:${draft.comments.length}`,
@@ -512,8 +573,23 @@ export function App(props: AppProps) {
 
   useInput((input, key) => {
     // The comment editor and the chat prompt own every key while they are up,
-    // including esc.
-    if (mode === 'comment' || mode === 'chat') return;
+    // including esc. `$EDITOR` owns the actual terminal.
+    if (mode === 'comment' || mode === 'chat' || editorOpen) return;
+
+    // `q` used to discard every triaged finding, staged comment, and chat turn
+    // without a word. Three keys, and none of them lose work by accident.
+    if (confirmQuit) {
+      if (key.escape) return setConfirmQuit(false);
+      if (key.return) {
+        props.onPersist?.(fullDraft);
+        return exit();
+      }
+      if (input === 'x') {
+        props.onDiscard?.();
+        return exit();
+      }
+      return;
+    }
 
     if (mode === 'search') {
       if (key.escape) {
@@ -558,7 +634,8 @@ export function App(props: AppProps) {
       case 'toggle-finding-suggestion':
         return triage(toggleSuggestion);
       case 'edit-finding':
-        return startEdit();
+        void startEdit();
+        return;
       case 'toggle-refuted':
         return setShowRefuted((v) => !v);
       case 'chat':
@@ -614,11 +691,15 @@ export function App(props: AppProps) {
         if (query.length > 0) return applyQuery('');
         return;
       case 'quit':
+        if (hasUnsubmittedWork) return setConfirmQuit(true);
         return exit();
       default:
         return;
     }
   });
+
+  // The editor has the terminal. Anything drawn here would land on top of it.
+  if (editorOpen) return null;
 
   if (mode === 'help') return <Help />;
 
@@ -633,16 +714,14 @@ export function App(props: AppProps) {
     );
   }
 
-  if (mode === 'comment' && (pending || editingId !== null)) {
-    const editing = editingId === null ? null : (findings.find((f) => f.id === editingId) ?? null);
+  if (mode === 'comment' && pending) {
     return (
       <CommentEditor
-        initial={editing ? (editing.editedBody ?? editing.body) : ''}
-        isSuggestion={pending?.isSuggestion ?? false}
+        initial=""
+        isSuggestion={pending.isSuggestion}
         onSubmit={saveComment}
         onCancel={() => {
           setPending(null);
-          setEditingId(null);
           setMode('detail');
         }}
       />
@@ -729,7 +808,13 @@ export function App(props: AppProps) {
 
       <Text {...theme.tier.muted}>{theme.glyph.hrule.repeat(Math.max(1, columns))}</Text>
 
-      {props.pr && props.meat ? (
+      {/* The confirm takes the status bar's row rather than adding one, so the
+          layout does not shift under a question about losing work. */}
+      {confirmQuit ? (
+        <Text color={theme.color.pending} bold wrap="truncate">
+          {`${staged.length} unsubmitted comment(s) · enter saves the draft and quits · x discards · esc stays`}
+        </Text>
+      ) : props.pr && props.meat ? (
         <StatusBar
           repoLabel={props.repoLabel}
           prNumber={props.pr.number}

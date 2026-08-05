@@ -69,12 +69,31 @@ export async function ensureWorktree(
   return { path, sha };
 }
 
+export interface PruneOptions {
+  /**
+   * Clone whose worktree registrations are cleared afterwards. Deleting the
+   * directory is only half the job: git still has it on the books, and
+   * `worktree add` at that path then fails with "missing but already
+   * registered" — which would leave marrow permanently in diff-only mode for
+   * that head. Verified against git: without the prune, the re-add exits 128.
+   *
+   * The cache is shared across repositories, so a sweep here can orphan a
+   * registration in a clone it knows nothing about; that clone clears its own
+   * on its next run, since this happens at startup.
+   */
+  repoRoot?: string;
+  run?: CommandRunner;
+  /** Cache directory to sweep. Injectable so a test never touches the real one. */
+  root?: string;
+}
+
 /** Removes worktree directories untouched for longer than maxAgeDays. */
 export async function pruneWorktrees(
   maxAgeDays: number,
   now: Date = new Date(),
+  options: PruneOptions = {},
 ): Promise<number> {
-  const root = worktreeRoot();
+  const root = options.root ?? worktreeRoot();
   if (!(await exists(root))) return 0;
 
   const cutoff = now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000;
@@ -87,6 +106,11 @@ export async function pruneWorktrees(
       await rm(path, { recursive: true, force: true });
       removed += 1;
     }
+  }
+
+  if (removed > 0 && options.repoRoot) {
+    const run = options.run ?? defaultRunner;
+    await run('git', ['-C', options.repoRoot, 'worktree', 'prune']);
   }
 
   return removed;
