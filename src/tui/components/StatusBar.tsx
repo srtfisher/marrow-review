@@ -1,6 +1,7 @@
 import { Text } from 'ink';
 import type { MeatResult } from '../../core/meat/index.js';
 import { theme } from '../theme.js';
+import { meatGauge } from '../gauge.js';
 
 export interface StatusBarProps {
   repoLabel: string;
@@ -18,8 +19,10 @@ export function StatusBar({
 }: StatusBarProps) {
   return (
     <Text {...theme.tier.muted}>
-      {`${repoLabel}#${prNumber} · kept ${meat.keptLines}/${meat.totalLines} · `}
-      <Text color={theme.color.pending}>{`● ${stagedCount} staged`}</Text>
+      {`${repoLabel}#${prNumber}  `}
+      <Text color={theme.color.add}>{meatGauge(meat.keptLines, meat.totalLines)}</Text>
+      {` kept ${meat.keptLines}/${meat.totalLines} · `}
+      <Text color={theme.color.pending}>{`${theme.glyph.staged} ${stagedCount} staged`}</Text>
       {` · ${model} · ${worktreeOk ? 'worktree ok' : 'diff-only'}`}
     </Text>
   );

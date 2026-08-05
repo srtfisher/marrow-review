@@ -5,6 +5,7 @@ import type { ReviewUnit } from '../units.js';
 import { DiffLines } from './DiffLines.js';
 import { Viewport } from './Viewport.js';
 import { theme } from '../theme.js';
+import { meatGauge } from '../gauge.js';
 
 export interface DetailProps {
   pr: PullRequestDetail;
@@ -22,7 +23,7 @@ export interface DetailProps {
  *  video here — that's reserved for the list pane's title row, and would fight
  *  the diff's own add/del colors. */
 function cursorMark(selected: boolean) {
-  return <Text {...theme.tier.primary}>{selected ? '▸ ' : '  '}</Text>;
+  return <Text color={theme.color.structure}>{selected ? `${theme.glyph.cursor} ` : '  '}</Text>;
 }
 
 function renderFileHeader(unit: Extract<ReviewUnit, { kind: 'file-header' }>, selected: boolean) {
@@ -44,7 +45,7 @@ function renderDroppedSummary(unit: Extract<ReviewUnit, { kind: 'dropped-summary
   return (
     <Text key={unit.index} {...theme.tier.muted}>
       {cursorMark(selected)}
-      {`┄┄┄ ${label} · ${reasons.join(', ')} — press z to reveal ┄┄┄`}
+      {`${theme.glyph.fold.repeat(3)} ${label} · ${reasons.join(', ')} — press z to reveal ${theme.glyph.fold.repeat(3)}`}
     </Text>
   );
 }
@@ -65,7 +66,7 @@ function renderHunk(
         {cursorMark(selected)}
         {`${unit.hunk.hunk.header}  [${unit.hunk.reason}]`}
       </Text>
-      <DiffLines hunk={unit.hunk.hunk} gutterWidth={4} />
+      <DiffLines hunk={unit.hunk.hunk} gutterWidth={theme.layout.gutterWidth} />
       {matching.map((thread, i) =>
         thread.comments.map((c, j) => (
           <Text key={`${i}-${j}`}>
@@ -98,7 +99,7 @@ export function Detail({
   return (
     <Box flexDirection="column">
       {/* The PR title is the one bold element in this pane — nothing else competes. */}
-      <Text bold>{pr.title}</Text>
+      <Text {...theme.tier.primary}>{pr.title}</Text>
       <Text {...theme.tier.muted}>
         {`#${pr.number} · ${pr.author} · ${pr.baseRef} ← ${pr.headRef}`}
       </Text>
@@ -106,7 +107,19 @@ export function Detail({
         <Text color={theme.color.danger}>{`failing: ${failing.map((c) => c.name).join(', ')}`}</Text>
       )}
       {meat.summary.length > 0 && <Text>{meat.summary}</Text>}
-      <Text>{`kept ${meat.keptLines}/${meat.totalLines} lines in ${meat.keptFiles}/${meat.totalFiles} files`}</Text>
+      {/* The meat gauge: the product's thesis in ten characters. Filled cells
+          are green because they represent kept lines, which is the same meaning
+          green carries everywhere else in this UI. */}
+      <Text>
+        <Text color={theme.color.add}>{meatGauge(meat.keptLines, meat.totalLines)}</Text>
+        {/* "kept" is not redundant next to the gauge: a bare 1/2 could read as
+            kept or as dropped, and the gauge does not disambiguate direction. */}
+        <Text {...theme.tier.muted}>{'  kept '}</Text>
+        <Text {...theme.tier.primary}>{meat.keptLines}</Text>
+        <Text {...theme.tier.muted}>{`/${meat.totalLines} lines · `}</Text>
+        <Text {...theme.tier.primary}>{meat.keptFiles}</Text>
+        <Text {...theme.tier.muted}>{`/${meat.totalFiles} files`}</Text>
+      </Text>
       <Viewport
         items={items}
         height={Math.max(0, height - headerRows)}
