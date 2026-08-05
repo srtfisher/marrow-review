@@ -65,6 +65,11 @@ export const glyph = {
   /** Horizontal rules exist at exactly two hard boundaries; this is one. */
   hrule: '─',
   staged: '●',
+  /** A loading step that finished, and one that did not. */
+  done: '✓',
+  failed: '✗',
+  /** The list pane's selection marker, matching the reference project. */
+  select: '❯',
 } as const;
 
 export const theme = { color, tier, layout, glyph } as const;

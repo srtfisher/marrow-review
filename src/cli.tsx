@@ -25,6 +25,10 @@ import type {
   CheckRun, PullFilter, PullRequestDetail, PullRequestSummary, ReviewThread,
 } from './core/github/types.js';
 import { App } from './tui/App.js';
+import {
+  failStep, finishStep, loadSteps, startStep, withModelSteps, STEP,
+  type LoadProgress, type ProgressStep,
+} from './tui/progress.js';
 
 /**
  * A worktree is a full checkout, and one is created per reviewed head. Nothing
@@ -72,12 +76,17 @@ function noteApiKeyWithheld(args: CliArgs): void {
  * null means diff-only, and the agent passes stay off rather than reasoning
  * about whatever commit the user's own checkout happens to be on.
  */
-async function tryWorktree(repo: RepoContext, pr: PullRequestDetail): Promise<string | null> {
+async function tryWorktree(
+  repo: RepoContext,
+  pr: PullRequestDetail,
+  onFail?: (reason: string) => void,
+): Promise<string | null> {
   try {
     const worktree = await ensureWorktree(repo, pr.number, pr.headSha);
     return worktree.path;
-  } catch {
+  } catch (error) {
     process.stderr.write('note: could not create a worktree; continuing diff-only.\n');
+    onFail?.(message(error));
     return null;
   }
 }
@@ -195,6 +204,7 @@ async function runTui(session: Session): Promise<number> {
   let status: string | null = null;
   let statusTone: 'muted' | 'pending' | 'danger' = 'muted';
   let initialDraft: ReviewDraft | null = null;
+  let progress: LoadProgress | null = null;
   /** Printed after the alternate screen is torn down, so it survives on screen. */
   let farewell: string | null = null;
 
@@ -220,6 +230,7 @@ async function runTui(session: Session): Promise<number> {
         filter={filter}
         status={status}
         statusTone={statusTone}
+        progress={progress}
         transport={transport}
         cwd={worktree}
         initialDraft={initialDraft}
@@ -276,20 +287,49 @@ async function runTui(session: Session): Promise<number> {
     threads = [];
     worktree = null;
     initialDraft = null;
-    status = `Loading #${number}…`;
+    status = null;
     statusTone = 'muted';
+    progress = { prNumber: number, steps: loadSteps() };
     draw();
 
+    /** Applies a transition and repaints, so every step change is seen. */
+    function step(change: (steps: readonly ProgressStep[]) => ProgressStep[]): void {
+      if (!progress) return;
+      progress = { ...progress, steps: change(progress.steps) };
+      draw();
+    }
+
     try {
+      step((s) => startStep(s, STEP.pull, Date.now()));
       const loaded = await client.getPull(repo.owner, repo.repo, number, viewer);
+      step((s) => finishStep(s, STEP.pull, Date.now()));
+
+      step((s) => startStep(s, STEP.context, Date.now()));
       const context = await fetchPullContext(
         (query, vars) => octokit.graphql(query, vars),
         repo.owner,
         repo.repo,
         number,
       );
-      worktree = await tryWorktree(repo, loaded);
+      step((s) => finishStep(s, STEP.context, Date.now()));
+
+      const shortSha = loaded.headSha.slice(0, 7);
+      step((s) => startStep(s, STEP.worktree, Date.now(), `git worktree at ${shortSha}`));
+      worktree = await tryWorktree(repo, loaded, (reason) => {
+        step((s) => failStep(s, STEP.worktree, reason, Date.now()));
+      });
+      if (worktree !== null) step((s) => finishStep(s, STEP.worktree, Date.now()));
+      // The model passes start only once the diff is on screen, so they are
+      // listed as still to come rather than left off — the reviewer should know
+      // the work is not over when the loading screen goes away.
+      if (worktree !== null) step((s) => withModelSteps(s));
+
+      const files = loaded.changedFiles;
+      step((s) => startStep(
+        s, STEP.abridge, Date.now(), `abridging ${files} file${files === 1 ? '' : 's'}`,
+      ));
       const result = await runMeat(args, repo, loaded, await readGeneratedPaths(repo));
+      step((s) => finishStep(s, STEP.abridge, Date.now()));
 
       // A missing or unreadable state directory must not make a pull request
       // unopenable; the review still works, it just starts empty.
@@ -310,6 +350,9 @@ async function runTui(session: Session): Promise<number> {
       statusTone = 'danger';
     }
 
+    // The steps have said all they can: either the diff replaced them or the
+    // failure note did. Leaving them up would strand a spinner mid-fetch.
+    progress = null;
     draw();
   }
 

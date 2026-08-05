@@ -26,7 +26,12 @@ describe('theme', () => {
   });
 
   test('uses no emoji in its glyphs', () => {
-    const emoji = /[\u{1F300}-\u{1FAFF}\u{2700}-\u{27BF}\u{2600}-\u{26FF}]/u;
+    // Unicode's own property, not hand-picked block ranges. The blocks were too
+    // blunt: they swept up the whole Dingbats range, and ✓ ✗ ❯ live there while
+    // being ordinary single-cell typographic marks with no emoji presentation.
+    // Extended_Pictographic still catches the real offenders — ⚠ ✂ ❌ — which is
+    // what the rule is actually about: glyphs whose cell width is unreliable.
+    const emoji = /\p{Extended_Pictographic}/u;
     for (const value of Object.values(theme.glyph)) {
       expect(value).not.toMatch(emoji);
     }

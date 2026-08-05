@@ -22,11 +22,13 @@ import {
 import { editInEditor } from './editor.js';
 import { indexAtRow, nextRowScrollTop, nextScrollTop, rowOffsets } from './viewport.js';
 import { resolveAction, type Mode } from './keymap.js';
+import type { LoadProgress } from './progress.js';
 import { filterPrs } from './search.js';
 import { ChatPane } from './components/ChatPane.js';
 import { CommentEditor } from './components/CommentEditor.js';
 import { Detail, detailHeaderRows, unitHeights } from './components/Detail.js';
 import { Help } from './components/Help.js';
+import { LoadingSteps } from './components/LoadingSteps.js';
 import { PrList, visibleEntryCount } from './components/PrList.js';
 import { StatusBar } from './components/StatusBar.js';
 import { SubmitScreen } from './components/SubmitScreen.js';
@@ -44,6 +46,12 @@ export interface AppProps {
   filter: PullFilter;
   /** One-line note: loading, a load failure, a pending web-UI review. */
   status?: string | null;
+  /**
+   * Staged progress while a pull request opens. Rendered in place of the detail
+   * pane until the diff arrives — a reviewer who cannot tell fetching from a
+   * freeze kills the process.
+   */
+  progress?: LoadProgress | null;
   /**
    * How to read `status`. `muted` is progress, `pending` is unsubmitted work,
    * `danger` is a failure — yellow is reserved for the first of those, so a
@@ -801,6 +809,8 @@ export function App(props: AppProps) {
               />
               {notes}
             </>
+          ) : props.progress ? (
+            <LoadingSteps progress={props.progress} />
           ) : (
             // One note, not two: with a pull request selected but no meat yet,
             // this branch and a second line below it both said the same thing.
