@@ -21,7 +21,7 @@ export function CommentEditor({ initial, isSuggestion, onSubmit, onCancel }: Com
   });
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={1}>
       <Text color={theme.color.structure}>{isSuggestion ? 'Suggestion' : 'Comment'}</Text>
       <TextInput value={value} onChange={setValue} onSubmit={() => onSubmit(value)} />
       <Text {...theme.tier.muted}>enter to save · esc to cancel</Text>

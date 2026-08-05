@@ -28,7 +28,7 @@ export function SubmitScreen({
   const problems = findAnchorProblems(draft, files);
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={1}>
       <Text {...theme.tier.primary}>Submit review</Text>
 
       {LABELS.map(({ verdict, label }) => {

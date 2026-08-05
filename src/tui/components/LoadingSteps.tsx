@@ -88,7 +88,9 @@ export function LoadingSteps({ progress, now }: LoadingStepsProps) {
   const clock = now ?? tick;
 
   return (
-    <Box flexDirection="column" paddingX={1}>
+    // No paddingX here: the pane this renders into already has it, and two
+    // panels' worth would indent the steps twice.
+    <Box flexDirection="column">
       {/* This pane's one bold element while it is loading. */}
       <Text {...theme.tier.primary}>{`Loading #${progress.prNumber}`}</Text>
       <Text> </Text>

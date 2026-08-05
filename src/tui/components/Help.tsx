@@ -10,7 +10,7 @@ export function Help() {
   const width = Math.max(...KEY_HELP.map((e) => e.keys.length));
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={1}>
       <Text {...theme.tier.primary}>Keys</Text>
       {KEY_HELP.map((entry) => (
         <Text key={entry.keys}>

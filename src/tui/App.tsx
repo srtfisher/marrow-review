@@ -191,7 +191,7 @@ function ChatOverlay({ session, pending, onAsk, onClose }: ChatOverlayProps) {
   });
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingX={1}>
       <Text color={theme.color.structure}>Ask about this hunk</Text>
       <ChatPane session={session} pending={pending} />
       <TextInput
@@ -788,11 +788,14 @@ export function App(props: AppProps) {
           query={query}
           searching={mode === 'search'}
         />
-        {/* The one vertical rule in the product: two panes, no boxes. */}
-        <Box width={1} marginLeft={1}>
+        {/* The one vertical rule in the product: two panes, no boxes. Each
+            pane's own paddingX supplies the gap on either side of it. */}
+        <Box width={1}>
           <Text {...theme.tier.muted}>{paneRule}</Text>
         </Box>
-        <Box flexDirection="column" flexGrow={1} marginLeft={1}>
+        {/* paddingX rather than marginLeft: nothing sits flush against either
+            terminal edge, the rule included. */}
+        <Box flexDirection="column" flexGrow={1} paddingX={1}>
           {props.pr && props.meat ? (
             <>
               <Detail
@@ -827,24 +830,26 @@ export function App(props: AppProps) {
           layout does not shift under a question about losing work. */}
       {/* `pending`, not `danger`: the default here is to keep the work, so this
           is the yellow that nags about unsubmitted work, not a red confirm. */}
-      {confirmQuit ? (
-        <Text color={theme.color.pending} wrap="truncate">
-          {`${staged.length} unsubmitted comment(s) · enter saves the draft and quits · x discards · esc stays`}
-        </Text>
-      ) : props.pr && props.meat ? (
-        <StatusBar
-          repoLabel={props.repoLabel}
-          prNumber={props.pr.number}
-          meat={props.meat}
-          stagedCount={staged.length}
-          model={props.model}
-          worktreeOk={props.worktreeOk}
-        />
-      ) : (
-        <Text {...theme.tier.muted}>
-          {`${props.repoLabel} · ${visiblePrs.length} pull request${visiblePrs.length === 1 ? '' : 's'} · ? for keys`}
-        </Text>
-      )}
+      <Box paddingX={1}>
+        {confirmQuit ? (
+          <Text color={theme.color.pending} wrap="truncate">
+            {`${staged.length} unsubmitted comment(s) · enter saves the draft and quits · x discards · esc stays`}
+          </Text>
+        ) : props.pr && props.meat ? (
+          <StatusBar
+            repoLabel={props.repoLabel}
+            prNumber={props.pr.number}
+            meat={props.meat}
+            stagedCount={staged.length}
+            model={props.model}
+            worktreeOk={props.worktreeOk}
+          />
+        ) : (
+          <Text {...theme.tier.muted}>
+            {`${props.repoLabel} · ${visiblePrs.length} pull request${visiblePrs.length === 1 ? '' : 's'} · ? for keys`}
+          </Text>
+        )}
+      </Box>
     </Box>
   );
 }
