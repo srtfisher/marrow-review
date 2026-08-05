@@ -24,9 +24,11 @@ interface RawPull {
   state: string;
   draft?: boolean;
   merged?: boolean;
-  additions?: number;
-  deletions?: number;
-  changed_files?: number;
+  // Null on `pulls.list`, real numbers on `pulls.get`. The nullability is the
+  // whole point: it is what stops a list summary from claiming a size.
+  additions?: number | null;
+  deletions?: number | null;
+  changed_files?: number | null;
   updated_at: string;
   user: { login: string } | null;
   head: { sha: string; ref: string };
@@ -49,9 +51,6 @@ function toSummary(raw: RawPull): PullRequestSummary {
     baseRef: raw.base.ref,
     headRef: raw.head.ref,
     updatedAt: raw.updated_at,
-    additions: raw.additions ?? 0,
-    deletions: raw.deletions ?? 0,
-    changedFiles: raw.changed_files ?? 0,
   };
 }
 
@@ -101,6 +100,10 @@ export class GitHubClient {
       body: raw.body ?? '',
       diff: String(diffRes.data),
       viewerIsAuthor: (raw.user?.login ?? '') === viewerLogin,
+      // Only meaningful here: `pulls.get` is the endpoint that fills them in.
+      additions: raw.additions ?? 0,
+      deletions: raw.deletions ?? 0,
+      changedFiles: raw.changed_files ?? 0,
     };
   }
 }

@@ -56,7 +56,7 @@ function summary(number: number, title: string, author = 'srtfisher'): PullReque
   return {
     number, title, author, state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'feat/x',
-    updatedAt: '2026-08-01T00:00:00Z', additions: 10, deletions: 2, changedFiles: 3,
+    updatedAt: '2026-08-01T00:00:00Z',
   };
 }
 
@@ -196,6 +196,7 @@ const detail: PullRequestDetail = {
   body: 'Adds a cache.',
   diff: '',
   viewerIsAuthor: false,
+  additions: 10, deletions: 2, changedFiles: 3,
 };
 
 const meatFile: MeatFile = {

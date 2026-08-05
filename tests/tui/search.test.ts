@@ -6,7 +6,7 @@ function pr(number: number, title: string, author: string): PullRequestSummary {
   return {
     number, title, author, state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'x',
-    updatedAt: '2026-08-01T00:00:00Z', additions: 1, deletions: 0, changedFiles: 1,
+    updatedAt: '2026-08-01T00:00:00Z',
   };
 }
 

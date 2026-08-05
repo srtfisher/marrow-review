@@ -62,7 +62,20 @@ test('reports merged state distinctly from closed', async () => {
 test('maps a PR list response', async () => {
   const client = new GitHubClient('tok', fakeOctokit());
   const prs = await client.listPulls('srtfisher', 'marrow', 'open');
-  expect(prs).toHaveLength(1);
+  expect(prs).toHaveLength(2);
   expect(prs[0]!.title).toBe('Fix thematic-break rendering');
   expect(prs[0]!.headRef).toBe('fix/thematic-break');
+  expect(prs[1]!.isDraft).toBe(true);
+});
+
+// The fixture carries the nulls the live endpoint really sends. A summary that
+// exposed a size at all would have to invent one, and inventing it is exactly
+// how every row came to read `0 files`.
+test('a list summary carries no size figures at all', async () => {
+  const client = new GitHubClient('tok', fakeOctokit());
+  const prs = await client.listPulls('srtfisher', 'marrow', 'open');
+  expect(prs[0]!).not.toHaveProperty('changedFiles');
+  expect(prs[0]!).not.toHaveProperty('additions');
+  expect(prs[0]!).not.toHaveProperty('deletions');
+  expect(prs[0]!.updatedAt).toBe('2026-08-01T12:00:00Z');
 });

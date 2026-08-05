@@ -1,6 +1,13 @@
 export type PullState = 'open' | 'closed' | 'merged';
 export type PullFilter = 'open' | 'review-requested' | 'all';
 
+/**
+ * What `pulls.list` actually returns. Deliberately no size figures: GitHub
+ * sends `null` for `additions`, `deletions`, and `changed_files` on the list
+ * endpoint — they exist only on `pulls.get`, one request per pull request. A
+ * `changedFiles: number` here was always a confident zero, which is how the
+ * list came to read `0 files` for every entry.
+ */
 export interface PullRequestSummary {
   number: number;
   title: string;
@@ -11,9 +18,6 @@ export interface PullRequestSummary {
   baseRef: string;
   headRef: string;
   updatedAt: string;
-  additions: number;
-  deletions: number;
-  changedFiles: number;
 }
 
 export interface PullRequestDetail extends PullRequestSummary {
@@ -21,6 +25,10 @@ export interface PullRequestDetail extends PullRequestSummary {
   /** Raw unified diff, as served by GitHub. */
   diff: string;
   viewerIsAuthor: boolean;
+  /** Real figures: these come back from `pulls.get`, unlike on the list. */
+  additions: number;
+  deletions: number;
+  changedFiles: number;
 }
 
 export interface ReviewThreadComment {

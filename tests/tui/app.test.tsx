@@ -15,7 +15,7 @@ function summary(number: number, title: string, over: Partial<PullRequestSummary
   return {
     number, title, author: 'srtfisher', state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'feat/x',
-    updatedAt: '2026-08-01T00:00:00Z', additions: 10, deletions: 2, changedFiles: 3,
+    updatedAt: '2026-08-01T00:00:00Z',
     ...over,
   };
 }
@@ -23,6 +23,7 @@ function summary(number: number, title: string, over: Partial<PullRequestSummary
 const detail: PullRequestDetail = {
   ...summary(42, 'Fix rendering'),
   body: 'Body text.', diff: '', viewerIsAuthor: false,
+  additions: 10, deletions: 2, changedFiles: 3,
 };
 
 const meatFile: MeatFile = {

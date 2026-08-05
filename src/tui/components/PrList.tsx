@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import type { PullFilter, PullRequestSummary } from '../../core/github/types.js';
+import { relativeTime } from '../../core/render/time.js';
 import { Viewport } from './Viewport.js';
 import { theme } from '../theme.js';
 import { filterPrs } from '../search.js';
@@ -76,14 +77,15 @@ export function PrList({
 
   const items = visible.map((pr, i) => {
     const selected = i === cursor;
-    const files = pr.changedFiles === 1 ? 'file' : 'files';
     return (
       <Box key={pr.number} flexDirection="column">
         <Text bold inverse={selected} wrap="truncate">
           {`#${pr.number} ${pr.isDraft ? '[draft] ' : ''}${pr.title}`}
         </Text>
+        {/* `pulls.list` sends no file count, so there is none to show. When it
+            was last touched is what actually helps pick the next review. */}
         <Text {...theme.tier.muted} wrap="truncate">
-          {`  ${pr.author} · ${pr.changedFiles} ${files}`}
+          {`  ${pr.author} · ${relativeTime(pr.updatedAt)}`}
         </Text>
       </Box>
     );

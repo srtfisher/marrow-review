@@ -7,7 +7,7 @@ function pr(number: number, title: string, over: Partial<PullRequestSummary> = {
   return {
     number, title, author: 'srtfisher', state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'feat/x',
-    updatedAt: '2026-08-01T00:00:00Z', additions: 10, deletions: 2, changedFiles: 3,
+    updatedAt: '2026-08-01T00:00:00Z',
     ...over,
   };
 }
@@ -31,6 +31,19 @@ describe('PrList', () => {
     expect(out).toContain('#42');
     expect(out).toContain('Fix rendering');
     expect(out).toContain('srtfisher');
+  });
+
+  // The bug this replaced: `pulls.list` sends no file count, so every row read
+  // `srtfisher · 0 files`. Nothing in the list may claim a size.
+  test('shows when a pull request was last touched, never a file count', () => {
+    const out = renderToString(
+      <PrList prs={[pr(42, 'Fix rendering', { updatedAt: new Date().toISOString() })]}
+        cursor={0} scrollTop={0} height={10} filter="open" width={40}
+        query="" searching={false} />,
+    );
+    expect(out).toContain('just now');
+    expect(out).not.toContain('files');
+    expect(out).not.toContain('0 file');
   });
 
   test('shows the active filter and the count', () => {
