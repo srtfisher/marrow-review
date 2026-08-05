@@ -91,7 +91,7 @@ export function evaluateFile(file: DiffFile, ctx: RuleContext): RuleVerdict | nu
 }
 
 const IMPORT_RE =
-  /^\s*(?:import\b|export\s+(?:\*|\{)[^;]*\bfrom\b|from\s+\S+\s+import\b|use\s+[\w\\:{}, ]+;|require\s*\(|#include\b)/;
+  /^(?:use\s+[\w\\:{}, ]+;|\s*(?:import\b|export\s+(?:\*|\{)[^;]*\bfrom\b|from\s+\S+\s+import\b|require\s*\(|#include\b))/;
 
 const LICENSE_RE = /copyright|licensed under|spdx-license-identifier|all rights reserved/i;
 
@@ -110,11 +110,9 @@ export function evaluateHunk(hunk: Hunk): RuleVerdict | null {
   const adds = lines.filter((l) => l.kind === 'add').map((l) => normalize(l.text));
   const dels = lines.filter((l) => l.kind === 'del').map((l) => normalize(l.text));
 
-  // Whitespace-only: the multiset of normalized added and deleted lines matches.
+  // Whitespace-only: normalized added and deleted lines match positionally.
   if (adds.length === dels.length && adds.length > 0) {
-    const sortedAdds = [...adds].sort();
-    const sortedDels = [...dels].sort();
-    if (sortedAdds.every((a, i) => a === sortedDels[i])) {
+    if (adds.every((a, i) => a === dels[i])) {
       return { drop: true, rule: 'whitespace-only' };
     }
   }

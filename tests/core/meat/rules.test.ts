@@ -97,6 +97,16 @@ describe('evaluateHunk', () => {
     expect(evaluateHunk(h)?.rule).toBe('whitespace-only');
   });
 
+  test('keeps reordered statements', () => {
+    const h = hunk([
+      line('del', 'doA();'),
+      line('del', 'doB();'),
+      line('add', 'doB();'),
+      line('add', 'doA();'),
+    ]);
+    expect(evaluateHunk(h)).toBeNull();
+  });
+
   test('drops import-only hunks', () => {
     const h = hunk([
       line('add', "import { z } from 'zod';"),
@@ -108,6 +118,11 @@ describe('evaluateHunk', () => {
   test('drops use-statement-only hunks in PHP and Rust', () => {
     expect(evaluateHunk(hunk([line('add', 'use App\\Models\\Post;')]))?.rule).toBe('imports-only');
     expect(evaluateHunk(hunk([line('add', 'use std::fmt;')]))?.rule).toBe('imports-only');
+  });
+
+  test('keeps indented PHP trait use statements', () => {
+    const h = hunk([line('add', '    use HasFactory;')]);
+    expect(evaluateHunk(h)).toBeNull();
   });
 
   test('keeps an import hunk that also changes code', () => {
