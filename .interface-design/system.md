@@ -64,6 +64,42 @@ Horizontal rules only at the two hard boundaries: below the header, above the st
 Squint test: you should perceive two panes and a status line, and nothing should jump —
 except the meat gauge and anything yellow.
 
+## Revision, after first real use
+
+The first run on a real repository showed the list reading as a wall of text: two-row
+entries stacked with no separation, flush to the left edge, and a full-width reverse-video
+block on the selected row. Corrections, all in the direction of more air:
+
+- **A blank row between list entries.** Three rows per entry, not two. The list is chosen
+  from deliberately; it is not a log.
+- **One column of left padding** on every pane. Text flush against the terminal edge reads
+  as unfinished.
+- **Selection is a marker plus brightness, not a reverse-video block.** A full-width
+  inverse bar is the heaviest thing on screen and fights everything around it. Use the
+  cyan `▸` in the left margin — the same marker the detail pane already uses — plus a
+  bold title.
+- **A blank row under the pane header** before the first entry.
+
+The density rule stands, but it was applied too literally: dense *within* a row, airy
+*between* groups. Two-row entries jammed together got the first half right and the second
+half wrong.
+
+## Loading and progress — a second exception to "no spinners"
+
+The no-spinner rule assumed nothing ever blocks. Opening a pull request does: fetching
+metadata, creating a worktree, and abridging the diff take seconds to minutes, and the
+findings pass can take much longer. A frozen `Loading #547…` is indistinguishable from a
+hang, and a reviewer who thinks the tool is stuck will kill it.
+
+So opening a pull request shows **staged progress with elapsed time** — each step named,
+completed steps marked, the current step marked as running, and a seconds counter that
+visibly advances. The counter is the part that proves it is alive; a static list of steps
+does not.
+
+This joins chat as the second place progress may be shown. The rule is unchanged in
+substance: **show progress only when the user is genuinely blocked on something**, never
+as decoration.
+
 ## Density and proportion
 
 - **Sidebar 32 columns**, content flexes. 32 says *navigation serves content* — the diff
