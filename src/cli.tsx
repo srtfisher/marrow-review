@@ -29,6 +29,7 @@ import {
   failStep, finishStep, loadSteps, startStep, withModelSteps, STEP,
   type LoadProgress, type ProgressStep,
 } from './tui/progress.js';
+import { enterAlternateScreen, restoreOnExit } from './tui/screen.js';
 
 /**
  * A worktree is a full checkout, and one is created per reviewed head. Nothing
@@ -246,8 +247,14 @@ async function runTui(session: Session): Promise<number> {
   }
 
   // The alternate screen is what makes `q` leave the terminal exactly as it was
-  // found, the way vim and less do.
-  const instance = render(view(), { alternateScreen: true });
+  // found, the way vim and less do. Owned here rather than by Ink's own
+  // `alternateScreen` option: this one also clears the buffer on the way in,
+  // which is what actually stops the previous scrollback showing through, and
+  // it restores the terminal on a crash or a signal, not only a clean unmount.
+  const screen = enterAlternateScreen();
+  restoreOnExit(screen);
+
+  const instance = render(view());
 
   function draw(): void {
     instance.rerender(view());
@@ -422,7 +429,13 @@ async function runTui(session: Session): Promise<number> {
 
   if (args.prNumber !== null) void openPr(args.prNumber);
 
-  await instance.waitUntilExit();
+  try {
+    await instance.waitUntilExit();
+  } finally {
+    // Before the farewell, so it lands on the terminal the reviewer keeps
+    // rather than on a buffer that is about to be thrown away.
+    screen.leave();
+  }
   if (farewell) process.stdout.write(`${farewell}\n`);
   return 0;
 }
