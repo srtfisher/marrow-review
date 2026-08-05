@@ -15,15 +15,14 @@ export interface VerdictCache {
 }
 
 /**
- * Content-addressed key for a hunk. Includes the file path and hunk position so
- * an identical snippet in two places is judged in its own context, but excludes
- * anything that changes without the content changing.
+ * Content-addressed key for a hunk: the file path plus the kind and text of
+ * every line. Line numbers are deliberately excluded — an edit earlier in the
+ * file shifts every hunk below it without changing what any of them say, and
+ * keying on position would re-judge all of them on every push.
  */
 export function hunkKey(filePath: string, hunk: Hunk): string {
   const body = hunk.lines.map((l) => `${l.kind}:${l.text}`).join('\n');
-  return createHash('sha256')
-    .update(`${filePath}\n${hunk.oldStart}\n${hunk.newStart}\n${body}`)
-    .digest('hex');
+  return createHash('sha256').update(`${filePath}\n${body}`).digest('hex');
 }
 
 export class MemoryVerdictCache implements VerdictCache {

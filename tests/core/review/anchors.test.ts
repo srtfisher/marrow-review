@@ -79,6 +79,13 @@ test('rejects a range whose start is after its end', () => {
   expect(problems[0]!.reason).toMatch(/startLine/);
 });
 
+test('accepts a one-line range rather than demoting it', () => {
+  // buildReviewPayload normalizes startLine === line into a single-line
+  // comment; treating it as a problem here would exile a valid comment to the
+  // review body.
+  expect(findAnchorProblems(draft([comment({ line: 12, startLine: 12 })]), files)).toEqual([]);
+});
+
 test('demotes unanchorable comments into the review body', () => {
   const good = comment({ id: 'ok', line: 12 });
   const bad = comment({ id: 'bad', line: 500, body: 'Wider concern about boot().' });

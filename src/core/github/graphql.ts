@@ -56,12 +56,49 @@ function lower(value: unknown): string | null {
   return typeof value === 'string' ? value.toLowerCase() : null;
 }
 
+/**
+ * GraphQL `CheckConclusionState` mapped onto our union. STARTUP_FAILURE and the
+ * legacy StatusContext ERROR state both collapse to `failure`: they are not
+ * members of the union, and a check that a caller cannot recognize as failing is
+ * a check whose failure is hidden. STALE means superseded, not failed.
+ */
+const CONCLUSIONS: Record<string, CheckConclusion> = {
+  success: 'success',
+  failure: 'failure',
+  error: 'failure',
+  startup_failure: 'failure',
+  timed_out: 'timed_out',
+  cancelled: 'cancelled',
+  action_required: 'action_required',
+  neutral: 'neutral',
+  skipped: 'skipped',
+  stale: 'neutral',
+  // Legacy commit statuses that have not concluded yet.
+  pending: null,
+  expected: null,
+};
+
+function toConclusion(value: unknown): CheckConclusion {
+  const raw = lower(value);
+  if (raw === null) return null;
+  const mapped = CONCLUSIONS[raw];
+  // An unrecognized conclusion is reported as a failure rather than swallowed:
+  // over-reporting costs a glance, under-reporting hides a broken build.
+  return mapped === undefined ? 'failure' : mapped;
+}
+
+/** A legacy commit status has no status field; its state implies one. */
+function statusFromState(value: unknown): string {
+  const raw = lower(value);
+  return raw === 'pending' || raw === 'expected' ? raw : 'completed';
+}
+
 function toCheck(node: Record<string, unknown>): CheckRun | null {
   if (node['__typename'] === 'CheckRun') {
     return {
       name: String(node['name'] ?? 'check'),
       status: lower(node['status']) ?? 'unknown',
-      conclusion: lower(node['conclusion']) as CheckConclusion,
+      conclusion: toConclusion(node['conclusion']),
       detailsUrl: (node['detailsUrl'] as string | null) ?? null,
       output: (node['summary'] as string | null) ?? null,
     };
@@ -69,8 +106,8 @@ function toCheck(node: Record<string, unknown>): CheckRun | null {
   if (node['__typename'] === 'StatusContext') {
     return {
       name: String(node['context'] ?? 'status'),
-      status: 'completed',
-      conclusion: lower(node['state']) as CheckConclusion,
+      status: statusFromState(node['state']),
+      conclusion: toConclusion(node['state']),
       detailsUrl: (node['targetUrl'] as string | null) ?? null,
       output: null,
     };

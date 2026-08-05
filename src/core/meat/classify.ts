@@ -9,9 +9,19 @@ export interface ClassifyItem {
   hunk: Hunk;
 }
 
+export interface ClassifiedVerdict extends CachedVerdict {
+  /**
+   * True when no model verdict was received for this hunk — it was kept by
+   * fallback, not judged. Callers must not persist a synthetic verdict: the
+   * cache has no expiry, so one degraded run would disable abridgement for
+   * these hunks forever.
+   */
+  synthetic?: boolean;
+}
+
 export interface ClassifyResult {
   summary: string;
-  verdicts: Map<string, CachedVerdict>;
+  verdicts: Map<string, ClassifiedVerdict>;
 }
 
 export const CLASSIFY_SCHEMA: Record<string, unknown> = {
@@ -99,12 +109,15 @@ export async function classifyHunks(
   items: ClassifyItem[],
   maxChars = 40_000,
 ): Promise<ClassifyResult> {
-  const verdicts = new Map<string, CachedVerdict>();
+  const verdicts = new Map<string, ClassifiedVerdict>();
   if (items.length === 0) return { summary: '', verdicts };
 
   const chunks = chunkHunks(items, maxChars);
 
-  const runs = await Promise.all(
+  // allSettled, not all: one chunk whose run rejects must not discard the
+  // verdicts its siblings returned. The agent pass is additive — a model
+  // failure degrades the abridgement, it does not fail the review.
+  const runs = await Promise.allSettled(
     chunks.map((chunk) =>
       transport.run({
         model,
@@ -122,11 +135,18 @@ export async function classifyHunks(
   );
 
   let summary = '';
-  for (const run of runs) {
-    const structured = run.structured as
+  const failedChunks = new Set<number>();
+
+  runs.forEach((result, i) => {
+    if (result.status === 'rejected') {
+      failedChunks.add(i);
+      return;
+    }
+
+    const structured = result.value.structured as
       | { summary?: string; verdicts?: RawVerdict[] }
       | null;
-    if (!structured) continue;
+    if (!structured) return;
 
     if (summary.length === 0 && typeof structured.summary === 'string') {
       summary = structured.summary;
@@ -134,14 +154,20 @@ export async function classifyHunks(
     for (const v of structured.verdicts ?? []) {
       verdicts.set(v.id, { keep: v.keep, reason: v.reason });
     }
-  }
+  });
 
-  // Anything the model failed to classify is kept — never silently hidden.
-  for (const item of items) {
-    if (!verdicts.has(item.id)) {
-      verdicts.set(item.id, { keep: true, reason: 'not classified; kept by default' });
+  // Anything the model failed to classify is kept — never silently hidden — but
+  // marked synthetic so it is not cached as if it were a judgment.
+  chunks.forEach((chunk, i) => {
+    const reason = failedChunks.has(i)
+      ? 'classification failed'
+      : 'not classified; kept by default';
+    for (const item of chunk) {
+      if (!verdicts.has(item.id)) {
+        verdicts.set(item.id, { keep: true, reason, synthetic: true });
+      }
     }
-  }
+  });
 
   return { summary, verdicts };
 }

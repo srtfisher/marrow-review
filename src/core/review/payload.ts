@@ -23,15 +23,30 @@ export function renderCommentBody(comment: StagedComment): string {
 }
 
 /**
- * Builds the createReview payload, validating anchors first.
+ * Builds the createReview payload, applying every rule GitHub applies.
  *
- * GitHub rejects a review atomically — one bad anchor discards every comment in
- * it — so this throws locally rather than letting the API 422 after the user has
- * already committed to submitting.
+ * GitHub rejects a review atomically — one bad anchor or one empty body discards
+ * every comment in it — so this throws locally rather than letting the API 422
+ * after the user has already committed to submitting.
  */
 export function buildReviewPayload(draft: ReviewDraft, files: DiffFile[]): ReviewPayload {
   if (draft.verdict === null) {
     throw new Error('Cannot build a review payload without a verdict.');
+  }
+
+  // GitHub requires a review body for anything other than an approval.
+  if (draft.verdict !== 'APPROVE' && draft.body.trim().length === 0) {
+    throw new Error(
+      `Cannot submit: a ${draft.verdict} review needs a body. GitHub only accepts an empty body on APPROVE.`,
+    );
+  }
+
+  for (const c of draft.comments) {
+    if (renderCommentBody(c).trim().length === 0) {
+      throw new Error(
+        `Cannot submit: the comment on ${c.path}:${c.line} is empty. GitHub rejects a comment with no body.`,
+      );
+    }
   }
 
   const problems = findAnchorProblems(draft, files);
@@ -48,7 +63,9 @@ export function buildReviewPayload(draft: ReviewDraft, files: DiffFile[]): Revie
       side: c.side,
       body: renderCommentBody(c),
     };
-    if (c.startLine !== null) {
+    // GitHub requires start_line < line. A one-line "range" is the same thing as
+    // a single-line comment, so send it as one rather than failing the review.
+    if (c.startLine !== null && c.startLine !== c.line) {
       base.start_line = c.startLine;
       base.start_side = c.side;
     }

@@ -60,7 +60,7 @@ test('builds a single-line comment payload', () => {
 test('includes start_line and start_side for a range comment', () => {
   const draft: ReviewDraft = {
     verdict: 'REQUEST_CHANGES',
-    body: '',
+    body: 'Please fix.',
     comments: [comment({ line: 13, startLine: 12 })],
   };
   const payload = buildReviewPayload(draft, files);
@@ -76,13 +76,55 @@ test('includes start_line and start_side for a range comment', () => {
   });
 });
 
+test('normalizes a one-line range into a single-line comment', () => {
+  const draft: ReviewDraft = {
+    verdict: 'COMMENT',
+    body: 'Body.',
+    comments: [comment({ line: 12, startLine: 12 })],
+  };
+  const payload = buildReviewPayload(draft, files);
+
+  // GitHub requires start_line < line, so a degenerate range must not be sent.
+  expect(payload.comments[0]).toEqual({
+    path: 'src/app.ts',
+    line: 12,
+    side: 'RIGHT',
+    body: 'Handle this.',
+  });
+});
+
 test('throws rather than submitting an invalid anchor', () => {
   const draft: ReviewDraft = {
     verdict: 'COMMENT',
-    body: '',
+    body: 'Body.',
     comments: [comment({ line: 999 })],
   };
   expect(() => buildReviewPayload(draft, files)).toThrow(/not present in the diff/);
+});
+
+test('throws when REQUEST_CHANGES or COMMENT has an empty body', () => {
+  for (const verdict of ['REQUEST_CHANGES', 'COMMENT'] as const) {
+    const draft: ReviewDraft = { verdict, body: '   \n', comments: [comment()] };
+    expect(() => buildReviewPayload(draft, files)).toThrow(/needs a body/);
+  }
+});
+
+test('throws on a comment with an empty body', () => {
+  const draft: ReviewDraft = {
+    verdict: 'COMMENT',
+    body: 'Body.',
+    comments: [comment({ body: '  ' })],
+  };
+  expect(() => buildReviewPayload(draft, files)).toThrow(/src\/app\.ts:12 is empty/);
+});
+
+test('a comment carrying only a suggestion is not empty', () => {
+  const draft: ReviewDraft = {
+    verdict: 'COMMENT',
+    body: 'Body.',
+    comments: [comment({ body: '', suggestion: 'const s = start(c);' })],
+  };
+  expect(buildReviewPayload(draft, files).comments[0]!.body).toContain('```suggestion');
 });
 
 test('throws when no verdict has been chosen', () => {

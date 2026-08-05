@@ -32,6 +32,92 @@ test('surfaces a pending review id so the UI can warn', async () => {
   expect(ctx.viewerPendingReviewId).toBe('PRR_pending1');
 });
 
+function withContexts(nodes: unknown[]): unknown {
+  return {
+    repository: {
+      pullRequest: {
+        reviewThreads: { nodes: [] },
+        reviews: { nodes: [] },
+        commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes } } } }] },
+      },
+    },
+  };
+}
+
+test('an ERROR commit status is detectable as a failure', async () => {
+  const payload = withContexts([
+    {
+      __typename: 'StatusContext',
+      context: 'jenkins/pr-merge',
+      state: 'ERROR',
+      targetUrl: 'https://jenkins.example.com/9',
+    },
+  ]);
+  const ctx = await fetchPullContext(async () => payload, 'o', 'r', 42);
+
+  expect(ctx.checks[0]!.conclusion).toBe('failure');
+  expect(ctx.checks.filter((c) => c.conclusion === 'failure')).toHaveLength(1);
+});
+
+test('a STARTUP_FAILURE check run is detectable as a failure', async () => {
+  const payload = withContexts([
+    {
+      __typename: 'CheckRun',
+      name: 'build',
+      status: 'COMPLETED',
+      conclusion: 'STARTUP_FAILURE',
+      detailsUrl: null,
+      summary: null,
+    },
+  ]);
+  const ctx = await fetchPullContext(async () => payload, 'o', 'r', 42);
+
+  expect(ctx.checks[0]!.conclusion).toBe('failure');
+});
+
+test('a PENDING commit status is not reported as completed', async () => {
+  const payload = withContexts([
+    { __typename: 'StatusContext', context: 'ci/slow', state: 'PENDING', targetUrl: null },
+  ]);
+  const ctx = await fetchPullContext(async () => payload, 'o', 'r', 42);
+
+  expect(ctx.checks[0]!.status).toBe('pending');
+  expect(ctx.checks[0]!.conclusion).toBeNull();
+});
+
+test('a stale check run is not reported as failing', async () => {
+  const payload = withContexts([
+    {
+      __typename: 'CheckRun',
+      name: 'lint',
+      status: 'COMPLETED',
+      conclusion: 'STALE',
+      detailsUrl: null,
+      summary: null,
+    },
+  ]);
+  const ctx = await fetchPullContext(async () => payload, 'o', 'r', 42);
+
+  expect(ctx.checks[0]!.conclusion).toBe('neutral');
+});
+
+test('a running check run has no conclusion', async () => {
+  const payload = withContexts([
+    {
+      __typename: 'CheckRun',
+      name: 'e2e',
+      status: 'IN_PROGRESS',
+      conclusion: null,
+      detailsUrl: null,
+      summary: null,
+    },
+  ]);
+  const ctx = await fetchPullContext(async () => payload, 'o', 'r', 42);
+
+  expect(ctx.checks[0]!.status).toBe('in_progress');
+  expect(ctx.checks[0]!.conclusion).toBeNull();
+});
+
 test('returns empty context when the PR has no threads or checks', async () => {
   const empty = {
     repository: {

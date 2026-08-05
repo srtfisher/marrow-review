@@ -42,6 +42,10 @@ export function findAnchorProblems(
       continue;
     }
 
+    // GitHub also requires start_line < line, but a comment with
+    // startLine === line is a well-formed single-line comment written the long
+    // way. buildReviewPayload normalizes it rather than rejecting it, so it must
+    // not be a problem here — a problem gets the comment demoted into the body.
     if (comment.startLine !== null && comment.startLine > comment.line) {
       problems.push(problem(comment, 'startLine must not be greater than line'));
       continue;

@@ -60,6 +60,12 @@ describe('evaluateFile', () => {
   test('drops vendored and build output directories', () => {
     expect(evaluateFile(file('dist/bundle.js'), noCtx)?.rule).toBe('build-output');
     expect(evaluateFile(file('vendor/pkg/x.go'), noCtx)?.rule).toBe('build-output');
+    expect(evaluateFile(file('packages/ui/dist/index.js'), noCtx)?.rule).toBe('build-output');
+  });
+
+  test('keeps a file whose own name matches a build directory', () => {
+    expect(evaluateFile(file('scripts/build'), noCtx)).toBeNull();
+    expect(evaluateFile(file('src/out'), noCtx)).toBeNull();
   });
 
   test('drops snapshots and minified files', () => {
@@ -94,7 +100,34 @@ describe('evaluateFile', () => {
 describe('evaluateHunk', () => {
   test('drops whitespace-only changes', () => {
     const h = hunk([line('del', 'const a = 1;'), line('add', 'const a = 1;  ')]);
-    expect(evaluateHunk(h)?.rule).toBe('whitespace-only');
+    expect(evaluateHunk(h, 'src/a.ts')?.rule).toBe('whitespace-only');
+  });
+
+  test('drops re-indentation where indentation is not syntax', () => {
+    const h = hunk([line('del', '  const a = 1;'), line('add', '      const a = 1;')]);
+    expect(evaluateHunk(h, 'src/a.ts')?.rule).toBe('whitespace-only');
+  });
+
+  test('keeps a re-parented YAML key', () => {
+    const h = hunk([line('del', '  timeout: 30'), line('add', '      timeout: 30')]);
+    expect(evaluateHunk(h, '.github/workflows/ci.yml')).toBeNull();
+    expect(evaluateHunk(h, 'deploy/values.yaml')).toBeNull();
+  });
+
+  test('keeps a dedented Python statement', () => {
+    const h = hunk([line('del', '        commit()'), line('add', '    commit()')]);
+    expect(evaluateHunk(h, 'app/db.py')).toBeNull();
+  });
+
+  test('keeps a Makefile recipe that lost its leading tab', () => {
+    const h = hunk([line('del', '\tgo build ./...'), line('add', '    go build ./...')]);
+    expect(evaluateHunk(h, 'Makefile')).toBeNull();
+    expect(evaluateHunk(h, 'build/rules.mk')).toBeNull();
+  });
+
+  test('still drops trailing-whitespace edits in indentation-sensitive files', () => {
+    const h = hunk([line('del', '    commit()  '), line('add', '    commit()')]);
+    expect(evaluateHunk(h, 'app/db.py')?.rule).toBe('whitespace-only');
   });
 
   test('keeps reordered statements', () => {
@@ -104,7 +137,7 @@ describe('evaluateHunk', () => {
       line('add', 'doB();'),
       line('add', 'doA();'),
     ]);
-    expect(evaluateHunk(h)).toBeNull();
+    expect(evaluateHunk(h, 'src/a.ts')).toBeNull();
   });
 
   test('drops import-only hunks', () => {
@@ -112,22 +145,36 @@ describe('evaluateHunk', () => {
       line('add', "import { z } from 'zod';"),
       line('del', "import { y } from 'yup';"),
     ]);
-    expect(evaluateHunk(h)?.rule).toBe('imports-only');
+    expect(evaluateHunk(h, 'src/a.ts')?.rule).toBe('imports-only');
   });
 
   test('drops use-statement-only hunks in PHP and Rust', () => {
-    expect(evaluateHunk(hunk([line('add', 'use App\\Models\\Post;')]))?.rule).toBe('imports-only');
-    expect(evaluateHunk(hunk([line('add', 'use std::fmt;')]))?.rule).toBe('imports-only');
+    expect(evaluateHunk(hunk([line('add', 'use App\\Models\\Post;')]), 'src/a.php')?.rule).toBe(
+      'imports-only',
+    );
+    expect(evaluateHunk(hunk([line('add', 'use std::fmt;')]), 'src/a.rs')?.rule).toBe(
+      'imports-only',
+    );
   });
 
   test('keeps indented PHP trait use statements', () => {
     const h = hunk([line('add', '    use HasFactory;')]);
-    expect(evaluateHunk(h)).toBeNull();
+    expect(evaluateHunk(h, 'src/Post.php')).toBeNull();
+  });
+
+  test('keeps a re-export, which changes the public surface', () => {
+    const h = hunk([line('add', "export { x } from './y.js';")]);
+    expect(evaluateHunk(h, 'src/index.ts')).toBeNull();
+  });
+
+  test('labels a blank-line-only hunk as such, not as imports', () => {
+    const h = hunk([line('add', ''), line('add', '   ')]);
+    expect(evaluateHunk(h, 'src/a.ts')?.rule).toBe('blank-lines');
   });
 
   test('keeps an import hunk that also changes code', () => {
     const h = hunk([line('add', "import { z } from 'zod';"), line('add', 'const x = z.string();')]);
-    expect(evaluateHunk(h)).toBeNull();
+    expect(evaluateHunk(h, 'src/a.ts')).toBeNull();
   });
 
   test('drops license header changes', () => {
@@ -135,15 +182,26 @@ describe('evaluateHunk', () => {
       line('del', ' * Copyright (c) 2025 Alley'),
       line('add', ' * Copyright (c) 2026 Alley'),
     ]);
-    expect(evaluateHunk(h)?.rule).toBe('license-header');
+    expect(evaluateHunk(h, 'src/a.ts')?.rule).toBe('license-header');
+    expect(evaluateHunk(hunk([line('add', '# Copyright 2026 Alley')]), 'app/db.py')?.rule).toBe(
+      'license-header',
+    );
+  });
+
+  test('keeps code that merely mentions copyright', () => {
+    const h = hunk([
+      line('del', "$c = get_option('copyright');"),
+      line('add', "$c = $_GET['copyright'];"),
+    ]);
+    expect(evaluateHunk(h, 'src/theme.php')).toBeNull();
   });
 
   test('keeps a hunk with no changed lines out of scope', () => {
-    expect(evaluateHunk(hunk([line('context', 'unchanged')]))).toBeNull();
+    expect(evaluateHunk(hunk([line('context', 'unchanged')]), 'src/a.ts')).toBeNull();
   });
 
   test('keeps a substantive change', () => {
     const h = hunk([line('del', 'return a + b;'), line('add', 'return a - b;')]);
-    expect(evaluateHunk(h)).toBeNull();
+    expect(evaluateHunk(h, 'src/a.ts')).toBeNull();
   });
 });

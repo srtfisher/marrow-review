@@ -1,7 +1,31 @@
 import { test, expect } from 'bun:test';
 import { chunkHunks, classifyHunks, CLASSIFY_SCHEMA } from '../../../src/core/meat/classify.js';
 import { FakeTransport } from '../../../src/core/agent/fake.js';
+import type { AgentRequest, AgentRun, AgentTransport } from '../../../src/core/agent/types.js';
 import type { Hunk } from '../../../src/core/diff/types.js';
+
+/** Fails the first `failures` runs, then delegates to a FakeTransport queue. */
+class FlakyTransport implements AgentTransport {
+  readonly requests: AgentRequest[] = [];
+  private calls = 0;
+
+  constructor(
+    private readonly failures: number,
+    private readonly inner = new FakeTransport(),
+  ) {}
+
+  queue(run: Partial<AgentRun>): void {
+    this.inner.queue(run);
+  }
+
+  async run(req: AgentRequest): Promise<AgentRun> {
+    this.requests.push(req);
+    if (this.calls++ < this.failures) {
+      throw new Error('SDK subprocess exited');
+    }
+    return this.inner.run(req);
+  }
+}
 
 function hunk(text: string): Hunk {
   return {
@@ -70,7 +94,7 @@ test('merges verdicts across chunks and keeps the first summary', async () => {
   expect(transport.requests[0]!.schema).toBe(CLASSIFY_SCHEMA);
 });
 
-test('a hunk the model omits defaults to kept', async () => {
+test('a hunk the model omits defaults to kept, marked synthetic', async () => {
   const transport = new FakeTransport();
   transport.queue({ structured: { summary: 's', verdicts: [] } });
 
@@ -79,5 +103,39 @@ test('a hunk the model omits defaults to kept', async () => {
   expect(result.verdicts.get('h1')).toEqual({
     keep: true,
     reason: 'not classified; kept by default',
+    synthetic: true,
+  });
+});
+
+test('a failing transport keeps its hunks instead of rejecting', async () => {
+  const transport = new FlakyTransport(1);
+
+  const result = await classifyHunks(transport, 'sonnet', 'T', 'B', items, 100_000);
+
+  for (const id of ['h1', 'h2']) {
+    expect(result.verdicts.get(id)).toEqual({
+      keep: true,
+      reason: 'classification failed',
+      synthetic: true,
+    });
+  }
+});
+
+test('verdicts from a chunk that succeeded survive a sibling chunk failing', async () => {
+  // maxChars 60 puts each hunk in its own chunk; the first run throws.
+  const transport = new FlakyTransport(1);
+  transport.queue({
+    structured: { summary: 'Adds a constant.', verdicts: [{ id: 'h2', keep: false, reason: 'trivial' }] },
+  });
+
+  const result = await classifyHunks(transport, 'sonnet', 'T', 'B', items, 60);
+
+  expect(transport.requests).toHaveLength(2);
+  expect(result.summary).toBe('Adds a constant.');
+  expect(result.verdicts.get('h2')).toEqual({ keep: false, reason: 'trivial' });
+  expect(result.verdicts.get('h1')).toEqual({
+    keep: true,
+    reason: 'classification failed',
+    synthetic: true,
   });
 });

@@ -25,12 +25,23 @@ test('hunkKey is stable for identical content', () => {
   expect(hunkKey('a.ts', hunk('x'))).toBe(hunkKey('a.ts', hunk('x')));
 });
 
-test('hunkKey changes with content, path, or position', () => {
+test('hunkKey changes with content or path', () => {
   expect(hunkKey('a.ts', hunk('x'))).not.toBe(hunkKey('a.ts', hunk('y')));
   expect(hunkKey('a.ts', hunk('x'))).not.toBe(hunkKey('b.ts', hunk('x')));
+});
 
-  const moved = { ...hunk('x'), newStart: 99 };
-  expect(hunkKey('a.ts', hunk('x'))).not.toBe(hunkKey('a.ts', moved));
+test('hunkKey ignores position, so an edit above a hunk does not re-judge it', () => {
+  const moved = { ...hunk('x'), oldStart: 90, newStart: 90 };
+  expect(hunkKey('a.ts', hunk('x'))).toBe(hunkKey('a.ts', moved));
+});
+
+test('hunkKey distinguishes added from deleted text', () => {
+  const added = hunk('x');
+  const deleted: Hunk = {
+    ...added,
+    lines: [{ kind: 'del', text: 'x', oldLine: 1, newLine: null, noNewlineAtEof: false }],
+  };
+  expect(hunkKey('a.ts', added)).not.toBe(hunkKey('a.ts', deleted));
 });
 
 test('MemoryVerdictCache round-trips', async () => {

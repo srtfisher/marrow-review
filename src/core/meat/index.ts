@@ -1,7 +1,7 @@
 import type { AgentTransport } from '../agent/types.js';
 import type { DiffFile, Hunk } from '../diff/types.js';
 import { hunkKey, type CachedVerdict, type VerdictCache } from './cache.js';
-import { classifyHunks, type ClassifyItem } from './classify.js';
+import { classifyHunks, type ClassifyItem, type ClassifyResult } from './classify.js';
 import { evaluateFile, evaluateHunk, type RuleContext, type RuleVerdict } from './rules.js';
 
 export interface MeatHunk {
@@ -64,7 +64,7 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
 
     const hunks: MeatHunk[] = [];
     for (const hunk of file.hunks) {
-      const hunkVerdict = evaluateHunk(hunk);
+      const hunkVerdict = evaluateHunk(hunk, file.path);
       if (hunkVerdict) {
         hunks.push({ hunk, keep: false, reason: hunkVerdict.rule, source: 'rule' });
         continue;
@@ -93,13 +93,28 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
 
   let summary = '';
   if (toClassify.length > 0) {
-    const classified = await classifyHunks(
-      opts.transport,
-      opts.model,
-      opts.prTitle,
-      opts.prBody,
-      toClassify,
-    );
+    // A model failure never makes the app unusable: the classification pass is
+    // additive, so anything it could not judge stays kept.
+    let classified: ClassifyResult;
+    try {
+      classified = await classifyHunks(
+        opts.transport,
+        opts.model,
+        opts.prTitle,
+        opts.prBody,
+        toClassify,
+      );
+    } catch {
+      classified = {
+        summary: '',
+        verdicts: new Map(
+          toClassify.map((item) => [
+            item.id,
+            { keep: true, reason: 'classification failed', synthetic: true },
+          ]),
+        ),
+      };
+    }
     summary = classified.summary;
 
     for (const [key, verdict] of classified.verdicts) {
@@ -107,7 +122,12 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
       if (!entry) continue;
       entry.keep = verdict.keep;
       entry.reason = verdict.reason;
-      await opts.cache.set(key, verdict satisfies CachedVerdict);
+      // Synthetic verdicts are fallbacks, not judgments. The cache is permanent
+      // and has no expiry, so persisting one would disable abridgement for this
+      // hunk forever on the strength of a single degraded run.
+      if (verdict.synthetic === true) continue;
+      const stored: CachedVerdict = { keep: verdict.keep, reason: verdict.reason };
+      await opts.cache.set(key, stored);
     }
   }
 
