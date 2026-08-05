@@ -38,7 +38,9 @@ export function PrList({
         {filterLabel(filter)} · {visible.length}
         {narrowed ? ` of ${prs.length}` : ''}
       </Text>
-      {searching && <Text {...theme.tier.primary}>/{query}</Text>}
+      {/* The query is navigation state, so it takes the structure token — not
+          bold, which is reserved for the one focal element per view. */}
+      {searching && <Text color={theme.color.structure}>/{query}</Text>}
     </Box>
   );
 

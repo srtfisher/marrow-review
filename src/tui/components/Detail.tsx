@@ -114,10 +114,12 @@ export function Detail({
         <Text color={theme.color.add}>{meatGauge(meat.keptLines, meat.totalLines)}</Text>
         {/* "kept" is not redundant next to the gauge: a bare 1/2 could read as
             kept or as dropped, and the gauge does not disambiguate direction. */}
+        {/* Not bold: the PR title is this pane's single focal element, and the
+            gauge already carries the emphasis. Three bold things is none. */}
         <Text {...theme.tier.muted}>{'  kept '}</Text>
-        <Text {...theme.tier.primary}>{meat.keptLines}</Text>
+        {meat.keptLines}
         <Text {...theme.tier.muted}>{`/${meat.totalLines} lines · `}</Text>
-        <Text {...theme.tier.primary}>{meat.keptFiles}</Text>
+        {meat.keptFiles}
         <Text {...theme.tier.muted}>{`/${meat.totalFiles} files`}</Text>
       </Text>
       <Viewport
