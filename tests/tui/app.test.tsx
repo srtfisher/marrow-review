@@ -191,11 +191,24 @@ describe('hunkUrl', () => {
 });
 
 describe('App', () => {
-  test('renders the list pane and a prompt when no pull request is open', () => {
+  // The right pane used to be one dim line pinned to the top. It is the
+  // largest region on screen at the moment a new reviewer knows least.
+  test('renders the list pane and the welcome panel when no pull request is open', () => {
     const out = renderToString(<App {...base} />);
     expect(out).toContain('#42');
     expect(out).toContain('Fix rendering');
-    expect(out).toContain('Select a pull request');
+    expect(out).toContain('marrow');
+    expect(out).toContain('2 open');
+    expect(out).toContain('review');
+    expect(out).toContain('all keys');
+  });
+
+  // A status note is something the app has to say right now; the welcome
+  // panel is orientation. Two at once would say the same thing twice.
+  test('a status note takes the pane back from the welcome panel', () => {
+    const out = renderToString(<App {...base} status="Fetching pull requests…" />);
+    expect(out).toContain('Fetching pull requests…');
+    expect(out).not.toContain('all keys');
   });
 
   test('renders the empty state rather than a blank pane', () => {

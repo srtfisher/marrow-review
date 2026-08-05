@@ -32,6 +32,7 @@ import { LoadingSteps } from './components/LoadingSteps.js';
 import { PrList, visibleEntryCount } from './components/PrList.js';
 import { StatusBar } from './components/StatusBar.js';
 import { SubmitScreen } from './components/SubmitScreen.js';
+import { Welcome } from './components/Welcome.js';
 import { theme } from './theme.js';
 
 export interface AppProps {
@@ -290,6 +291,9 @@ export function App(props: AppProps) {
 
   // One row for the horizontal rule, one for the status line.
   const bodyHeight = Math.max(1, rows - 2);
+  // What the right pane actually gets: the terminal less the sidebar, the one
+  // vertical rule, and the pane's own paddingX on either side of it.
+  const detailWidth = Math.max(1, columns - theme.layout.sidebarWidth - 3);
   const listRows = visibleEntryCount(bodyHeight, mode === 'search');
   // Notes render under the detail pane, so the pane's budget pays for them —
   // otherwise adding one pushes the status bar off the bottom again. Scrolling
@@ -814,12 +818,20 @@ export function App(props: AppProps) {
             </>
           ) : props.progress ? (
             <LoadingSteps progress={props.progress} />
-          ) : (
+          ) : props.status ? (
             // One note, not two: with a pull request selected but no meat yet,
             // this branch and a second line below it both said the same thing.
-            <Text {...toneStyle(props.statusTone ?? 'muted')}>
-              {props.status ?? 'Select a pull request and press enter.'}
-            </Text>
+            <Text {...toneStyle(props.statusTone ?? 'muted')}>{props.status}</Text>
+          ) : (
+            // Nothing open and nothing to say: the pane's job is orientation,
+            // not a one-line apology pinned to the top of an empty region.
+            <Welcome
+              repoLabel={props.repoLabel}
+              count={visiblePrs.length}
+              filter={props.filter}
+              height={bodyHeight}
+              width={detailWidth}
+            />
           )}
         </Box>
       </Box>
