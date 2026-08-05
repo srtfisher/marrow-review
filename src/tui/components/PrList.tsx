@@ -26,6 +26,16 @@ export interface PrListProps {
 /** Every list entry is two terminal rows: title, then a dimmed metadata row. */
 const ROWS_PER_ENTRY = 2;
 
+/**
+ * How many entries fit in a pane `height` rows tall. Exported because the app
+ * scrolls this pane and must use the same number the pane renders with —
+ * otherwise the cursor leaves the window before the view follows it.
+ */
+export function visibleEntryCount(height: number, searching: boolean): number {
+  const headerLines = searching ? 2 : 1;
+  return Math.floor(Math.max(0, height - headerLines) / ROWS_PER_ENTRY);
+}
+
 export function PrList({
   prs, cursor, scrollTop, height, filter, width, query, searching,
 }: PrListProps) {
@@ -62,9 +72,7 @@ export function PrList({
     );
   }
 
-  const headerLines = searching ? 2 : 1;
-  const entryRows = Math.max(0, height - headerLines);
-  const visibleEntries = Math.floor(entryRows / ROWS_PER_ENTRY);
+  const visibleEntries = visibleEntryCount(height, searching);
 
   const items = visible.map((pr, i) => {
     const selected = i === cursor;

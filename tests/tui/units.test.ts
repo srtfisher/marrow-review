@@ -1,17 +1,35 @@
 import { test, expect, describe } from 'bun:test';
 import { buildUnits, nextFileIndex, prevFileIndex } from '../../src/tui/units.js';
+import { initTriage } from '../../src/core/findings/triage.js';
+import type { TriagedFinding } from '../../src/core/findings/triage.js';
+import type { VerifiedFinding } from '../../src/core/findings/verify.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
 import type { DiffFile, Hunk } from '../../src/core/diff/types.js';
 
+function finding(id: string, path: string, line: number, title: string): TriagedFinding {
+  const [f] = initTriage([{
+    id, path, line, side: 'RIGHT', startLine: null,
+    severity: 'important', title, body: 'body', confidence: 'high',
+    suggestion: null, verdict: 'confirmed', refutations: [],
+  } satisfies VerifiedFinding]);
+  return f!;
+}
+
 function hunk(text: string): Hunk {
+  return hunkAt(text, 1);
+}
+
+/** Like `hunk`, but at a chosen post-image line, so tests can control
+ *  whether a finding's anchor falls inside or outside its range. */
+function hunkAt(text: string, newLine: number): Hunk {
   return {
     header: `@@ ${text} @@`,
     section: '',
-    oldStart: 1,
+    oldStart: newLine,
     oldLines: 1,
-    newStart: 1,
+    newStart: newLine,
     newLines: 1,
-    lines: [{ kind: 'add', text, oldLine: null, newLine: 1, noNewlineAtEof: false }],
+    lines: [{ kind: 'add', text, oldLine: null, newLine, noNewlineAtEof: false }],
   };
 }
 
@@ -87,6 +105,38 @@ describe('buildUnits', () => {
   test('assigns sequential indexes across files', () => {
     const units = buildUnits(result([meatFile('a.ts', 1, 0), meatFile('b.ts', 1, 0)]), none);
     expect(units.map((u) => u.index)).toEqual([0, 1, 2, 3]);
+  });
+});
+
+describe('findings placement', () => {
+  // Two kept hunks: one anchored at line 5, one at line 20.
+  function twoHunkFile(): MeatFile {
+    return {
+      file: diffFile('a.ts'),
+      dropped: null,
+      hunks: [
+        { hunk: hunkAt('first', 5), keep: true, reason: 'logic', source: 'model' },
+        { hunk: hunkAt('second', 20), keep: true, reason: 'logic', source: 'model' },
+      ],
+    };
+  }
+
+  test('places a finding immediately after the hunk containing its anchor', () => {
+    const f = finding('f1', 'a.ts', 20, 'Busy-wait');
+    const units = buildUnits(result([twoHunkFile()]), { ...none, findings: [f] });
+
+    expect(units.map((u) => u.kind)).toEqual(['file-header', 'hunk', 'hunk', 'finding']);
+    const last = units[3]!;
+    expect(last.kind === 'finding' && last.finding.id).toBe('f1');
+  });
+
+  test('a finding whose anchor matches no shown hunk still appears', () => {
+    const f = finding('f2', 'a.ts', 999, 'Orphaned');
+    const units = buildUnits(result([twoHunkFile()]), { ...none, findings: [f] });
+
+    expect(units.map((u) => u.kind)).toEqual(['file-header', 'hunk', 'hunk', 'finding']);
+    const last = units[3]!;
+    expect(last.kind === 'finding' && last.finding.id).toBe('f2');
   });
 });
 

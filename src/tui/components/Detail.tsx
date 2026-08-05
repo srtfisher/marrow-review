@@ -4,6 +4,7 @@ import type { MeatResult } from '../../core/meat/index.js';
 import type { ReviewUnit } from '../units.js';
 import { DiffLines } from './DiffLines.js';
 import { Viewport } from './Viewport.js';
+import { FindingCard } from './FindingCard.js';
 import { theme } from '../theme.js';
 import { meatGauge } from '../gauge.js';
 
@@ -83,7 +84,20 @@ function renderHunk(
 function renderUnit(unit: ReviewUnit, selected: boolean, threads: ReviewThread[], showThreads: boolean) {
   if (unit.kind === 'file-header') return renderFileHeader(unit, selected);
   if (unit.kind === 'dropped-summary') return renderDroppedSummary(unit, selected);
+  if (unit.kind === 'finding') {
+    return <FindingCard key={unit.index} finding={unit.finding} selected={selected} />;
+  }
   return renderHunk(unit, selected, threads, showThreads);
+}
+
+/**
+ * The header block is 4-6 rows depending on whether there's a failing check or
+ * a summary; the viewport gets whatever height remains. Exported because the
+ * app scrolls this pane and must use the same number the pane renders with.
+ */
+export function detailHeaderRows(meat: MeatResult, checks: CheckRun[]): number {
+  const failing = checks.some((c) => c.conclusion === 'failure');
+  return 2 + (failing ? 1 : 0) + (meat.summary.length > 0 ? 1 : 0) + 1;
 }
 
 export function Detail({
@@ -91,10 +105,7 @@ export function Detail({
 }: DetailProps) {
   const failing = checks.filter((c) => c.conclusion === 'failure');
   const items = units.map((u) => renderUnit(u, u.index === cursor, threads, showThreads));
-
-  // The header block below is 4-6 rows depending on whether there's a failing
-  // check or a summary; the viewport gets whatever height remains.
-  const headerRows = 2 + (failing.length > 0 ? 1 : 0) + (meat.summary.length > 0 ? 1 : 0) + 1;
+  const headerRows = detailHeaderRows(meat, checks);
 
   return (
     <Box flexDirection="column">
