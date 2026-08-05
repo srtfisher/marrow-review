@@ -19,6 +19,7 @@ export type Action =
   | { type: 'toggle-dropped-all' }
   | { type: 'toggle-fold' }
   | { type: 'toggle-full-diff' }
+  | { type: 'toggle-reviewed' }
   | { type: 'toggle-threads' }
   | { type: 'open-browser' }
   | { type: 'comment' }
@@ -49,16 +50,17 @@ export const KEY_HELP: ReadonlyArray<{ keys: string; description: string; modes:
   { keys: 'space', description: 'fold or unfold this file', modes: ['detail'] },
   { keys: 'z / Z', description: 'reveal dropped hunks in this file / everywhere', modes: ['detail'] },
   { keys: 'd', description: 'toggle full diff vs meat', modes: ['detail'] },
+  { keys: 'm', description: 'check this file off as reviewed', modes: ['detail'] },
   { keys: 't', description: 'toggle existing review threads', modes: ['detail'] },
   { keys: 'o', description: 'open this hunk on github.com', modes: ['detail'] },
-  { keys: 'C', description: 'comment on this line', modes: ['detail'] },
-  { keys: 'S', description: 'suggest a change on this line', modes: ['detail'] },
+  { keys: 'C', description: 'comment on the line under the cursor', modes: ['detail'] },
+  { keys: 'S', description: 'suggest a change on the line under the cursor', modes: ['detail'] },
   { keys: 'n / p', description: 'next / previous finding', modes: ['detail'] },
   { keys: 'a / x', description: 'accept this finding as a comment / drop it', modes: ['detail'] },
   { keys: 'e / s', description: 'rewrite this finding / send it as a suggestion', modes: ['detail'] },
   { keys: 'v', description: 'show refuted findings and why they were refuted', modes: ['detail'] },
   { keys: 'i', description: 'ask the model about this hunk', modes: ['detail'] },
-  { keys: '!', description: 'open the submit screen', modes: ['detail'] },
+  { keys: '!', description: 'approve, request changes, or comment', modes: ['detail'] },
   { keys: 'enter', description: 'open the selected pull request', modes: ['list'] },
   { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'] },
   { keys: '/', description: 'search by title, author, or number', modes: ['list'] },
@@ -119,6 +121,7 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
   if (input === 'z') return { type: 'toggle-dropped' };
   if (input === 'Z') return { type: 'toggle-dropped-all' };
   if (input === 'd') return { type: 'toggle-full-diff' };
+  if (input === 'm') return { type: 'toggle-reviewed' };
   if (input === 't') return { type: 'toggle-threads' };
   if (input === 'o') return { type: 'open-browser' };
   if (input === 'C') return { type: 'comment' };

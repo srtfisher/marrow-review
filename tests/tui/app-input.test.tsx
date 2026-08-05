@@ -140,7 +140,10 @@ describe('App key handling', () => {
 
     // Move to the third entry, then narrow so only the second survives. The
     // cursor must follow the filtered array, not the index it held before.
-    await app.press('jj');
+    // One key per press: Ink delivers a multi-character write as one event, so
+    // `press('jj')` moved nothing and this test passed without testing.
+    await app.press('j');
+    await app.press('j');
     await app.press('/');
     await app.press('caching');
     await app.press('\r');
@@ -166,7 +169,7 @@ describe('App key handling', () => {
   test('? opens help listing the bindings, and esc returns to the list', async () => {
     const app = mount();
     await app.press('?');
-    expect(app.frame()).toContain('open the submit screen');
+    expect(app.frame()).toContain('approve, request changes, or comment');
     await app.press('');
     expect(app.frame()).toContain('Alpha rendering');
   });
@@ -261,7 +264,7 @@ describe('App findings', () => {
     }
   });
 
-  test('a accepts a finding, and the status bar counts it as staged', async () => {
+  test('a accepts a finding, and the hint bar counts it as staged', async () => {
     const app = mount({ pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree' });
     await delay(80);
 
@@ -298,7 +301,7 @@ describe('App findings', () => {
     expect(app.frame()).toContain('1 staged');
 
     await app.press('x');
-    expect(app.frame()).toContain('0 staged');
+    expect(app.frame()).not.toContain('staged');
   });
 
   test('e rewrites a finding in the reviewer own editor', async () => {
@@ -344,7 +347,7 @@ describe('App findings', () => {
     await app.press('n');
     await app.press('e');
     await delay(60);
-    expect(app.frame()).toContain('0 staged');
+    expect(app.frame()).not.toContain('staged');
   });
 
   test('an editor that cannot be spawned leaves the review untouched', async () => {
@@ -359,7 +362,7 @@ describe('App findings', () => {
     await app.press('n');
     await app.press('e');
     await delay(60);
-    expect(app.frame()).toContain('0 staged');
+    expect(app.frame()).not.toContain('staged');
 
     // Still usable afterwards: keys land on the diff, not into a dead overlay.
     await app.press('a');
@@ -435,7 +438,7 @@ describe('App findings', () => {
 
     await app.press(ESC);
     expect(app.frame()).toContain('Unbounded cache');
-    expect(app.frame()).toContain('0 staged');
+    expect(app.frame()).not.toContain('staged');
   });
 });
 
@@ -627,15 +630,15 @@ describe('the app fits the terminal it was given', () => {
     return frame.split('\n').length;
   }
 
-  test('a diff many screens long still leaves the status bar on screen', async () => {
+  test('a diff many screens long still leaves the hint bar on screen', async () => {
     const app = mount({ pr: detail, meat: tallMeat });
     await app.press('j');
-    // The status bar is the last row; if the pane overran it would be gone.
-    expect(app.frame()).toContain('worktree ok');
+    // the hint bar is the last row; if the pane overran it would be gone.
+    expect(app.frame()).toMatch(/\? (?:all )?keys/);
     expect(frameRows(app.frame())).toBeLessThanOrEqual(30);
   });
 
-  test('a status note is paid for out of the pane, not out of the status bar', async () => {
+  test('a status note is paid for out of the pane, not out of the hint bar', async () => {
     const app = mount({
       pr: detail, meat: tallMeat,
       status: 'You have an unsubmitted review on this pull request from the web UI.',
@@ -643,7 +646,7 @@ describe('the app fits the terminal it was given', () => {
     });
     await app.press('j');
     expect(app.frame()).toContain('unsubmitted review');
-    expect(app.frame()).toContain('worktree ok');
+    expect(app.frame()).toMatch(/\? (?:all )?keys/);
     expect(frameRows(app.frame())).toBeLessThanOrEqual(30);
   });
 
@@ -655,7 +658,7 @@ describe('the app fits the terminal it was given', () => {
     const after = app.frame();
 
     expect(after).not.toBe(first);
-    expect(after).toContain('worktree ok');
+    expect(after).toMatch(/\? (?:all )?keys/);
     expect(frameRows(after)).toBeLessThanOrEqual(30);
   });
 });
@@ -840,6 +843,162 @@ describe('findings are additive', () => {
     const app = mount({ pr: detail, meat });
     await delay(80);
     expect(app.frame()).toContain('cache.set(key, value);');
-    expect(app.frame()).toContain('0 staged');
+    expect(app.frame()).not.toContain('staged');
+  });
+});
+
+describe('reviewing a large diff', () => {
+  /** One file with a hunk far taller than the pane, then two ordinary ones —
+   *  the shape that rendered a single file path into an empty screen. */
+  const tall: MeatResult = {
+    summary: 'A large change.',
+    files: [
+      {
+        file: {
+          path: 'docs/design.md', oldPath: null, status: 'modified', similarity: null,
+          hunks: [], additions: 200, deletions: 0,
+        },
+        dropped: null,
+        hunks: [{
+          hunk: {
+            header: '@@ -1,200 +1,200 @@', section: '',
+            oldStart: 1, oldLines: 200, newStart: 1, newLines: 200,
+            lines: Array.from({ length: 200 }, (_, i) => ({
+              kind: 'add' as const, text: `paragraph ${i}`,
+              oldLine: null, newLine: i + 1, noNewlineAtEof: false,
+            })),
+          },
+          keep: true, reason: 'prose', source: 'model' as const,
+        }],
+      },
+      meatFile,
+      {
+        ...meatFile,
+        file: { ...meatFile.file, path: 'src/other.ts' },
+      },
+    ],
+    keptLines: 202, totalLines: 204, keptFiles: 3, totalFiles: 3,
+  };
+
+  test('fills the pane with the diff instead of one file header', async () => {
+    const app = mount({ pr: detail, meat: tall });
+    await delay(60);
+    const frame = app.frame();
+
+    expect(frame).toContain('docs/design.md');
+    expect(frame).toContain('paragraph 0');
+    // Twenty rows deep into the hunk. Under the old whole-unit windowing the
+    // hunk did not fit, so the pane showed the file header and nothing else.
+    expect(frame).toContain('paragraph 19');
+  });
+
+  test('lists every file in the header, not only the ones on screen', async () => {
+    const app = mount({ pr: detail, meat: tall });
+    await delay(60);
+    const frame = app.frame();
+
+    // The diff body is still inside the first file, but all three are named.
+    expect(frame).toContain('design.md');
+    expect(frame).toContain('cache.ts');
+    expect(frame).toContain('other.ts');
+  });
+
+  test('the sidebar gives way to the diff once a pull request is open', async () => {
+    const closed = mount({});
+    await delay(40);
+    expect(closed.frame()).toContain('Alpha rendering');
+
+    const open = mount({ pr: detail, meat: tall });
+    await delay(60);
+    expect(open.frame()).not.toContain('Alpha rendering');
+  });
+
+  test('] jumps to the next file and the index follows the cursor', async () => {
+    const app = mount({ pr: detail, meat: tall });
+    await delay(60);
+    await app.press(']');
+    expect(app.frame()).toContain('src/cache.ts');
+  });
+});
+
+describe('checking a file off', () => {
+  test('m marks the file under the cursor, and again unmarks it', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    expect(app.frame()).not.toContain('✓');
+
+    await app.press('m');
+    expect(app.frame()).toContain('✓');
+
+    await app.press('m');
+    expect(app.frame()).not.toContain('✓');
+  });
+
+  test('a file the cursor has read to the end of checks itself off', async () => {
+    // "When you go through a file and review it, add a check after you are
+    // done" — going through it is the signal, not a keystroke afterwards.
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    expect(app.frame()).not.toContain('✓');
+
+    // This diff is four rows; walking onto the last of them is reading it.
+    // One key per press: Ink delivers a multi-character write as one event.
+    await app.press('j');
+    await app.press('j');
+    expect(app.frame()).not.toContain('✓');
+    await app.press('j');
+    expect(app.frame()).toContain('✓');
+  });
+});
+
+describe('d says which view you are in', () => {
+  test('names the view, and switches it', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    expect(app.frame()).toContain('meat');
+    expect(app.frame()).not.toContain('full diff');
+
+    await app.press('d');
+    expect(app.frame()).toContain('full diff');
+
+    await app.press('d');
+    expect(app.frame()).not.toContain('full diff');
+  });
+});
+
+describe('commenting on a line', () => {
+  test('C anchors to the line under the cursor, not to the hunk', async () => {
+    const saved: ReviewDraft[] = [];
+    const app = mount({ pr: detail, meat, onPersist: (d) => saved.push(d) });
+    await delay(60);
+
+    // Rows: file header, hunk header, the context line, the added line. Stop on
+    // the context line — line 1, where the hunk's own anchor would be line 2.
+    await app.press('j');
+    await app.press('j');
+    await app.press('C');
+    await app.press('Is the TTL right?');
+    await app.press('\r');
+    await delay(40);
+
+    expect(saved.at(-1)?.comments[0]).toMatchObject({
+      path: 'src/cache.ts', line: 1, side: 'RIGHT', body: 'Is the TTL right?',
+    });
+  });
+
+  test('and one row further down anchors one line further down', async () => {
+    const saved: ReviewDraft[] = [];
+    const app = mount({ pr: detail, meat, onPersist: (d) => saved.push(d) });
+    await delay(60);
+
+    await app.press('j');
+    await app.press('j');
+    await app.press('j');
+    await app.press('C');
+    await app.press('This is the one.');
+    await app.press('\r');
+    await delay(40);
+
+    expect(saved.at(-1)?.comments[0]).toMatchObject({ line: 2, side: 'RIGHT' });
   });
 });

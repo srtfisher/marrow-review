@@ -3,6 +3,15 @@ export type Verdict = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 /** RIGHT anchors to the post-image, LEFT to a deleted line in the pre-image. */
 export type Side = 'LEFT' | 'RIGHT';
 
+/** Where a staged comment attaches, in GitHub's own terms. */
+export interface CommentAnchor {
+  path: string;
+  line: number;
+  side: Side;
+  /** Set only for a range comment; GitHub requires `startLine < line`. */
+  startLine?: number | null;
+}
+
 export interface StagedComment {
   /** Stable local id; not sent to GitHub. */
   id: string;

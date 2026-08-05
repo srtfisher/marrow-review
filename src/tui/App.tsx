@@ -15,22 +15,29 @@ import type {
   CheckRun, PullFilter, PullRequestDetail, PullRequestSummary, ReviewThread,
 } from '../core/github/types.js';
 import type { MeatResult } from '../core/meat/index.js';
-import type { ReviewDraft, Side, StagedComment, Verdict } from '../core/review/types.js';
+import type {
+  CommentAnchor, ReviewDraft, StagedComment, Verdict,
+} from '../core/review/types.js';
+
+export type { CommentAnchor };
+import { buildUnits, type ReviewUnit } from './units.js';
 import {
-  buildUnits, nextFileIndex, nextFindingIndex, prevFileIndex, prevFindingIndex, type ReviewUnit,
-} from './units.js';
+  anchorAtRow, buildRows, findingAtRow, hunkAtRow, nextFileRow, nextFindingRow, pathAtRow,
+  prevFileRow, prevFindingRow, unitAtRow, unitStartRows, type DetailRow,
+} from './rows.js';
 import { editInEditor } from './editor.js';
-import { indexAtRow, nextRowScrollTop, nextScrollTop, rowOffsets } from './viewport.js';
+import { nextScrollTop } from './viewport.js';
 import { resolveAction, type Mode } from './keymap.js';
 import type { LoadProgress } from './progress.js';
 import { filterPrs } from './search.js';
 import { ChatPane } from './components/ChatPane.js';
 import { CommentEditor } from './components/CommentEditor.js';
-import { Detail, detailHeaderRows, unitHeights } from './components/Detail.js';
+import { Detail, detailHeaderRows } from './components/Detail.js';
 import { Help } from './components/Help.js';
 import { LoadingSteps } from './components/LoadingSteps.js';
 import { PrList, visibleEntryCount } from './components/PrList.js';
-import { StatusBar } from './components/StatusBar.js';
+import { HintBar } from './components/HintBar.js';
+import { detailHints, listHints } from './hints.js';
 import { SubmitScreen } from './components/SubmitScreen.js';
 import { Welcome } from './components/Welcome.js';
 import { theme } from './theme.js';
@@ -92,13 +99,6 @@ export interface AppProps {
   editText?: (initial: string) => Promise<string>;
 }
 
-/** Where a staged comment attaches, in GitHub's own terms. */
-export interface CommentAnchor {
-  path: string;
-  line: number;
-  side: Side;
-}
-
 /** Same order as the submit screen renders them, so j/k matches what you see. */
 const VERDICTS: readonly Verdict[] = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
 
@@ -111,30 +111,6 @@ function toneStyle(tone: 'muted' | 'pending' | 'danger') {
 
 export function clampCursor(cursor: number, length: number): number {
   return Math.min(Math.max(cursor, 0), Math.max(0, length - 1));
-}
-
-function anchorInHunk(path: string, hunk: Hunk): CommentAnchor | null {
-  // The last changed line is where a reader's eye ends up, and it is always
-  // anchorable; a context line often is too, but it is rarely what was meant.
-  const changed = hunk.lines.filter((l) => l.kind !== 'context');
-  const line = changed.at(-1) ?? hunk.lines.at(-1);
-  if (!line) return null;
-  if (line.newLine !== null) return { path, line: line.newLine, side: 'RIGHT' };
-  if (line.oldLine !== null) return { path, line: line.oldLine, side: 'LEFT' };
-  return null;
-}
-
-/**
- * Resolves the cursor's review unit to a comment anchor. A file header or a
- * folded-noise row has no line of its own, so it borrows the file's first hunk
- * rather than refusing to accept a comment.
- */
-export function anchorForUnit(unit: ReviewUnit | undefined): CommentAnchor | null {
-  if (!unit) return null;
-  const path = unit.file.file.path;
-  if (unit.kind === 'hunk') return anchorInHunk(path, unit.hunk.hunk);
-  const first = unit.file.hunks[0];
-  return first ? anchorInHunk(path, first.hunk) : null;
 }
 
 /** GitHub keys a file's diff anchor by the sha256 of its path. */
@@ -161,15 +137,15 @@ export function mergeTriage(held: TriagedFinding[], verified: VerifiedFinding[])
 }
 
 /**
- * The hunk under the cursor, as text a model can read. A finding row or a file
- * header borrows the file's first hunk — the same fallback anchoring uses.
+ * The hunk under the cursor, as text a model can read. Rows outside a hunk — a
+ * file header, a finding — have no code of their own to ask about.
  */
-export function chatContextForUnit(unit: ReviewUnit | undefined): string | null {
-  if (!unit) return null;
-  const hunk = unit.kind === 'hunk' ? unit.hunk.hunk : unit.file.hunks[0]?.hunk;
-  if (!hunk) return null;
+export function chatContextForRow(rows: DetailRow[], cursor: number): string | null {
+  const hunk = hunkAtRow(rows, cursor);
+  const path = pathAtRow(rows, cursor);
+  if (!hunk || path === null) return null;
   return buildChatContext({
-    path: unit.file.file.path,
+    path,
     header: hunk.header,
     lines: hunk.lines.map((l) => ({ kind: l.kind, text: l.text })),
   });
@@ -219,11 +195,17 @@ export function App(props: AppProps) {
   const [underlay, setUnderlay] = useState<Mode>('list');
   const [listCursor, setListCursor] = useState(0);
   const [listScroll, setListScroll] = useState(0);
-  const [unitCursor, setUnitCursor] = useState(0);
-  const [unitScroll, setUnitScroll] = useState(0);
+  /** A ROW index. The cursor addresses the line the reviewer is looking at,
+   *  which is what makes `C` mean "comment on this line". */
+  const [rowCursor, setRowCursor] = useState(0);
+  const [rowScroll, setRowScroll] = useState(0);
   const [query, setQuery] = useState('');
   const [expandedFiles, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [foldedFiles, setFolded] = useState<ReadonlySet<string>>(new Set());
+  /** `d`: show every hunk, not only the ones the meat pass kept. */
+  const [fullDiff, setFullDiff] = useState(false);
+  /** Files the reviewer has been through. Checked off in the file index. */
+  const [reviewedFiles, setReviewed] = useState<ReadonlySet<string>>(new Set());
   const [showThreads, setShowThreads] = useState(false);
   const [draft, setDraft] = useState<ReviewDraft>({ verdict: null, body: '', comments: [] });
   const [verdict, setVerdict] = useState<Verdict>('COMMENT');
@@ -260,19 +242,27 @@ export function App(props: AppProps) {
     () => visibleFindings(findings, showRefuted),
     [findings, showRefuted],
   );
+  // `d` reveals every hunk in every file at once; `z` reveals one file's. The
+  // union is what the units are built from, so the two never fight each other.
+  const revealed = useMemo(
+    () => (fullDiff
+      ? new Set(props.meat?.files.map((f) => f.file.path) ?? [])
+      : expandedFiles),
+    [fullDiff, expandedFiles, props.meat],
+  );
   const units = useMemo(
     () => (props.meat
-      ? buildUnits(props.meat, { expandedFiles, foldedFiles, findings: shownFindings })
+      ? buildUnits(props.meat, { expandedFiles: revealed, foldedFiles, findings: shownFindings })
       : []),
-    [props.meat, expandedFiles, foldedFiles, shownFindings],
+    [props.meat, revealed, foldedFiles, shownFindings],
   );
   /**
-   * Rows each unit occupies. The detail pane's budget is in terminal rows and a
-   * unit is anywhere from one row to a whole screen, so scrolling has to be
-   * measured the same way the pane renders.
+   * Every terminal row of the detail pane, in order. One array is what the pane
+   * renders, what the viewport windows on, and what the cursor indexes — so a
+   * height calculation can no longer disagree with what was drawn.
    */
-  const unitRows = useMemo(
-    () => unitHeights(units, props.threads, showThreads),
+  const detailRowList = useMemo(
+    () => buildRows(units, props.threads, showThreads),
     [units, props.threads, showThreads],
   );
   /**
@@ -291,9 +281,14 @@ export function App(props: AppProps) {
 
   // One row for the horizontal rule, one for the status line.
   const bodyHeight = Math.max(1, rows - 2);
-  // What the right pane actually gets: the terminal less the sidebar, the one
-  // vertical rule, and the pane's own paddingX on either side of it.
-  const detailWidth = Math.max(1, columns - theme.layout.sidebarWidth - 3);
+  // With a pull request open the sidebar goes away and the diff owns the
+  // terminal: on a 17-file monorepo change the paths are the content, and a
+  // 32-column column truncated every one of them to `#546 feat(packages): resolv…`.
+  const reviewing = props.pr !== null && props.meat !== null;
+  const detailWidth = Math.max(
+    1,
+    columns - (reviewing ? 2 : theme.layout.sidebarWidth + 3),
+  );
   const listRows = visibleEntryCount(bodyHeight, mode === 'search');
   // Notes render under the detail pane, so the pane's budget pays for them —
   // otherwise adding one pushes the status bar off the bottom again. Scrolling
@@ -302,21 +297,24 @@ export function App(props: AppProps) {
   const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
   const detailHeight = Math.max(0, bodyHeight - noteRows);
   const detailRows = props.meat
-    ? Math.max(0, detailHeight - detailHeaderRows(props.meat, props.checks))
+    ? Math.max(0, detailHeight - detailHeaderRows(props.meat, props.checks, detailWidth))
     : 0;
 
-  // Folding shrinks the unit list under the cursor, and a query shrinks the
+  // Folding shrinks the row list under the cursor, and a query shrinks the
   // pull-request list under it; clamp on the way out rather than trusting the
   // stored index anywhere downstream.
   const prCursor = clampCursor(listCursor, visiblePrs.length);
-  const cursor = clampCursor(unitCursor, units.length);
+  const cursor = clampCursor(rowCursor, detailRowList.length);
 
-  // A newly opened pull request starts at the top of its own diff.
+  // A newly opened pull request starts at the top of its own diff, with its own
+  // reading progress — checks from the last one would be a lie about this one.
   const openNumber = props.pr?.number ?? null;
   useEffect(() => {
     if (openNumber === null) return;
-    setUnitCursor(0);
-    setUnitScroll(0);
+    setRowCursor(0);
+    setRowScroll(0);
+    setReviewed(new Set());
+    setFullDiff(false);
     setConfirmQuit(false);
     setMode('detail');
   }, [openNumber]);
@@ -395,14 +393,14 @@ export function App(props: AppProps) {
     onPersist?.(fullDraft);
   }, [fullDraft, openPr, hasUnsubmittedWork, onPersist]);
 
-  // Findings arriving grows the unit list under the cursor and `v` shrinks it
+  // Findings arriving grows the row list under the cursor and `v` shrinks it
   // again. The cursor indexes that list, so it and the viewport are pulled back
   // into range here rather than left pointing past the end.
   useEffect(() => {
-    const clamped = clampCursor(unitCursor, units.length);
-    setUnitCursor(clamped);
-    setUnitScroll((prev) => nextRowScrollTop(unitRows, detailRows, clamped, prev));
-  }, [units.length]);
+    const clamped = clampCursor(rowCursor, detailRowList.length);
+    setRowCursor(clamped);
+    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, clamped, prev));
+  }, [detailRowList.length]);
 
   function moveList(next: number) {
     const clamped = clampCursor(next, visiblePrs.length);
@@ -410,29 +408,36 @@ export function App(props: AppProps) {
     setListScroll((prev) => nextScrollTop(visiblePrs.length, listRows, clamped, prev));
   }
 
-  function moveUnits(next: number) {
-    const clamped = clampCursor(next, units.length);
-    setUnitCursor(clamped);
-    setUnitScroll((prev) => nextRowScrollTop(unitRows, detailRows, clamped, prev));
+  function moveRows(next: number) {
+    const clamped = clampCursor(next, detailRowList.length);
+    setRowCursor(clamped);
+    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, clamped, prev));
+    markSeen(clamped);
   }
 
   /**
-   * Half a page of ROWS, not of units: a page of one-row file headers and a
-   * page of forty-line hunks are the same distance on screen, and ctrl-d has to
-   * mean the same thing in both.
+   * A file the cursor has passed the end of has been read, so it gets its check
+   * without the reviewer having to ask for it — that is what "go through a file"
+   * means. `m` remains for the two cases this cannot see: skipping a file
+   * deliberately, and un-checking one you want to come back to.
    */
+  function markSeen(row: number) {
+    const path = pathAtRow(detailRowList, row);
+    if (path === null) return;
+    const lastRowOfPath = detailRowList.findLastIndex((r) => r.path === path);
+    if (row < lastRowOfPath) return;
+    setReviewed((s) => (s.has(path) ? s : new Set(s).add(path)));
+  }
+
+  /** Half a page of rows — the cursor and the budget are the same unit now. */
   function halfPage(dir: -1 | 1) {
     if (mode === 'list') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
-    const from = rowOffsets(unitRows)[cursor] ?? 0;
-    const target = indexAtRow(unitRows, from + dir * Math.floor(detailRows / 2));
-    // A hunk taller than half a page would otherwise swallow the keystroke:
-    // the target row is still inside the unit the cursor is already on.
-    return moveUnits(target === cursor ? cursor + dir : target);
+    return moveRows(cursor + dir * Math.max(1, Math.floor(detailRows / 2)));
   }
 
   function move(next: number) {
     if (mode === 'list') moveList(next);
-    else moveUnits(next);
+    else moveRows(next);
   }
 
   function applyQuery(next: string) {
@@ -453,7 +458,7 @@ export function App(props: AppProps) {
   }
 
   function currentPath(): string | null {
-    return units[cursor]?.file.file.path ?? null;
+    return pathAtRow(detailRowList, cursor);
   }
 
   function revealAll() {
@@ -467,15 +472,14 @@ export function App(props: AppProps) {
   }
 
   function startComment(isSuggestion: boolean) {
-    const anchor = anchorForUnit(units[cursor]);
+    const anchor = anchorAtRow(detailRowList, cursor);
     if (!anchor) return;
     setPending({ anchor, isSuggestion });
     enterOverlay('comment');
   }
 
   function currentFinding(): TriagedFinding | null {
-    const unit = units[cursor];
-    return unit && unit.kind === 'finding' ? unit.finding : null;
+    return findingAtRow(detailRowList, cursor);
   }
 
   /** Every triage key is a no-op unless the cursor is actually on a finding. */
@@ -524,7 +528,7 @@ export function App(props: AppProps) {
   }
 
   function openChat() {
-    const context = chatContextForUnit(units[cursor]);
+    const context = chatContextForRow(detailRowList, cursor);
     if (context === null) return;
     // A question about a different hunk is a different conversation; resuming
     // the old session would answer it with the wrong code in view.
@@ -641,12 +645,16 @@ export function App(props: AppProps) {
       case 'half-page':
         return halfPage(action.dir);
       case 'file':
-        return moveUnits(
-          action.dir === 1 ? nextFileIndex(units, cursor) : prevFileIndex(units, cursor),
+        return moveRows(
+          action.dir === 1
+            ? nextFileRow(detailRowList, cursor)
+            : prevFileRow(detailRowList, cursor),
         );
       case 'finding':
-        return moveUnits(
-          action.dir === 1 ? nextFindingIndex(units, cursor) : prevFindingIndex(units, cursor),
+        return moveRows(
+          action.dir === 1
+            ? nextFindingRow(detailRowList, cursor)
+            : prevFindingRow(detailRowList, cursor),
         );
       case 'accept-finding':
         return triage(accept);
@@ -676,11 +684,19 @@ export function App(props: AppProps) {
         if (path) setExpanded((s) => toggleIn(s, path));
         return;
       }
-      // `d` is the whole-diff view: with nothing dropped there is no meat cut
-      // left to see, which is the same state `Z` produces.
+      // Its own state, not an alias for `Z`. On a diff the meat pass barely cut
+      // — 1038 of 1040 lines kept — revealing the dropped hunks changes nothing
+      // visible, so a `d` that only did that was indistinguishable from a `d`
+      // that did nothing. The header now names the view either way.
       case 'toggle-full-diff':
+        return setFullDiff((v) => !v);
       case 'toggle-dropped-all':
         return revealAll();
+      case 'toggle-reviewed': {
+        const path = currentPath();
+        if (path) setReviewed((s) => toggleIn(s, path));
+        return;
+      }
       case 'toggle-threads':
         return setShowThreads((v) => !v);
       case 'comment':
@@ -688,7 +704,7 @@ export function App(props: AppProps) {
       case 'suggest':
         return startComment(true);
       case 'open-browser': {
-        const anchor = anchorForUnit(units[cursor]);
+        const anchor = anchorAtRow(detailRowList, cursor);
         if (anchor && props.pr) props.onOpenUrl?.(hunkUrl(props.repoLabel, props.pr.number, anchor));
         return;
       }
@@ -782,21 +798,28 @@ export function App(props: AppProps) {
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1}>
-        <PrList
-          prs={props.prs}
-          cursor={mode === 'list' || mode === 'search' ? prCursor : -1}
-          scrollTop={listScroll}
-          height={bodyHeight}
-          filter={props.filter}
-          width={theme.layout.sidebarWidth}
-          query={query}
-          searching={mode === 'search'}
-        />
-        {/* The one vertical rule in the product: two panes, no boxes. Each
-            pane's own paddingX supplies the gap on either side of it. */}
-        <Box width={1}>
-          <Text {...theme.tier.muted}>{paneRule}</Text>
-        </Box>
+        {/* The sidebar exists to choose a pull request. Once one is open it is
+            32 columns spent on a list you are no longer reading, taken from the
+            diff — which is the product. It comes back on esc. */}
+        {!reviewing && (
+          <>
+            <PrList
+              prs={props.prs}
+              cursor={mode === 'list' || mode === 'search' ? prCursor : -1}
+              scrollTop={listScroll}
+              height={bodyHeight}
+              filter={props.filter}
+              width={theme.layout.sidebarWidth}
+              query={query}
+              searching={mode === 'search'}
+            />
+            {/* The one vertical rule in the product: two panes, no boxes. Each
+                pane's own paddingX supplies the gap on either side of it. */}
+            <Box width={1}>
+              <Text {...theme.tier.muted}>{paneRule}</Text>
+            </Box>
+          </>
+        )}
         {/* paddingX rather than marginLeft: nothing sits flush against either
             terminal edge, the rule included. */}
         <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -805,14 +828,17 @@ export function App(props: AppProps) {
               <Detail
                 pr={props.pr}
                 meat={props.meat}
-                units={units}
+                rows={detailRowList}
                 cursor={cursor}
-                scrollTop={unitScroll}
+                scrollTop={rowScroll}
                 height={detailHeight}
+                width={detailWidth}
                 checks={props.checks}
-                threads={props.threads}
-                showThreads={showThreads}
+                fullDiff={fullDiff}
+                reviewed={reviewedFiles}
                 stagedCount={staged.length}
+                model={props.model}
+                worktreeOk={props.worktreeOk}
               />
               {notes}
             </>
@@ -847,19 +873,15 @@ export function App(props: AppProps) {
           <Text color={theme.color.pending} wrap="truncate">
             {`${staged.length} unsubmitted comment(s) · enter saves the draft and quits · x discards · esc stays`}
           </Text>
-        ) : props.pr && props.meat ? (
-          <StatusBar
-            repoLabel={props.repoLabel}
-            prNumber={props.pr.number}
-            meat={props.meat}
-            stagedCount={staged.length}
-            model={props.model}
-            worktreeOk={props.worktreeOk}
-          />
         ) : (
-          <Text {...theme.tier.muted}>
-            {`${props.repoLabel} · ${visiblePrs.length} pull request${visiblePrs.length === 1 ? '' : 's'} · ? for keys`}
-          </Text>
+          // The verbs, not the metadata. Repository, number, and gauge already
+          // sit in the header; what was missing was any way to learn the keys
+          // without going looking for them.
+          <HintBar
+            hints={reviewing ? detailHints(detailRowList[cursor], fullDiff) : listHints()}
+            width={Math.max(1, columns - 2)}
+            stagedCount={staged.length}
+          />
         )}
       </Box>
     </Box>

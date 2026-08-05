@@ -26,9 +26,28 @@ describe('Welcome', () => {
     const out = renderToString(
       <Welcome repoLabel={REPO} count={9} filter="open" height={24} width={60} />,
     );
-    expect(out).toContain('marrow');
+    // The wordmark is drawn at this size, so the name is in blocks rather than
+    // letters — the row that closes the `w` is the one that only marrow has.
+    expect(out).toContain('▀   ▀ ▀  ▀ ▀    ▀     ▀▀   ▀ ▀');
     expect(out).toContain(REPO);
     expect(out).toContain('9 open');
+  });
+
+  test('falls back to the typed wordmark where the drawn one will not fit', () => {
+    // Both dimensions have to be checked: the art is 31 columns and three rows,
+    // and a pane short of either would otherwise have Ink overdraw the border.
+    const narrow = renderToString(
+      <Welcome repoLabel={REPO} count={9} filter="open" height={24} width={28} />,
+      { columns: 28 },
+    );
+    expect(narrow).toContain('marrow');
+    expect(narrow).not.toContain('█▄▀▄█');
+
+    const short = renderToString(
+      <Welcome repoLabel={REPO} count={9} filter="open" height={9} width={60} />,
+    );
+    expect(short).toContain('marrow');
+    expect(short).not.toContain('█▄▀▄█');
   });
 
   test('shows the handful of keys that start the work, not the keymap', () => {

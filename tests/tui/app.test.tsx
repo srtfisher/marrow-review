@@ -1,11 +1,12 @@
 import { test, expect, describe } from 'bun:test';
 import { renderToString } from 'ink';
 import {
-  App, anchorForUnit, chatContextForUnit, clampCursor, hunkUrl, mergeTriage,
+  App, chatContextForRow, clampCursor, hunkUrl, mergeTriage,
 } from '../../src/tui/App.js';
 import { Help } from '../../src/tui/components/Help.js';
 import { KEY_HELP } from '../../src/tui/keymap.js';
 import { buildUnits } from '../../src/tui/units.js';
+import { anchorAtRow, buildRows } from '../../src/tui/rows.js';
 import { accept, initTriage, toStagedComments } from '../../src/core/findings/triage.js';
 import type { VerifiedFinding } from '../../src/core/findings/verify.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
@@ -50,6 +51,7 @@ const meat: MeatResult = {
 };
 
 const units = buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set() });
+const rows = buildRows(units, [], false);
 
 const base = {
   repoLabel: 'srtfisher/marrow',
@@ -75,7 +77,7 @@ describe('Help', () => {
 
   test('cannot drift from the keymap because it is generated from it', () => {
     const out = renderToString(<Help />);
-    expect(out).toContain('open the submit screen');
+    expect(out).toContain('approve, request changes, or comment');
   });
 });
 
@@ -91,18 +93,38 @@ describe('clampCursor', () => {
   });
 });
 
-describe('anchorForUnit', () => {
-  test('anchors a hunk to its last changed line on the RIGHT side', () => {
-    const hunkUnit = units.find((u) => u.kind === 'hunk');
-    expect(anchorForUnit(hunkUnit)).toEqual({ path: 'src/app.ts', line: 2, side: 'RIGHT' });
+describe('anchorAtRow', () => {
+  const rowIndex = (kind: string) => rows.findIndex((r) => r.kind === kind);
+
+  test('anchors a diff line to that exact line, not to its hunk', () => {
+    // The whole reason the cursor is a row. `C` on the context line must
+    // comment on line 1, even though the hunk's last changed line is line 2.
+    const contextRow = rows.findIndex(
+      (r) => r.kind === 'diff-line' && r.line.kind === 'context',
+    );
+    expect(anchorAtRow(rows, contextRow)).toEqual({
+      path: 'src/app.ts', line: 1, side: 'RIGHT',
+    });
+
+    const addRow = rows.findIndex((r) => r.kind === 'diff-line' && r.line.kind === 'add');
+    expect(anchorAtRow(rows, addRow)).toEqual({
+      path: 'src/app.ts', line: 2, side: 'RIGHT',
+    });
+  });
+
+  test('anchors a hunk header to that hunk last changed line', () => {
+    expect(anchorAtRow(rows, rowIndex('hunk-header'))).toEqual({
+      path: 'src/app.ts', line: 2, side: 'RIGHT',
+    });
   });
 
   test('anchors a file header to the first hunk of that file', () => {
-    const header = units.find((u) => u.kind === 'file-header');
-    expect(anchorForUnit(header)).toEqual({ path: 'src/app.ts', line: 2, side: 'RIGHT' });
+    expect(anchorAtRow(rows, rowIndex('file-header'))).toEqual({
+      path: 'src/app.ts', line: 2, side: 'RIGHT',
+    });
   });
 
-  test('prefers a deleted line on the LEFT when a hunk only removes', () => {
+  test('puts a deleted line on the LEFT, which is the side GitHub accepts', () => {
     const removal: MeatFile = {
       ...meatFile,
       hunks: [{
@@ -113,17 +135,22 @@ describe('anchorForUnit', () => {
         },
       }],
     };
-    const only = buildUnits(
-      { ...meat, files: [removal] },
-      { expandedFiles: new Set(), foldedFiles: new Set() },
+    const only = buildRows(
+      buildUnits(
+        { ...meat, files: [removal] },
+        { expandedFiles: new Set(), foldedFiles: new Set() },
+      ),
+      [],
+      false,
     );
-    expect(anchorForUnit(only.find((u) => u.kind === 'hunk'))).toEqual({
+    const deleted = only.findIndex((r) => r.kind === 'diff-line');
+    expect(anchorAtRow(only, deleted)).toEqual({
       path: 'src/app.ts', line: 7, side: 'LEFT',
     });
   });
 
-  test('has no anchor without a unit', () => {
-    expect(anchorForUnit(undefined)).toBeNull();
+  test('has no anchor past the end of the pane', () => {
+    expect(anchorAtRow(rows, 9999)).toBeNull();
   });
 });
 
@@ -158,9 +185,9 @@ describe('mergeTriage', () => {
   });
 });
 
-describe('chatContextForUnit', () => {
+describe('chatContextForRow', () => {
   test('gives the model the hunk under the cursor, with its diff marks', () => {
-    const context = chatContextForUnit(units.find((u) => u.kind === 'hunk'));
+    const context = chatContextForRow(rows, rows.findIndex((r) => r.kind === 'diff-line'));
     expect(context).toContain('src/app.ts');
     expect(context).toContain('@@ -1,1 +1,2 @@');
     expect(context).toContain('+const x = 1;');
@@ -168,12 +195,12 @@ describe('chatContextForUnit', () => {
   });
 
   test('a file header borrows that file first hunk rather than refusing', () => {
-    expect(chatContextForUnit(units.find((u) => u.kind === 'file-header')))
+    expect(chatContextForRow(rows, rows.findIndex((r) => r.kind === 'file-header')))
       .toContain('+const x = 1;');
   });
 
-  test('has nothing to say without a unit', () => {
-    expect(chatContextForUnit(undefined)).toBeNull();
+  test('has nothing to say past the end of the pane', () => {
+    expect(chatContextForRow(rows, 9999)).toBeNull();
   });
 });
 
@@ -208,7 +235,7 @@ describe('App', () => {
   test('a status note takes the pane back from the welcome panel', () => {
     const out = renderToString(<App {...base} status="Fetching pull requests…" />);
     expect(out).toContain('Fetching pull requests…');
-    expect(out).not.toContain('all keys');
+    expect(out).not.toContain('abridged to what carries meaning');
   });
 
   test('renders the empty state rather than a blank pane', () => {

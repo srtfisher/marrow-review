@@ -18,6 +18,23 @@ export interface WelcomeProps {
 const TAGLINE = 'a large diff, abridged to what carries meaning';
 
 /**
+ * The wordmark, drawn.
+ *
+ * Half-block glyphs rather than `#` or `*` ASCII: they are the same characters
+ * the meat gauge is built from, they are single-cell in every terminal that can
+ * run this, and they inherit the foreground colour instead of imposing one.
+ * Three rows is the whole budget — a six-row banner on a screen whose job is to
+ * get you into a diff is a splash screen, and splash screens are a tax.
+ */
+const WORDMARK: readonly string[] = [
+  '█▄▀▄█ ▄▀▀▄ █▀▀▄ █▀▀▄ ▄▀▀▄ █   █',
+  '█ ▀ █ █▀▀█ █▀▀  █▀▀  █  █ █▄█▄█',
+  '▀   ▀ ▀  ▀ ▀    ▀     ▀▀   ▀ ▀ ',
+];
+
+const WORDMARK_COLS = Math.max(...WORDMARK.map((row) => row.length));
+
+/**
  * What is waiting, said in the filter's own terms. `9 open` is a lie when the
  * list is showing "needs my review", and `0 open` next to a hint about pressing
  * enter to review something is worse — it offers work that is not there.
@@ -89,13 +106,23 @@ const PANEL_CHROME_COLS = 4;
  * row nobody budgeted, and the bottom border pays for it.
  */
 export function welcomeFit(height: number, width: number, hintRows: number): {
+  art: boolean;
   tagline: boolean;
   hints: boolean;
 } {
-  const room = width >= TAGLINE.length + PANEL_CHROME_COLS;
-  if (room && height >= PANEL_FULL_ROWS + 1 + hintRows) return { tagline: true, hints: true };
-  if (height >= PANEL_MIN_ROWS + 1 + hintRows) return { tagline: false, hints: true };
-  return { tagline: false, hints: false };
+  const taglineRoom = width >= TAGLINE.length + PANEL_CHROME_COLS;
+  const full = taglineRoom && height >= PANEL_FULL_ROWS + 1 + hintRows;
+
+  // The drawn wordmark costs two rows more than the typed one and is the first
+  // thing to go: it is decoration, and the three questions this panel answers
+  // are not.
+  const art = full
+    && width >= WORDMARK_COLS + PANEL_CHROME_COLS
+    && height >= PANEL_FULL_ROWS + 2 + 1 + hintRows;
+
+  if (full) return { art, tagline: true, hints: true };
+  if (height >= PANEL_MIN_ROWS + 1 + hintRows) return { art: false, tagline: false, hints: true };
+  return { art: false, tagline: false, hints: false };
 }
 
 export function Welcome({ repoLabel, count, filter, height, width }: WelcomeProps) {
@@ -126,8 +153,18 @@ export function Welcome({ repoLabel, count, filter, height, width }: WelcomeProp
         borderColor={theme.color.structure}
         borderDimColor
       >
-        {/* The one primary element on this screen. */}
-        <Text {...theme.tier.primary} wrap="truncate">marrow</Text>
+        {/* The one primary element on this screen, drawn when there is room
+            for it and typed when there is not. Either way it is the wordmark;
+            rendering both would be the same word twice. */}
+        {fit.art ? (
+          // `primary`, not the cyan `structure` token: cyan means position and
+          // navigation everywhere else in this UI, and a logo is neither.
+          WORDMARK.map((line, i) => (
+            <Text key={i} {...theme.tier.primary} wrap="truncate">{line}</Text>
+          ))
+        ) : (
+          <Text {...theme.tier.primary} wrap="truncate">marrow</Text>
+        )}
         {fit.tagline && (
           <>
             {/* truncate, never wrap: the row budget above assumes one row. */}

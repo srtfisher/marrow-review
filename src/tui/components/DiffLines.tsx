@@ -26,6 +26,28 @@ function colorFor(line: DiffLine): string | undefined {
   return undefined;
 }
 
+export interface DiffLineRowProps {
+  line: DiffLine;
+  gutterWidth: number;
+}
+
+/**
+ * Exactly one terminal row, and the reason this is its own component: the
+ * detail pane windows on rows, so it has to be able to render the middle of a
+ * thousand-line hunk without rendering its ends.
+ */
+export function DiffLineRow({ line, gutterWidth }: DiffLineRowProps) {
+  return (
+    <Text wrap="truncate">
+      <Text dimColor>{formatGutter(line, gutterWidth)}</Text>{' '}
+      <Text color={colorFor(line)}>
+        {marker(line)}
+        {line.text}
+      </Text>
+    </Text>
+  );
+}
+
 export interface DiffLinesProps {
   hunk: Hunk;
   gutterWidth: number;
@@ -37,13 +59,7 @@ export function DiffLines({ hunk, gutterWidth }: DiffLinesProps) {
   return (
     <Box flexDirection="column">
       {hunk.lines.map((line, i) => (
-        <Text key={i}>
-          <Text dimColor>{formatGutter(line, gutterWidth)}</Text>{' '}
-          <Text color={colorFor(line)}>
-            {marker(line)}
-            {line.text}
-          </Text>
-        </Text>
+        <DiffLineRow key={i} line={line} gutterWidth={gutterWidth} />
       ))}
     </Box>
   );
