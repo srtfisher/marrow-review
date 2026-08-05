@@ -38,7 +38,7 @@ export function PrList({
         {filterLabel(filter)} · {visible.length}
         {narrowed ? ` of ${prs.length}` : ''}
       </Text>
-      {searching && <Text color={theme.heading}>/{query}</Text>}
+      {searching && <Text {...theme.tier.primary}>/{query}</Text>}
     </Box>
   );
 
@@ -46,7 +46,7 @@ export function PrList({
     return (
       <Box flexDirection="column" width={width}>
         {header}
-        <Text color={theme.muted}>No pull requests.</Text>
+        <Text {...theme.tier.muted}>No pull requests.</Text>
       </Box>
     );
   }
@@ -55,7 +55,7 @@ export function PrList({
     return (
       <Box flexDirection="column" width={width}>
         {header}
-        <Text color={theme.muted}>No match for &quot;{query}&quot;.</Text>
+        <Text {...theme.tier.muted}>No match for &quot;{query}&quot;.</Text>
       </Box>
     );
   }
@@ -72,7 +72,7 @@ export function PrList({
         <Text bold inverse={selected} wrap="truncate">
           {`#${pr.number} ${pr.isDraft ? '[draft] ' : ''}${pr.title}`}
         </Text>
-        <Text color={theme.muted} wrap="truncate">
+        <Text {...theme.tier.muted} wrap="truncate">
           {`  ${pr.author} · ${pr.changedFiles} ${files}`}
         </Text>
       </Box>

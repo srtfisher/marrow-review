@@ -21,8 +21,8 @@ function marker(line: DiffLine): string {
 /** Green means addition and nothing else, red means deletion and nothing else.
  *  Context lines get no color — they read at the default (secondary) tier. */
 function colorFor(line: DiffLine): string | undefined {
-  if (line.kind === 'add') return theme.add;
-  if (line.kind === 'del') return theme.del;
+  if (line.kind === 'add') return theme.color.add;
+  if (line.kind === 'del') return theme.color.del;
   return undefined;
 }
 

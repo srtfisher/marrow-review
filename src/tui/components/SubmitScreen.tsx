@@ -27,34 +27,34 @@ export function SubmitScreen({
 
   return (
     <Box flexDirection="column">
-      <Text color={theme.heading}>Submit review</Text>
+      <Text {...theme.tier.primary}>Submit review</Text>
 
       {LABELS.map(({ verdict, label }) => {
         const blocked = verdict === 'APPROVE' && viewerIsAuthor;
         return (
-          <Text key={verdict} inverse={verdict === selected} color={blocked ? theme.muted : undefined}>
+          <Text key={verdict} inverse={verdict === selected} color={blocked ? theme.color.chrome : undefined} dimColor={blocked}>
             {`  ${label}${blocked ? '  (cannot approve your own pull request — GitHub rejects it)' : ''}`}
           </Text>
         );
       })}
 
       <Text> </Text>
-      <Text color={theme.accent}>{draft.comments.length} inline comment(s)</Text>
+      <Text color={theme.color.pending}>{draft.comments.length} inline comment(s)</Text>
 
       {problems.length > 0 && (
-        <Text color={theme.danger}>
+        <Text color={theme.color.danger}>
           {`${problems.length} comment(s) cannot anchor to the diff and will be moved into the review body.`}
         </Text>
       )}
 
       {draft.body.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
-          <Text color={theme.muted}>Review body:</Text>
+          <Text {...theme.tier.muted}>Review body:</Text>
           <Text>{draft.body}</Text>
         </Box>
       )}
 
-      <Text color={theme.muted}>enter to submit · esc to go back</Text>
+      <Text {...theme.tier.muted}>enter to submit · esc to go back</Text>
     </Box>
   );
 }

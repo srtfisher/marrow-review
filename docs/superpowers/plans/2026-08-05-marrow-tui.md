@@ -148,7 +148,10 @@ describe('theme', () => {
 
 describe('meatGauge', () => {
   test('fills proportionally to kept lines', () => {
-    expect(meatGauge(59, 106)).toBe('▇▇▇▇▇▁▁▁▁▁');
+    // 59/106 = 5.57 cells, which rounds to 6 — not 5. Verified against the
+    // implementation rather than computed by hand.
+    expect(meatGauge(59, 106)).toBe('▇▇▇▇▇▇▁▁▁▁');
+    expect(meatGauge(50, 100)).toBe('▇▇▇▇▇▁▁▁▁▁');
     expect(meatGauge(0, 100)).toBe('▁▁▁▁▁▁▁▁▁▁');
     expect(meatGauge(100, 100)).toBe('▇▇▇▇▇▇▇▇▇▇');
   });

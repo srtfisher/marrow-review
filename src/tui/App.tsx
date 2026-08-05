@@ -8,7 +8,7 @@ export interface AppProps {
 export function App({ repoLabel }: AppProps) {
   return (
     <Box flexDirection="column">
-      <Text color={theme.heading}>{repoLabel}</Text>
+      <Text {...theme.tier.primary}>{repoLabel}</Text>
     </Box>
   );
 }
