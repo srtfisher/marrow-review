@@ -171,7 +171,7 @@ export function detailHeaderRows(
   const failing = checks.some((c) => c.conclusion === 'failure');
   // title, meta, gauge, blank
   return 4 + (failing ? 1 : 0) + (meat.summary.length > 0 ? 1 : 0)
-    + fileIndexRows(meat.files.length, width);
+    + fileIndexRows(meat.files.map((f) => f.file.path), width);
 }
 
 export function Detail({
