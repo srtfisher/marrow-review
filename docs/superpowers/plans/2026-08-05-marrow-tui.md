@@ -21,6 +21,30 @@
 - Exact versions: `ink@7.1.1`, `react@^19.2.0`, `@types/react@^19.2.18`, `ink-text-input@6.0.0`.
 - Commit after every task, conventional-commit prefix.
 
+## Design constraints — binding on every component task
+
+**Read `.interface-design/system.md` before writing any component.** It is the design
+system; these are the rules it enforces, and a component that breaks one is wrong even if
+its tests pass.
+
+- **Never write a hex color.** Import from `theme.color`. ANSI slot names inherit the
+  user's terminal theme; hardcoded truecolor fights it and looks wrong in half of
+  terminals.
+- **Color means something.** Green is a diff addition and nothing else. Red is a deletion
+  and nothing else. Cyan is position, yellow is unsubmitted work, magenta is model-authored
+  content. No decorative color, ever.
+- **Depth is tonal.** No `┌─┐` boxes. Structure comes from the four text tiers plus one
+  vertical rule between panes, and horizontal rules only under the header and above the
+  status bar.
+- **Hierarchy is weight and color, never size** — there is one type size. Each view has
+  exactly one `primary` (bold) element; if two things are bold, one of them is wrong.
+- **No emoji.** Cell width is unreliable across terminals and it reads as toy. Use
+  `theme.glyph`.
+- **No spinners.** Rule verdicts render instantly and model verdicts fill in progressively,
+  so nothing should imply waiting.
+- **Every state is implemented**: selected, cursor, folded, dropped, staged, failing,
+  empty, no-match, degraded. A blank pane is a bug, not an empty state.
+
 ## Deliberately out of scope for Plan 2
 
 - **Syntax highlighting.** Diff `+`/`−` coloring is in; token-level language coloring is not. `cli-highlight` is pinned to a 2021 `highlight.js` and CJS `chalk`; `shiki` needs real work to emit ANSI. Doing it correctly also means highlighting whole files from the worktree and mapping onto diff lines. Deferred until the interaction model is proven.
@@ -103,13 +127,44 @@ renderCommentBody(comment): string
 `tests/tui/shell.test.tsx`:
 
 ```tsx
-import { test, expect } from 'bun:test';
+import { test, expect, describe } from 'bun:test';
 import { renderToString } from 'ink';
 import { App } from '../../src/tui/App.js';
+import { meatGauge } from '../../src/tui/gauge.js';
+import { theme } from '../../src/tui/theme.js';
 
 test('renders the repo label in the shell', () => {
   const out = renderToString(<App repoLabel="srtfisher/marrow" />);
   expect(out).toContain('srtfisher/marrow');
+});
+
+describe('theme', () => {
+  test('contains no hex colors — ANSI slots only, so it inherits the terminal theme', () => {
+    for (const value of Object.values(theme.color)) {
+      expect(value).not.toMatch(/^#/);
+    }
+  });
+});
+
+describe('meatGauge', () => {
+  test('fills proportionally to kept lines', () => {
+    expect(meatGauge(59, 106)).toBe('▇▇▇▇▇▁▁▁▁▁');
+    expect(meatGauge(0, 100)).toBe('▁▁▁▁▁▁▁▁▁▁');
+    expect(meatGauge(100, 100)).toBe('▇▇▇▇▇▇▇▇▇▇');
+  });
+
+  test('shows at least one filled cell when anything was kept', () => {
+    // Rounding 1/1000 to zero would read as "nothing kept", which is a lie.
+    expect(meatGauge(1, 1000)).toBe('▇▁▁▁▁▁▁▁▁▁');
+  });
+
+  test('shows at least one empty cell when anything was dropped', () => {
+    expect(meatGauge(999, 1000)).toBe('▇▇▇▇▇▇▇▇▇▁');
+  });
+
+  test('is empty rather than full when there is nothing to measure', () => {
+    expect(meatGauge(0, 0)).toBe('▁▁▁▁▁▁▁▁▁▁');
+  });
 });
 ```
 
@@ -131,17 +186,105 @@ Add to `tsconfig.json` `compilerOptions`: `"jsx": "react-jsx"`. Leave every othe
 
 `src/tui/theme.ts`:
 
+**Read `.interface-design/system.md` before writing this file** — it is the design
+system, and every later component builds against these tokens rather than improvising
+colors.
+
+The load-bearing decision: **bind to ANSI semantic slots, never truecolor hex.** The user
+already chose a terminal theme with a background, a contrast level, and a green they can
+tell from their red. A hardcoded `#3fb950` fights all of it and looks wrong in half of
+terminals. Ink maps these names onto the user's own palette.
+
 ```ts
-export const theme = {
+/**
+ * Colors carry meaning; they are never decoration.
+ *
+ * ANSI slot names (not hex) so the UI inherits the user's terminal theme.
+ * See .interface-design/system.md for the full rationale.
+ */
+export const color = {
+  /** A diff addition. Nothing else is ever green. */
   add: 'green',
+  /** A diff deletion. Nothing else is ever red. */
   del: 'red',
-  context: 'gray',
-  dropped: 'gray',
-  heading: 'cyan',
-  accent: 'yellow',
+  /** Position and navigation: file marker, active pane, search query. */
+  structure: 'cyan',
+  /** Unsubmitted work. The one token allowed to nag. */
+  pending: 'yellow',
+  /** Model-authored content. Reserved so you can always tell what the model said. */
+  agent: 'magenta',
+  /** Failing checks and destructive confirms. */
   danger: 'red',
-  muted: 'gray',
+  /** Chrome: rules, folded markers, help hints. */
+  chrome: 'gray',
 } as const;
+
+/**
+ * Four text tiers. In a terminal there is exactly one type size, so hierarchy
+ * comes from weight and color alone — the extreme case of the general rule that
+ * weight and color out-perform size.
+ */
+export const tier = {
+  /** The one thing per view that matters. */
+  primary: { bold: true },
+  /** What you actually read: diff content, comment bodies. */
+  secondary: {},
+  /** Hunk headers, metadata, gutters. */
+  tertiary: { dimColor: true },
+  /** Structural chrome. */
+  muted: { dimColor: true, color: color.chrome },
+} as const;
+
+/** Layout constants. Named so they are decisions, not magic numbers. */
+export const layout = {
+  /** 32 says "navigation serves content" — the diff is the product. */
+  sidebarWidth: 32,
+  /** Two right-aligned line-number columns; the terminal's tabular-nums. */
+  gutterWidth: 6,
+  /** Cells in the meat gauge. */
+  gaugeCells: 10,
+} as const;
+
+/** Glyphs. No emoji — cell width is unreliable across terminals and reads as toy. */
+export const glyph = {
+  /** Butcher's mark on the cut; also the eye's anchor when scrolling. */
+  cut: '▍',
+  cursor: '▸',
+  gaugeFull: '▇',
+  gaugeEmpty: '▁',
+  fold: '┄',
+  rule: '│',
+  staged: '●',
+} as const;
+
+export const theme = { color, tier, layout, glyph } as const;
+```
+
+`src/tui/gauge.ts` — the product's signature element, so it gets its own tested module:
+
+```ts
+import { theme } from './theme.js';
+
+/**
+ * Kept-versus-dropped as one glyph run: the whole thesis of the tool, ten cells wide.
+ *
+ * Clamped at both ends on purpose. Rounding 1-of-1000 down to zero cells would
+ * read as "nothing was kept", and rounding 999-of-1000 up to full would read as
+ * "nothing was dropped" — both are lies, and this gauge is the main thing a
+ * reviewer glances at to decide how much work is ahead.
+ */
+export function meatGauge(kept: number, total: number): string {
+  const cells = theme.layout.gaugeCells;
+  if (total <= 0) return theme.glyph.gaugeEmpty.repeat(cells);
+
+  const raw = (kept / total) * cells;
+  let filled = Math.round(raw);
+  if (kept > 0 && filled === 0) filled = 1;
+  if (kept < total && filled === cells) filled = cells - 1;
+  filled = Math.min(Math.max(filled, 0), cells);
+
+  return theme.glyph.gaugeFull.repeat(filled) + theme.glyph.gaugeEmpty.repeat(cells - filled);
+}
 ```
 
 `src/tui/App.tsx`:
@@ -157,7 +300,7 @@ export interface AppProps {
 export function App({ repoLabel }: AppProps) {
   return (
     <Box flexDirection="column">
-      <Text color={theme.heading}>{repoLabel}</Text>
+      <Text {...theme.tier.primary}>{repoLabel}</Text>
     </Box>
   );
 }
