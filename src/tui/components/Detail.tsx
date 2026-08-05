@@ -18,6 +18,8 @@ export interface DetailProps {
   checks: CheckRun[];
   threads: ReviewThread[];
   showThreads: boolean;
+  /** Unsubmitted comments, shown here as well as in the status bar. */
+  stagedCount?: number;
 }
 
 /** Cyan `▸` for the current row, two blank columns otherwise. Never reverse
@@ -27,11 +29,66 @@ function cursorMark(selected: boolean) {
   return <Text color={theme.color.structure}>{selected ? `${theme.glyph.cursor} ` : '  '}</Text>;
 }
 
+/**
+ * Reading is tight, navigating breathes: no blank rows inside a hunk, one
+ * before every hunk after a file's first, and one before every file after the
+ * first. A finding sits flush under the hunk it is about, because it is part of
+ * reading that hunk rather than the next thing to navigate to.
+ */
+function leadsWithBlank(units: ReviewUnit[], index: number): boolean {
+  const unit = units[index];
+  if (!unit || index === 0) return false;
+  if (unit.kind === 'file-header') return true;
+  if (unit.kind === 'finding') return false;
+  return units[index - 1]!.kind !== 'file-header';
+}
+
+function threadRows(unit: ReviewUnit, threads: ReviewThread[], showThreads: boolean): number {
+  if (!showThreads) return 0;
+  return threads
+    .filter((t) => t.path === unit.file.file.path)
+    .reduce((sum, t) => sum + t.comments.length, 0);
+}
+
+/**
+ * Rows a unit occupies, which is what the viewport windows on. Long lines that
+ * wrap are counted once — the pane clips rather than reflowing, so a wrapped
+ * line costs a row of the next unit's space instead of the whole layout.
+ */
+export function unitHeight(
+  units: ReviewUnit[],
+  index: number,
+  threads: ReviewThread[],
+  showThreads: boolean,
+): number {
+  const unit = units[index];
+  if (!unit) return 0;
+  const lead = leadsWithBlank(units, index) ? 1 : 0;
+
+  if (unit.kind === 'file-header' || unit.kind === 'dropped-summary') return lead + 1;
+
+  if (unit.kind === 'hunk') {
+    return lead + 1 + unit.hunk.hunk.lines.length + threadRows(unit, threads, showThreads);
+  }
+
+  const finding = unit.finding;
+  const refutations = finding.verdict === 'refuted' ? finding.refutations.length : 0;
+  return lead + 2 + (finding.suggestion !== null ? 1 : 0) + refutations;
+}
+
+export function unitHeights(
+  units: ReviewUnit[],
+  threads: ReviewThread[],
+  showThreads: boolean,
+): number[] {
+  return units.map((_, i) => unitHeight(units, i, threads, showThreads));
+}
+
 function renderFileHeader(unit: Extract<ReviewUnit, { kind: 'file-header' }>, selected: boolean) {
   const dropped = unit.file.dropped;
   const path = unit.file.file.path;
   return (
-    <Text key={unit.index} dimColor={dropped !== null}>
+    <Text dimColor={dropped !== null}>
       {cursorMark(selected)}
       <Text color={theme.color.structure}>{theme.glyph.cut}</Text>
       {` ${path}`}
@@ -44,7 +101,7 @@ function renderDroppedSummary(unit: Extract<ReviewUnit, { kind: 'dropped-summary
   const reasons = [...new Set(unit.file.hunks.filter((h) => !h.keep).map((h) => h.reason))];
   const label = `${unit.count} hunk${unit.count === 1 ? '' : 's'} folded`;
   return (
-    <Text key={unit.index} {...theme.tier.muted}>
+    <Text {...theme.tier.muted}>
       {cursorMark(selected)}
       {`${theme.glyph.fold.repeat(3)} ${label} · ${reasons.join(', ')} — press z to reveal ${theme.glyph.fold.repeat(3)}`}
     </Text>
@@ -62,7 +119,7 @@ function renderHunk(
     : [];
 
   return (
-    <Box key={unit.index} flexDirection="column">
+    <Box flexDirection="column">
       <Text {...theme.tier.muted}>
         {cursorMark(selected)}
         {`${unit.hunk.hunk.header}  [${unit.hunk.reason}]`}
@@ -84,9 +141,7 @@ function renderHunk(
 function renderUnit(unit: ReviewUnit, selected: boolean, threads: ReviewThread[], showThreads: boolean) {
   if (unit.kind === 'file-header') return renderFileHeader(unit, selected);
   if (unit.kind === 'dropped-summary') return renderDroppedSummary(unit, selected);
-  if (unit.kind === 'finding') {
-    return <FindingCard key={unit.index} finding={unit.finding} selected={selected} />;
-  }
+  if (unit.kind === 'finding') return <FindingCard finding={unit.finding} selected={selected} />;
   return renderHunk(unit, selected, threads, showThreads);
 }
 
@@ -101,10 +156,16 @@ export function detailHeaderRows(meat: MeatResult, checks: CheckRun[]): number {
 }
 
 export function Detail({
-  pr, meat, units, cursor, scrollTop, height, checks, threads, showThreads,
+  pr, meat, units, cursor, scrollTop, height, checks, threads, showThreads, stagedCount = 0,
 }: DetailProps) {
   const failing = checks.filter((c) => c.conclusion === 'failure');
-  const items = units.map((u) => renderUnit(u, u.index === cursor, threads, showThreads));
+  const heights = unitHeights(units, threads, showThreads);
+  const items = units.map((unit, i) => (
+    <Box key={unit.index} flexDirection="column" flexShrink={0}>
+      {leadsWithBlank(units, i) && <Text> </Text>}
+      {renderUnit(unit, unit.index === cursor, threads, showThreads)}
+    </Box>
+  ));
   const headerRows = detailHeaderRows(meat, checks);
 
   return (
@@ -113,9 +174,17 @@ export function Detail({
       <Text {...theme.tier.primary}>{pr.title}</Text>
       <Text {...theme.tier.muted}>
         {`#${pr.number} · ${pr.author} · ${pr.baseRef} ← ${pr.headRef}`}
+        {/* Unsubmitted work nags in both places it can be seen from. */}
+        {stagedCount > 0 && (
+          <Text color={theme.color.pending}>{`  ${theme.glyph.staged} ${stagedCount} staged`}</Text>
+        )}
       </Text>
+      {/* `danger` is red AND bold — that weight is the only thing separating it
+          from `del`, which is the same red on every deleted line below. */}
       {failing.length > 0 && (
-        <Text color={theme.color.danger}>{`failing: ${failing.map((c) => c.name).join(', ')}`}</Text>
+        <Text color={theme.color.danger} bold>
+          {`failing: ${failing.map((c) => c.name).join(', ')}`}
+        </Text>
       )}
       {meat.summary.length > 0 && <Text>{meat.summary}</Text>}
       {/* The meat gauge: the product's thesis in ten characters. Filled cells
@@ -135,6 +204,7 @@ export function Detail({
       </Text>
       <Viewport
         items={items}
+        itemHeights={heights}
         height={Math.max(0, height - headerRows)}
         cursor={cursor}
         scrollTop={scrollTop}

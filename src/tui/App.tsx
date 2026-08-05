@@ -19,12 +19,12 @@ import type { ReviewDraft, Side, StagedComment, Verdict } from '../core/review/t
 import {
   buildUnits, nextFileIndex, nextFindingIndex, prevFileIndex, prevFindingIndex, type ReviewUnit,
 } from './units.js';
-import { nextScrollTop } from './viewport.js';
+import { indexAtRow, nextRowScrollTop, nextScrollTop, rowOffsets } from './viewport.js';
 import { resolveAction, type Mode } from './keymap.js';
 import { filterPrs } from './search.js';
 import { ChatPane } from './components/ChatPane.js';
 import { CommentEditor } from './components/CommentEditor.js';
-import { Detail, detailHeaderRows } from './components/Detail.js';
+import { Detail, detailHeaderRows, unitHeights } from './components/Detail.js';
 import { Help } from './components/Help.js';
 import { PrList, visibleEntryCount } from './components/PrList.js';
 import { StatusBar } from './components/StatusBar.js';
@@ -210,11 +210,27 @@ export function App(props: AppProps) {
       : []),
     [props.meat, expandedFiles, foldedFiles, shownFindings],
   );
-  /** Manual comments plus every accepted finding, in one list, once. */
-  const staged = useMemo(
-    () => [...draft.comments, ...toStagedComments(findings)],
-    [draft.comments, findings],
+  /**
+   * Rows each unit occupies. The detail pane's budget is in terminal rows and a
+   * unit is anywhere from one row to a whole screen, so scrolling has to be
+   * measured the same way the pane renders.
+   */
+  const unitRows = useMemo(
+    () => unitHeights(units, props.threads, showThreads),
+    [units, props.threads, showThreads],
   );
+  /**
+   * Manual comments plus every accepted finding, in one list, once. A restored
+   * draft already holds the comment an accepted finding produced, so the id
+   * decides: the same finding cannot be staged twice by being reloaded.
+   */
+  const staged = useMemo(() => {
+    const byId = new Map<string, StagedComment>();
+    for (const comment of [...draft.comments, ...toStagedComments(findings)]) {
+      byId.set(comment.id, comment);
+    }
+    return [...byId.values()];
+  }, [draft.comments, findings]);
   const fullDraft = useMemo(() => ({ ...draft, comments: staged }), [draft, staged]);
 
   // One row for the horizontal rule, one for the status line.
@@ -291,7 +307,7 @@ export function App(props: AppProps) {
   useEffect(() => {
     const clamped = clampCursor(unitCursor, units.length);
     setUnitCursor(clamped);
-    setUnitScroll((prev) => nextScrollTop(units.length, detailRows, clamped, prev));
+    setUnitScroll((prev) => nextRowScrollTop(unitRows, detailRows, clamped, prev));
   }, [units.length]);
 
   function moveList(next: number) {
@@ -303,7 +319,18 @@ export function App(props: AppProps) {
   function moveUnits(next: number) {
     const clamped = clampCursor(next, units.length);
     setUnitCursor(clamped);
-    setUnitScroll((prev) => nextScrollTop(units.length, detailRows, clamped, prev));
+    setUnitScroll((prev) => nextRowScrollTop(unitRows, detailRows, clamped, prev));
+  }
+
+  /**
+   * Half a page of ROWS, not of units: a page of one-row file headers and a
+   * page of forty-line hunks are the same distance on screen, and ctrl-d has to
+   * mean the same thing in both.
+   */
+  function halfPage(dir: -1 | 1) {
+    if (mode === 'list') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
+    const from = rowOffsets(unitRows)[cursor] ?? 0;
+    return moveUnits(indexAtRow(unitRows, from + dir * Math.floor(detailRows / 2)));
   }
 
   function move(next: number) {
@@ -468,9 +495,7 @@ export function App(props: AppProps) {
       case 'move':
         return move((mode === 'list' ? prCursor : cursor) + action.delta);
       case 'half-page':
-        return move(
-          (mode === 'list' ? prCursor : cursor) + action.dir * Math.floor(bodyHeight / 2),
-        );
+        return halfPage(action.dir);
       case 'file':
         return moveUnits(
           action.dir === 1 ? nextFileIndex(units, cursor) : prevFileIndex(units, cursor),
@@ -619,6 +644,7 @@ export function App(props: AppProps) {
               checks={props.checks}
               threads={props.threads}
               showThreads={showThreads}
+              stagedCount={staged.length}
             />
           ) : (
             <Text {...theme.tier.muted}>
