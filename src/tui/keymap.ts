@@ -43,31 +43,61 @@ export interface KeyLike {
   pageDown?: boolean;
 }
 
-export const KEY_HELP: ReadonlyArray<{ keys: string; description: string; modes: Mode[] }> = [
-  { keys: 'j / k', description: 'move down / up', modes: ['list', 'detail'] },
-  { keys: 'ctrl-d / ctrl-u', description: 'half page down / up', modes: ['detail'] },
-  { keys: '] / [', description: 'next / previous file', modes: ['detail'] },
-  { keys: 'space', description: 'fold or unfold this file', modes: ['detail'] },
-  { keys: 'z / Z', description: 'reveal dropped hunks in this file / everywhere', modes: ['detail'] },
-  { keys: 'd', description: 'toggle full diff vs meat', modes: ['detail'] },
-  { keys: 'm', description: 'check this file off as reviewed', modes: ['detail'] },
-  { keys: 't', description: 'toggle existing review threads', modes: ['detail'] },
-  { keys: 'o', description: 'open this hunk on github.com', modes: ['detail'] },
-  { keys: 'C', description: 'comment on the line under the cursor', modes: ['detail'] },
-  { keys: 'S', description: 'suggest a change on the line under the cursor', modes: ['detail'] },
-  { keys: 'n / p', description: 'next / previous finding', modes: ['detail'] },
-  { keys: 'a / x', description: 'accept this finding as a comment / drop it', modes: ['detail'] },
-  { keys: 'e / s', description: 'rewrite this finding / send it as a suggestion', modes: ['detail'] },
-  { keys: 'v', description: 'show refuted findings and why they were refuted', modes: ['detail'] },
-  { keys: 'i', description: 'ask the model about this hunk', modes: ['detail'] },
-  { keys: '!', description: 'approve, request changes, or comment', modes: ['detail'] },
-  { keys: 'enter', description: 'open the selected pull request', modes: ['list'] },
-  { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'] },
-  { keys: '/', description: 'search by title, author, or number', modes: ['list'] },
-  { keys: 'R', description: 'refetch from GitHub; retry the model pass', modes: ['list', 'detail'] },
-  { keys: '?', description: 'this help', modes: ['list', 'detail'] },
-  { keys: 'q', description: 'quit', modes: ['list', 'detail'] },
-  { keys: 'esc / q', description: 'close this overlay', modes: ['comment', 'submit', 'help', 'search', 'chat'] },
+/**
+ * Sections of the help overlay, in the order a reviewer needs them: get around,
+ * read, deal with what the model found, record an opinion, pick the next one.
+ *
+ * The overlay is generated from these, so a binding cannot be added without
+ * landing under a heading — twenty-four rows in one undifferentiated column is a
+ * list nobody reads to the end of.
+ */
+export type HelpGroup = 'move' | 'read' | 'findings' | 'record' | 'list' | 'anywhere';
+
+export const HELP_GROUPS: ReadonlyArray<{ id: HelpGroup; title: string }> = [
+  { id: 'move', title: 'move' },
+  { id: 'read', title: 'read the diff' },
+  { id: 'findings', title: 'what the model found' },
+  { id: 'record', title: 'record your review' },
+  { id: 'list', title: 'choose a pull request' },
+  { id: 'anywhere', title: 'anywhere' },
+];
+
+export interface KeyHelpEntry {
+  keys: string;
+  description: string;
+  modes: Mode[];
+  group: HelpGroup;
+}
+
+export const KEY_HELP: readonly KeyHelpEntry[] = [
+  { keys: 'j / k', description: 'move down / up', modes: ['list', 'detail'], group: 'move' },
+  { keys: 'ctrl-d / ctrl-u', description: 'half page down / up', modes: ['detail'], group: 'move' },
+  { keys: '] / [', description: 'next / previous file', modes: ['detail'], group: 'move' },
+  { keys: 'n / p', description: 'next / previous finding', modes: ['detail'], group: 'move' },
+  // The mouse is documented here for the same reason the keys are: a reviewer
+  // who does not know the wheel works will not try it twice.
+  { keys: 'wheel', description: 'scroll the diff', modes: ['list', 'detail'], group: 'move' },
+  { keys: 'click', description: 'put the cursor on that line, or jump to that file', modes: ['detail'], group: 'move' },
+  { keys: 'space', description: 'fold or unfold this file', modes: ['detail'], group: 'read' },
+  { keys: 'z / Z', description: 'reveal dropped hunks in this file / everywhere', modes: ['detail'], group: 'read' },
+  { keys: 'd', description: 'toggle full diff vs meat', modes: ['detail'], group: 'read' },
+  { keys: 'm', description: 'check this file off as reviewed', modes: ['detail'], group: 'read' },
+  { keys: 't', description: 'toggle existing review threads', modes: ['detail'], group: 'read' },
+  { keys: 'o', description: 'open this hunk on github.com', modes: ['detail'], group: 'read' },
+  { keys: 'a / x', description: 'accept this finding as a comment / drop it', modes: ['detail'], group: 'findings' },
+  { keys: 'e / s', description: 'rewrite this finding / send it as a suggestion', modes: ['detail'], group: 'findings' },
+  { keys: 'v', description: 'show refuted findings and why they were refuted', modes: ['detail'], group: 'findings' },
+  { keys: 'i', description: 'ask the model about this hunk', modes: ['detail'], group: 'findings' },
+  { keys: 'C', description: 'comment on the line under the cursor', modes: ['detail'], group: 'record' },
+  { keys: 'S', description: 'suggest a change on the line under the cursor', modes: ['detail'], group: 'record' },
+  { keys: '!', description: 'approve, request changes, or comment', modes: ['detail'], group: 'record' },
+  { keys: 'enter', description: 'open the selected pull request', modes: ['list'], group: 'list' },
+  { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'], group: 'list' },
+  { keys: '/', description: 'search by title, author, or number', modes: ['list'], group: 'list' },
+  { keys: 'R', description: 'refetch from GitHub; retry the model pass', modes: ['list', 'detail'], group: 'anywhere' },
+  { keys: '?', description: 'this help', modes: ['list', 'detail'], group: 'anywhere' },
+  { keys: 'q', description: 'quit', modes: ['list', 'detail'], group: 'anywhere' },
+  { keys: 'esc / q', description: 'close this overlay', modes: ['comment', 'submit', 'help', 'search', 'chat'], group: 'anywhere' },
 ];
 
 const FILTERS: Record<string, PullFilter> = {
@@ -88,7 +118,19 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
 
   // An overlay you cannot leave with the key you leave everything else with is
   // a trap, and `q` in help reads as "quit this, not the program".
-  if (mode === 'help') return input === 'q' ? { type: 'back' } : null;
+  //
+  // It scrolls, because on a narrow terminal every binding does not fit in one
+  // screen and the one you are looking for is as likely to be below the fold as
+  // above it. Same keys as everywhere else — learning a second set to read the
+  // list of the first would be a joke at the reviewer's expense.
+  if (mode === 'help') {
+    if (input === 'q') return { type: 'back' };
+    if (key.upArrow || input === 'k') return { type: 'move', delta: -1 };
+    if (key.downArrow || input === 'j') return { type: 'move', delta: 1 };
+    if (key.ctrl && input === 'd') return { type: 'half-page', dir: 1 };
+    if (key.ctrl && input === 'u') return { type: 'half-page', dir: -1 };
+    return null;
+  }
 
   // Submit-screen internals are handled by the screen itself; only global
   // navigation is resolved here.

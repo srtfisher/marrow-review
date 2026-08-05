@@ -4,7 +4,8 @@ import {
   App, chatContextForRow, clampCursor, hunkUrl, mergeTriage,
 } from '../../src/tui/App.js';
 import { Help } from '../../src/tui/components/Help.js';
-import { KEY_HELP } from '../../src/tui/keymap.js';
+import { HELP_GROUPS, KEY_HELP } from '../../src/tui/keymap.js';
+import { layoutHelp } from '../../src/tui/help.js';
 import { buildUnits } from '../../src/tui/units.js';
 import { anchorAtRow, buildRows } from '../../src/tui/rows.js';
 import { accept, initTriage, toStagedComments } from '../../src/core/findings/triage.js';
@@ -14,7 +15,7 @@ import type { PullRequestDetail, PullRequestSummary } from '../../src/core/githu
 
 function summary(number: number, title: string, over: Partial<PullRequestSummary> = {}): PullRequestSummary {
   return {
-    number, title, author: 'srtfisher', state: 'open', isDraft: false,
+    number, title, author: 'octocat', state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'feat/x',
     updatedAt: '2026-08-01T00:00:00Z',
     ...over,
@@ -55,7 +56,7 @@ const units = buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set(
 const rows = buildRows(units, [], false);
 
 const base = {
-  repoLabel: 'srtfisher/marrow',
+  repoLabel: 'octocat/marrow',
   prs: [summary(42, 'Fix rendering'), summary(43, 'Add caching')],
   pr: null,
   meat: null,
@@ -70,15 +71,79 @@ const base = {
 
 describe('Help', () => {
   test('documents every keymap entry', () => {
-    const out = renderToString(<Help />);
+    const out = renderToString(<Help width={160} height={40} />, { columns: 160 });
     for (const entry of KEY_HELP) {
       expect(out).toContain(entry.keys);
     }
   });
 
   test('cannot drift from the keymap because it is generated from it', () => {
-    const out = renderToString(<Help />);
+    const out = renderToString(<Help width={160} height={40} />, { columns: 160 });
     expect(out).toContain('approve, request changes, or comment');
+  });
+
+  test('names every group it files bindings under', () => {
+    const out = renderToString(<Help width={160} height={40} />, { columns: 160 });
+    for (const { title } of HELP_GROUPS) {
+      expect(out).toContain(title);
+    }
+  });
+
+  // Ink draws an overflowing column on top of itself rather than clipping it, so
+  // twenty-six rows of bindings in a twenty-four row terminal came out garbled.
+  test('fits an eighty-by-twenty-four terminal without overdrawing', () => {
+    const lines = renderToString(<Help width={80} height={24} />, { columns: 80 })
+      .replaceAll(/\x1b\[[0-9;]*m/g, '')
+      .split('\n');
+
+    expect(lines.length).toBeLessThanOrEqual(24);
+    for (const line of lines) {
+      expect(line.replace(/\s+$/, '').length).toBeLessThanOrEqual(80);
+      // No cell holding two rows' worth of content.
+      expect(line).not.toMatch(/[│╰╭]/);
+    }
+
+    const out = lines.join('\n');
+    // What does not fit scrolls, and says so — an eighty-column terminal has
+    // room for one column, and one column of every binding is thirty-seven rows.
+    expect(out).toMatch(/1–\d+ of \d+ · j k to scroll/);
+    expect(out).toContain('esc to close');
+    // The first section is the one on screen, whole rather than half-drawn.
+    expect(out).toContain('move down / up');
+  });
+
+  test('scrolls to the bindings that did not fit rather than dropping them', () => {
+    const at = (scrollTop: number) => renderToString(
+      <Help width={80} height={24} scrollTop={scrollTop} />, { columns: 80 },
+    );
+    // `!` is in the last group, well past the fold on a short terminal.
+    expect(at(0)).not.toContain('approve, request changes, or comment');
+    expect(at(20)).toContain('approve, request changes, or comment');
+  });
+
+  test('will not scroll past the last binding', () => {
+    const out = renderToString(
+      <Help width={80} height={24} scrollTop={9999} />, { columns: 80 },
+    ).replaceAll(/\x1b\[[0-9;]*m/g, '');
+    // The window stops with the last row at the bottom, never on empty space.
+    expect(out).toContain('close this overlay');
+    expect(out).toMatch(/(\d+)–37 of 37/);
+  });
+
+  // Two roomy columns beat three cramped ones when two already fit.
+  test('uses the fewest columns the height needs, not the most the width allows', () => {
+    expect(layoutHelp(240, 40).columns).toBe(1);
+    expect(layoutHelp(240, 24).columns).toBe(2);
+    expect(layoutHelp(80, 24).columns).toBe(1);
+  });
+
+  test('renders at all when the terminal reports no size', () => {
+    // `Math.floor(NaN)` columns made an empty array of columns and the first
+    // push crashed the app on a keystroke as harmless as `?`.
+    const out = renderToString(
+      <Help width={undefined as unknown as number} height={undefined as unknown as number} />,
+    );
+    expect(out).toContain('Keys');
   });
 });
 
@@ -207,13 +272,13 @@ describe('chatContextForRow', () => {
 
 describe('hunkUrl', () => {
   test('builds the github file anchor GitHub itself uses', () => {
-    const url = hunkUrl('srtfisher/marrow', 42, { path: 'src/app.ts', line: 2, side: 'RIGHT' });
-    expect(url).toStartWith('https://github.com/srtfisher/marrow/pull/42/files#diff-');
+    const url = hunkUrl('octocat/marrow', 42, { path: 'src/app.ts', line: 2, side: 'RIGHT' });
+    expect(url).toStartWith('https://github.com/octocat/marrow/pull/42/files#diff-');
     expect(url).toEndWith('R2');
   });
 
   test('marks a LEFT anchor with L', () => {
-    const url = hunkUrl('srtfisher/marrow', 42, { path: 'src/app.ts', line: 7, side: 'LEFT' });
+    const url = hunkUrl('octocat/marrow', 42, { path: 'src/app.ts', line: 7, side: 'LEFT' });
     expect(url).toEndWith('L7');
   });
 });
