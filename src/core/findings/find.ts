@@ -10,7 +10,17 @@ export type { Finding, RawFinding };
 
 /** The agent may read the worktree. It may not change it or run commands in it. */
 export const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob'] as const;
-export const DENIED_TOOLS = ['Write', 'Edit', 'NotebookEdit', 'Bash'] as const;
+/**
+ * Named explicitly rather than left to the SDK's default-deny for tools absent
+ * from `allowedTools`: the deny list is the thing a reader audits, and a future
+ * default that opens up — or a subagent that inherits a wider set — must not be
+ * able to quietly hand untrusted code a shell (`Bash`), a way to spawn an agent
+ * outside these limits (`Task`), or a way to exfiltrate what it read
+ * (`WebFetch`, `WebSearch`).
+ */
+export const DENIED_TOOLS = [
+  'Write', 'Edit', 'NotebookEdit', 'Bash', 'Task', 'WebFetch', 'WebSearch',
+] as const;
 
 export const FINDINGS_SYSTEM_PROMPT = `You are reviewing a pull request for a senior engineer who will decide what to do with each of your findings.
 

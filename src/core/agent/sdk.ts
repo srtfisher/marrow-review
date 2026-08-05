@@ -2,6 +2,8 @@ import {
   query,
   USAGE_LIMIT_ERROR_PREFIXES,
   USAGE_WARNING_PREFIXES,
+  type Options,
+  type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { MARROW_VERSION } from '../version.js';
 import type { AgentRequest, AgentRun, AgentTransport } from './types.js';
@@ -37,34 +39,66 @@ function matchUsageNotice(text: string): string | null {
   return null;
 }
 
+/** The shape of the SDK's `query`, narrowed to what this transport calls. */
+export type QueryFn = (args: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
+
 export interface SdkTransportOptions {
   useApiKey?: boolean;
   env?: NodeJS.ProcessEnv;
+  /** Injectable for tests; production always uses the SDK's own `query`. */
+  query?: QueryFn;
+}
+
+/**
+ * DO NOT REMOVE `settingSources: []`, and do not "restore CLAUDE.md loading" by
+ * relaxing it.
+ *
+ * `cwd` here is a git worktree checked out at the PULL REQUEST'S HEAD — content
+ * the pull request's author controls. When `settingSources` is omitted the SDK
+ * loads every source the CLI would, including `'project'`, which reads
+ * `.claude/settings.json` relative to `cwd`. That file can define **hooks**, and
+ * hooks are shell commands rather than tools, so `disallowedTools` never sees
+ * them: reviewing a malicious pull request would run the author's shell commands
+ * on the reviewer's machine.
+ *
+ * The cost is real and accepted — this repository's own CLAUDE.md no longer
+ * reaches the agent. We are reading untrusted code; that is the correct trade.
+ */
+const ISOLATED_SETTINGS: Options['settingSources'] = [];
+
+export function buildQueryOptions(
+  req: AgentRequest,
+  env: Record<string, string | undefined>,
+): Options {
+  return {
+    model: req.model,
+    cwd: req.cwd,
+    systemPrompt: req.systemPrompt,
+    allowedTools: req.allowedTools,
+    disallowedTools: req.disallowedTools,
+    maxTurns: req.maxTurns,
+    resume: req.resume,
+    env,
+    settingSources: ISOLATED_SETTINGS,
+    ...(req.schema
+      ? { outputFormat: { type: 'json_schema' as const, schema: req.schema } }
+      : {}),
+  };
 }
 
 export class SdkTransport implements AgentTransport {
   private readonly env: Record<string, string | undefined>;
+  private readonly query: QueryFn;
 
   constructor(options: SdkTransportOptions = {}) {
     this.env = buildSubprocessEnv(options.env ?? process.env, options.useApiKey === true);
+    this.query = options.query ?? query;
   }
 
   async run(req: AgentRequest): Promise<AgentRun> {
-    const stream = query({
+    const stream = this.query({
       prompt: req.prompt,
-      options: {
-        model: req.model,
-        cwd: req.cwd,
-        systemPrompt: req.systemPrompt,
-        allowedTools: req.allowedTools,
-        disallowedTools: req.disallowedTools,
-        maxTurns: req.maxTurns,
-        resume: req.resume,
-        env: this.env,
-        ...(req.schema
-          ? { outputFormat: { type: 'json_schema' as const, schema: req.schema } }
-          : {}),
-      },
+      options: buildQueryOptions(req, this.env),
     });
 
     let text = '';
