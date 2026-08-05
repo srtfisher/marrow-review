@@ -30,7 +30,7 @@ export interface PrListProps {
  * blank one. Dense within a row, airy between groups — two-row entries stacked
  * flush against each other got the first half right and read as a wall.
  */
-const ROWS_PER_ENTRY = 3;
+export const ROWS_PER_ENTRY = 3;
 
 /**
  * Rows the pane spends on itself: the filter line, the query line while
@@ -41,7 +41,16 @@ const ROWS_PER_ENTRY = 3;
  * status bar off the bottom of the screen.
  */
 function chromeRows(searching: boolean): number {
-  return (searching ? 2 : 1) + 1 + 1;
+  return headerRows(searching) + 1;
+}
+
+/**
+ * Rows above the first entry: the filter line, the query line while searching,
+ * and the blank row under them. Exported because a click has to be turned back
+ * into an entry, and counting these twice is how that ends up one row out.
+ */
+export function headerRows(searching: boolean): number {
+  return (searching ? 2 : 1) + 1;
 }
 
 /**

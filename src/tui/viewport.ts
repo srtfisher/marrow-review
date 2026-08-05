@@ -43,6 +43,40 @@ export function computeWindow(
  * mode, and half a hunk at the top of the pane is what every pager has always
  * done.
  */
+/**
+ * Scrolls the window by `delta` rows and brings the cursor along.
+ *
+ * The wheel scrolls the view, which is what a wheel does everywhere else. But
+ * the cursor is not a decoration here — `C` comments on the line it is pointing
+ * at — so a view that scrolls out from under it would leave the reviewer able to
+ * comment on a line they cannot see. It is dragged to the nearest visible row
+ * instead, and left alone while it is already in view.
+ *
+ * Distinct from `nextScrollTop`, which is the other direction: there the cursor
+ * moves and the view follows.
+ */
+export function scrollBy(
+  total: number,
+  height: number,
+  cursor: number,
+  scrollTop: number,
+  delta: number,
+): { scrollTop: number; cursor: number } {
+  const usableHeight = Math.max(0, height);
+
+  // Nothing on screen to scroll, and no row to put a cursor on. Banking an
+  // offset here would jump the view the moment the pane had a row again.
+  if (total === 0 || usableHeight === 0) return { scrollTop, cursor };
+
+  const limit = maxScrollTop(total, usableHeight);
+  const next = clamp(scrollTop + delta, 0, limit);
+
+  return {
+    scrollTop: next,
+    cursor: clamp(cursor, next, Math.min(total - 1, next + usableHeight - 1)),
+  };
+}
+
 export function nextScrollTop(
   total: number,
   height: number,

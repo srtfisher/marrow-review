@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput, useStdin, useWindowSize } from 'ink';
+import { Box, Text, useApp, useInput, useStdin, useStdout, useWindowSize } from 'ink';
 import TextInput from 'ink-text-input';
 import type { AgentTransport } from '../core/agent/types.js';
 import type { Hunk } from '../core/diff/types.js';
@@ -26,7 +26,10 @@ import {
   prevFileRow, prevFindingRow, unitAtRow, unitStartRows, type DetailRow,
 } from './rows.js';
 import { editInEditor } from './editor.js';
-import { nextScrollTop } from './viewport.js';
+import { nextScrollTop, scrollBy } from './viewport.js';
+import { hitDetail, hitList } from './hittest.js';
+import { MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_ROWS, parseMouse } from './mouse.js';
+import { planFileIndex } from './fileindex.js';
 import { resolveAction, type Mode } from './keymap.js';
 import type { LoadProgress } from './progress.js';
 import { filterPrs } from './search.js';
@@ -34,8 +37,11 @@ import { ChatPane } from './components/ChatPane.js';
 import { CommentEditor } from './components/CommentEditor.js';
 import { Detail, detailHeaderRows } from './components/Detail.js';
 import { Help } from './components/Help.js';
+import { helpBodyRows, layoutHelp } from './help.js';
 import { LoadingSteps } from './components/LoadingSteps.js';
-import { PrList, visibleEntryCount } from './components/PrList.js';
+import {
+  PrList, ROWS_PER_ENTRY, headerRows as listHeaderRows, visibleEntryCount,
+} from './components/PrList.js';
 import { HintBar } from './components/HintBar.js';
 import { detailHints, listHints } from './hints.js';
 import { SubmitScreen } from './components/SubmitScreen.js';
@@ -188,6 +194,7 @@ function ChatOverlay({ session, pending, onAsk, onClose }: ChatOverlayProps) {
 export function App(props: AppProps) {
   const { exit } = useApp();
   const { setRawMode, isRawModeSupported } = useStdin();
+  const { stdout } = useStdout();
   const { columns, rows } = useWindowSize();
 
   const [mode, setMode] = useState<Mode>(props.pr ? 'detail' : 'list');
@@ -200,6 +207,8 @@ export function App(props: AppProps) {
   const [rowCursor, setRowCursor] = useState(0);
   const [rowScroll, setRowScroll] = useState(0);
   const [query, setQuery] = useState('');
+  /** Help scrolls when no arrangement of the bindings fits the terminal. */
+  const [helpScroll, setHelpScroll] = useState(0);
   const [expandedFiles, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [foldedFiles, setFolded] = useState<ReadonlySet<string>>(new Set());
   /** `d`: show every hunk, not only the ones the meat pass kept. */
@@ -301,9 +310,23 @@ export function App(props: AppProps) {
   const findingsFailed = findingsStatus === 'failed';
   const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
   const detailHeight = Math.max(0, bodyHeight - noteRows);
-  const detailRows = props.meat
-    ? Math.max(0, detailHeight - detailHeaderRows(props.meat, props.checks, detailWidth))
+  const detailHeaderHeight = props.meat
+    ? detailHeaderRows(props.meat, props.checks, detailWidth)
     : 0;
+  const detailRows = props.meat ? Math.max(0, detailHeight - detailHeaderHeight) : 0;
+
+  // The file index, planned once: the pane draws from this and a click is
+  // resolved against it, so the two cannot disagree about where a cell is.
+  const indexPaths = useMemo(
+    () => props.meat?.files.map((f) => f.file.path) ?? [],
+    [props.meat],
+  );
+  const indexPlan = useMemo(
+    () => planFileIndex(indexPaths, detailWidth),
+    [indexPaths, detailWidth],
+  );
+  /** Where the detail pane's content starts, the sidebar and padding counted. */
+  const paneLeft = reviewing ? 1 : theme.layout.sidebarWidth + 2;
 
   // Folding shrinks the row list under the cursor, and a query shrinks the
   // pull-request list under it; clamp on the way out rather than trusting the
@@ -323,6 +346,19 @@ export function App(props: AppProps) {
     setConfirmQuit(false);
     setMode('detail');
   }, [openNumber]);
+
+  // Mouse reporting, on for as long as this app owns the terminal.
+  //
+  // Turned off again on the way out without fail, including while `$EDITOR` has
+  // the terminal: a shell left in reporting mode prints `[<0;12;7M` every time
+  // you click, and the reviewer has no idea what did that to their prompt.
+  useEffect(() => {
+    if (!isRawModeSupported || editorOpen) return;
+    stdout.write(MOUSE_ENABLE);
+    return () => {
+      stdout.write(MOUSE_DISABLE);
+    };
+  }, [isRawModeSupported, editorOpen, stdout]);
 
   // A draft recovered from disk, or carried over from an earlier head. Keyed on
   // the object rather than the number: it arrives after the pull request does.
@@ -436,8 +472,19 @@ export function App(props: AppProps) {
 
   /** Half a page of rows — the cursor and the budget are the same unit now. */
   function halfPage(dir: -1 | 1) {
+    if (mode === 'help') return moveHelp(dir * Math.max(1, Math.floor(helpBodyRows(rows) / 2)));
     if (mode === 'list') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
     return moveRows(cursor + dir * Math.max(1, Math.floor(detailRows / 2)));
+  }
+
+  /** The help overlay scrolls rather than clipping; this is its offset. */
+  function moveHelp(delta: number) {
+    const layout = layoutHelp(columns, rows);
+    const body = helpBodyRows(rows);
+    setHelpScroll((prev) => Math.min(
+      Math.max(0, prev + delta),
+      Math.max(0, layout.rows.length - body),
+    ));
   }
 
   function move(next: number) {
@@ -473,6 +520,9 @@ export function App(props: AppProps) {
 
   function enterOverlay(next: Mode) {
     setUnderlay(mode);
+    // Help opens at the top every time. Reopening it halfway down the list it
+    // was left at reads as the overlay having lost its first section.
+    if (next === 'help') setHelpScroll(0);
     setMode(next);
   }
 
@@ -586,6 +636,93 @@ export function App(props: AppProps) {
     setMode('detail');
   }
 
+  /**
+   * The wheel and the left button, in the two panes that have rows.
+   *
+   * Everything here is also a key, and stays one: this is a keyboard tool, and
+   * the mouse is here because a reviewer scrolling a diff reaches for the wheel
+   * without deciding to. Returns true when the report was consumed, so a report
+   * this app has no use for cannot fall through to the keymap.
+   */
+  function handleMouse(report: NonNullable<ReturnType<typeof parseMouse>>): boolean {
+    const wheel = report.action === 'wheel-up' ? -1 : 1;
+
+    if (mode === 'list' || mode === 'search') {
+      // One entry per notch, not three rows: entries are three rows tall, and a
+      // list of a dozen pull requests is chosen from, not scrolled through.
+      if (report.action === 'wheel-up' || report.action === 'wheel-down') {
+        moveList(prCursor + wheel);
+        return true;
+      }
+      if (report.action !== 'press' || report.button !== 'left') return true;
+
+      const hit = hitList({
+        top: listHeaderRows(mode === 'search'),
+        rowsPerEntry: ROWS_PER_ENTRY,
+        visibleEntries: listRows,
+        scrollTop: listScroll,
+        total: visiblePrs.length,
+        left: 1,
+        right: theme.layout.sidebarWidth - 1,
+      }, report.column, report.row);
+      if (hit === null) return true;
+
+      // Clicking the entry that is already selected opens it. One click to aim
+      // and one to commit, so a stray click cannot spend a minute fetching a
+      // pull request nobody asked for.
+      if (hit === prCursor) {
+        const selected = visiblePrs[hit];
+        if (selected) props.onOpenPr(selected.number);
+      } else {
+        moveList(hit);
+      }
+      return true;
+    }
+
+    if (mode !== 'detail' || !props.meat) return true;
+
+    if (report.action === 'wheel-up' || report.action === 'wheel-down') {
+      // The view leads and the cursor follows, which is the opposite of `j`.
+      const next = scrollBy(
+        detailRowList.length, detailRows, cursor, rowScroll, wheel * WHEEL_ROWS,
+      );
+      setRowScroll(next.scrollTop);
+      setRowCursor(next.cursor);
+      markSeen(next.cursor);
+      return true;
+    }
+
+    if (report.action !== 'press' || report.button !== 'left') return true;
+
+    const hit = hitDetail({
+      headerRows: detailHeaderHeight,
+      indexRows: indexPlan.rows,
+      indexColumns: indexPlan.columns,
+      indexCellWidth: indexPlan.cellWidth,
+      indexCells: indexPlan.shownCount + (indexPlan.hidden > 0 ? 1 : 0),
+      viewportRows: detailRows,
+      scrollTop: rowScroll,
+      totalRows: detailRowList.length,
+      paneLeft,
+    }, report.column, report.row);
+    if (!hit) return true;
+
+    if (hit.kind === 'diff-row') {
+      // Not `moveRows`: the row is already on screen, so recentring the view
+      // under the reviewer's own click would be the pane moving for no reason.
+      setRowCursor(hit.index);
+      markSeen(hit.index);
+      return true;
+    }
+
+    // A cell on the index. The overflow cell names a count, not a file.
+    const path = indexPaths[hit.index];
+    if (path === undefined) return true;
+    const row = detailRowList.findIndex((r) => r.path === path);
+    if (row >= 0) moveRows(row);
+    return true;
+  }
+
   function moveVerdict(delta: number) {
     const from = VERDICTS.indexOf(verdict);
     for (let step = 1; step <= VERDICTS.length; step += 1) {
@@ -605,6 +742,17 @@ export function App(props: AppProps) {
     // The comment editor and the chat prompt own every key while they are up,
     // including esc. `$EDITOR` owns the actual terminal.
     if (mode === 'comment' || mode === 'chat' || editorOpen) return;
+
+    // Mouse reports arrive as one input event each and name no key, so they are
+    // taken off the front here. Left in, `[<0;42;13M` would reach the keymap as
+    // a string starting with `[` — the binding for "previous file".
+    const mouse = parseMouse(input);
+    if (mouse) {
+      // A question about losing work owns the screen; scrolling behind it would
+      // move a cursor the reviewer cannot see the effect of.
+      if (!confirmQuit) handleMouse(mouse);
+      return;
+    }
 
     // `q` used to discard every triaged finding, staged comment, and chat turn
     // without a word. Three keys, and none of them lose work by accident.
@@ -646,6 +794,7 @@ export function App(props: AppProps) {
 
     switch (action.type) {
       case 'move':
+        if (mode === 'help') return moveHelp(action.delta);
         return move((mode === 'list' ? prCursor : cursor) + action.delta);
       case 'half-page':
         return halfPage(action.dir);
@@ -743,7 +892,9 @@ export function App(props: AppProps) {
   // The editor has the terminal. Anything drawn here would land on top of it.
   if (editorOpen) return null;
 
-  if (mode === 'help') return <Help />;
+  // The overlay is the only thing on screen, so it gets the whole terminal to
+  // decide its own column count from.
+  if (mode === 'help') return <Help width={columns} height={rows} scrollTop={helpScroll} />;
 
   if (mode === 'submit' && props.pr && props.meat) {
     return (
