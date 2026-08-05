@@ -50,6 +50,47 @@ describe('detail mode', () => {
   });
 });
 
+describe('findings triage', () => {
+  test('n and p walk the findings', () => {
+    expect(resolveAction('n', noKey, 'detail')).toEqual({ type: 'finding', dir: 1 });
+    expect(resolveAction('p', noKey, 'detail')).toEqual({ type: 'finding', dir: -1 });
+  });
+
+  test('a accepts, x drops, e edits, s toggles the suggestion', () => {
+    expect(resolveAction('a', noKey, 'detail')).toEqual({ type: 'accept-finding' });
+    expect(resolveAction('x', noKey, 'detail')).toEqual({ type: 'drop-finding' });
+    expect(resolveAction('e', noKey, 'detail')).toEqual({ type: 'edit-finding' });
+    expect(resolveAction('s', noKey, 'detail')).toEqual({ type: 'toggle-finding-suggestion' });
+  });
+
+  test('v reveals refutations and i opens chat', () => {
+    expect(resolveAction('v', noKey, 'detail')).toEqual({ type: 'toggle-refuted' });
+    expect(resolveAction('i', noKey, 'detail')).toEqual({ type: 'chat' });
+  });
+
+  test('the triage letters stay inert in list mode', () => {
+    for (const ch of 'aexsvinp') {
+      expect(resolveAction(ch, noKey, 'list')).toBeNull();
+    }
+  });
+
+  test('lowercase s does not collide with the S that authors a suggestion', () => {
+    expect(resolveAction('S', noKey, 'detail')).toEqual({ type: 'suggest' });
+  });
+});
+
+describe('chat mode', () => {
+  test('swallows every key except escape, so a question is never a command', () => {
+    expect(resolveAction('', { escape: true }, 'chat')).toEqual({ type: 'back' });
+    // Every triage letter plus the global ones: typing "can x still be null?"
+    // must not drop a finding, quit, or open the submit screen.
+    for (const ch of 'aexsvinpjkqR?!123/') {
+      expect(resolveAction(ch, noKey, 'chat')).toBeNull();
+    }
+    expect(resolveAction('', { return: true }, 'chat')).toBeNull();
+  });
+});
+
 describe('list mode', () => {
   test('enter opens the selected PR', () => {
     expect(resolveAction('', { return: true }, 'list')).toEqual({ type: 'open' });
@@ -104,6 +145,17 @@ describe('KEY_HELP', () => {
   test('documents every binding the resolver answers to in detail mode', () => {
     const documented = KEY_HELP.filter((e) => e.modes.includes('detail'));
     expect(documented.length).toBeGreaterThan(8);
+    for (const entry of documented) {
+      expect(entry.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('documents each new triage key, since the overlay is generated from it', () => {
+    const documented = KEY_HELP.filter((e) => e.modes.includes('detail'));
+    const keys = documented.map((e) => e.keys).join(' ');
+    for (const key of ['a', 'e', 's', 'x', 'v', 'i', 'n', 'p']) {
+      expect(keys.split(/[\s/]+/)).toContain(key);
+    }
     for (const entry of documented) {
       expect(entry.description.length).toBeGreaterThan(0);
     }

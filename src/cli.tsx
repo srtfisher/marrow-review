@@ -58,14 +58,19 @@ function noteApiKeyWithheld(args: CliArgs): void {
   }
 }
 
-/** The worktree only supplies reading context; failing to create one is not fatal. */
-async function tryWorktree(repo: RepoContext, pr: PullRequestDetail): Promise<boolean> {
+/**
+ * The worktree only supplies reading context; failing to create one is not
+ * fatal. Returns its path, which is also the directory the agent reads from —
+ * null means diff-only, and the agent passes stay off rather than reasoning
+ * about whatever commit the user's own checkout happens to be on.
+ */
+async function tryWorktree(repo: RepoContext, pr: PullRequestDetail): Promise<string | null> {
   try {
-    await ensureWorktree(repo, pr.number, pr.headSha);
-    return true;
+    const worktree = await ensureWorktree(repo, pr.number, pr.headSha);
+    return worktree.path;
   } catch {
     process.stderr.write('note: could not create a worktree; continuing diff-only.\n');
-    return false;
+    return null;
   }
 }
 
@@ -122,7 +127,14 @@ async function listToStdout(session: Session, filter: PullFilter): Promise<numbe
   return 0;
 }
 
-/** The text path, unchanged: `--dry-run`, and any non-interactive invocation. */
+/**
+ * The text path, unchanged: `--dry-run`, and any non-interactive invocation.
+ *
+ * The findings and verify passes deliberately do not run here. They exist to be
+ * triaged key by key, and `--dry-run` is what you reach for to see the cut
+ * without paying for a review — printing findings would make it the slow,
+ * expensive command instead of the cheap one.
+ */
 async function reviewToStdout(session: Session, prNumber: number): Promise<number> {
   const { args, repo, client, octokit, viewer } = session;
 
@@ -171,12 +183,16 @@ async function runTui(session: Session): Promise<number> {
   let meat: MeatResult | null = null;
   let checks: CheckRun[] = [];
   let threads: ReviewThread[] = [];
-  let worktreeOk = false;
+  let worktree: string | null = null;
   let status: string | null = null;
   /** Printed after the alternate screen is torn down, so it survives on screen. */
   let farewell: string | null = null;
 
   noteApiKeyWithheld(args);
+
+  // One transport for the findings, verify, and chat passes; the meat pass
+  // makes its own per run because it is keyed to a different model.
+  const transport = new SdkTransport({ useApiKey: args.useApiKey });
 
   function view() {
     return (
@@ -188,9 +204,11 @@ async function runTui(session: Session): Promise<number> {
         checks={checks}
         threads={threads}
         model={args.model}
-        worktreeOk={worktreeOk}
+        worktreeOk={worktree !== null}
         filter={filter}
         status={status}
+        transport={transport}
+        cwd={worktree}
         onOpenPr={(number) => void openPr(number)}
         onSubmit={(draft, verdict) => void submit(draft, verdict)}
         onFilter={(next) => void changeFilter(next)}
@@ -213,6 +231,7 @@ async function runTui(session: Session): Promise<number> {
     meat = null;
     checks = [];
     threads = [];
+    worktree = null;
     status = `Loading #${number}…`;
     draw();
 
@@ -224,7 +243,7 @@ async function runTui(session: Session): Promise<number> {
         repo.repo,
         number,
       );
-      worktreeOk = await tryWorktree(repo, loaded);
+      worktree = await tryWorktree(repo, loaded);
       const result = await runMeat(args, repo, loaded, await readGeneratedPaths(repo));
 
       pr = loaded;

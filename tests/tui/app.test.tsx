@@ -1,9 +1,13 @@
 import { test, expect, describe } from 'bun:test';
 import { renderToString } from 'ink';
-import { App, anchorForUnit, clampCursor, hunkUrl } from '../../src/tui/App.js';
+import {
+  App, anchorForUnit, chatContextForUnit, clampCursor, hunkUrl, mergeTriage,
+} from '../../src/tui/App.js';
 import { Help } from '../../src/tui/components/Help.js';
 import { KEY_HELP } from '../../src/tui/keymap.js';
 import { buildUnits } from '../../src/tui/units.js';
+import { accept, initTriage, toStagedComments } from '../../src/core/findings/triage.js';
+import type { VerifiedFinding } from '../../src/core/findings/verify.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
 import type { PullRequestDetail, PullRequestSummary } from '../../src/core/github/types.js';
 
@@ -119,6 +123,56 @@ describe('anchorForUnit', () => {
 
   test('has no anchor without a unit', () => {
     expect(anchorForUnit(undefined)).toBeNull();
+  });
+});
+
+describe('mergeTriage', () => {
+  const found: VerifiedFinding = {
+    id: 'f1', path: 'src/app.ts', line: 2, side: 'RIGHT', startLine: null,
+    severity: 'important', title: 'Busy-wait', body: 'model wording',
+    confidence: 'high', suggestion: null, verdict: 'plausible', refutations: [],
+  };
+
+  test('keeps triage done while the verifier was still running', () => {
+    const held = accept(initTriage([found]), 'f1');
+    const merged = mergeTriage(held, [{ ...found, verdict: 'confirmed' }]);
+
+    expect(merged[0]?.state).toBe('accepted');
+    expect(merged[0]?.verdict).toBe('confirmed');
+    // Still staged: a verdict arriving must not silently unstage a comment the
+    // reviewer already decided to send.
+    expect(toStagedComments(merged)).toHaveLength(1);
+  });
+
+  test('takes the verified copy of a finding nobody has touched', () => {
+    const merged = mergeTriage(initTriage([found]), [{ ...found, verdict: 'refuted' }]);
+    expect(merged[0]?.state).toBe('pending');
+    expect(merged[0]?.verdict).toBe('refuted');
+  });
+
+  test('a finding that only the verify pass knows about arrives untriaged', () => {
+    const merged = mergeTriage([], [{ ...found, verdict: 'confirmed' }]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.state).toBe('pending');
+  });
+});
+
+describe('chatContextForUnit', () => {
+  test('gives the model the hunk under the cursor, with its diff marks', () => {
+    const context = chatContextForUnit(units.find((u) => u.kind === 'hunk'));
+    expect(context).toContain('src/app.ts');
+    expect(context).toContain('@@ -1,1 +1,2 @@');
+    expect(context).toContain('+const x = 1;');
+    expect(context).toContain(' const a = 0;');
+  });
+
+  test('a file header borrows that file first hunk rather than refusing', () => {
+    expect(chatContextForUnit(units.find((u) => u.kind === 'file-header')))
+      .toContain('+const x = 1;');
+  });
+
+  test('has nothing to say without a unit', () => {
+    expect(chatContextForUnit(undefined)).toBeNull();
   });
 });
 

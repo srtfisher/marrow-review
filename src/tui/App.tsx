@@ -1,16 +1,28 @@
 import { createHash } from 'node:crypto';
 import { useEffect, useMemo, useState } from 'react';
 import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
+import TextInput from 'ink-text-input';
+import type { AgentTransport } from '../core/agent/types.js';
 import type { Hunk } from '../core/diff/types.js';
+import { ask as askAgent, buildChatContext, type ChatSession } from '../core/findings/chat.js';
+import { runFindings } from '../core/findings/find.js';
+import {
+  accept, drop, edit, initTriage, toStagedComments, toggleSuggestion, visibleFindings,
+  type TriagedFinding,
+} from '../core/findings/triage.js';
+import { runVerify, type VerifiedFinding } from '../core/findings/verify.js';
 import type {
   CheckRun, PullFilter, PullRequestDetail, PullRequestSummary, ReviewThread,
 } from '../core/github/types.js';
 import type { MeatResult } from '../core/meat/index.js';
 import type { ReviewDraft, Side, StagedComment, Verdict } from '../core/review/types.js';
-import { buildUnits, nextFileIndex, prevFileIndex, type ReviewUnit } from './units.js';
+import {
+  buildUnits, nextFileIndex, nextFindingIndex, prevFileIndex, prevFindingIndex, type ReviewUnit,
+} from './units.js';
 import { nextScrollTop } from './viewport.js';
 import { resolveAction, type Mode } from './keymap.js';
 import { filterPrs } from './search.js';
+import { ChatPane } from './components/ChatPane.js';
 import { CommentEditor } from './components/CommentEditor.js';
 import { Detail, detailHeaderRows } from './components/Detail.js';
 import { Help } from './components/Help.js';
@@ -31,6 +43,18 @@ export interface AppProps {
   filter: PullFilter;
   /** One-line note: loading, a load failure, a pending web-UI review. */
   status?: string | null;
+  /**
+   * Transport for the findings, verify, and chat passes. All three are
+   * additive: leave it out and the review works exactly as it always has,
+   * minus the model's opinions.
+   */
+  transport?: AgentTransport | null;
+  /**
+   * Worktree checked out at the head commit, which the agent reads. Null in
+   * diff-only mode — the agent would otherwise read the wrong commit and
+   * reason confidently about code that is not in this pull request.
+   */
+  cwd?: string | null;
   onOpenPr: (number: number) => void;
   onSubmit: (draft: ReviewDraft, verdict: Verdict) => void;
   onFilter?: (filter: PullFilter) => void;
@@ -83,6 +107,71 @@ export function hunkUrl(repoLabel: string, prNumber: number, anchor: CommentAnch
   return `https://github.com/${repoLabel}/pull/${prNumber}/files#diff-${digest}${sideMark}${anchor.line}`;
 }
 
+/**
+ * Carries triage the reviewer already did onto the verified findings that
+ * replace them. Verification takes tens of seconds and the findings are on
+ * screen throughout; accepting one while it runs must survive the verdicts
+ * landing.
+ */
+export function mergeTriage(held: TriagedFinding[], verified: VerifiedFinding[]): TriagedFinding[] {
+  const byId = new Map(held.map((f) => [f.id, f]));
+  return initTriage(verified).map((f) => {
+    const prior = byId.get(f.id);
+    return prior
+      ? { ...f, state: prior.state, editedBody: prior.editedBody, asSuggestion: prior.asSuggestion }
+      : f;
+  });
+}
+
+/**
+ * The hunk under the cursor, as text a model can read. A finding row or a file
+ * header borrows the file's first hunk — the same fallback anchoring uses.
+ */
+export function chatContextForUnit(unit: ReviewUnit | undefined): string | null {
+  if (!unit) return null;
+  const hunk = unit.kind === 'hunk' ? unit.hunk.hunk : unit.file.hunks[0]?.hunk;
+  if (!hunk) return null;
+  return buildChatContext({
+    path: unit.file.file.path,
+    header: hunk.header,
+    lines: hunk.lines.map((l) => ({ kind: l.kind, text: l.text })),
+  });
+}
+
+interface ChatOverlayProps {
+  session: ChatSession;
+  pending: boolean;
+  onAsk: (question: string) => void;
+  onClose: () => void;
+}
+
+/** ChatPane plus a prompt line. The prompt is `structure`, the hint `muted` —
+ *  the same two tokens the comment editor uses, because it is the same act. */
+function ChatOverlay({ session, pending, onAsk, onClose }: ChatOverlayProps) {
+  const [value, setValue] = useState('');
+
+  useInput((_input, key) => {
+    if (key.escape) onClose();
+  });
+
+  return (
+    <Box flexDirection="column">
+      <Text color={theme.color.structure}>Ask about this hunk</Text>
+      <ChatPane session={session} pending={pending} />
+      <TextInput
+        value={value}
+        onChange={setValue}
+        onSubmit={() => {
+          const question = value.trim();
+          setValue('');
+          if (question.length > 0) onAsk(question);
+        }}
+      />
+      <Text {...theme.tier.muted}>enter to ask · esc to close</Text>
+    </Box>
+  );
+}
+
 export function App(props: AppProps) {
   const { exit } = useApp();
   const { columns, rows } = useWindowSize();
@@ -101,12 +190,32 @@ export function App(props: AppProps) {
   const [draft, setDraft] = useState<ReviewDraft>({ verdict: null, body: '', comments: [] });
   const [verdict, setVerdict] = useState<Verdict>('COMMENT');
   const [pending, setPending] = useState<{ anchor: CommentAnchor; isSuggestion: boolean } | null>(null);
+  const [findings, setFindings] = useState<TriagedFinding[]>([]);
+  const [showRefuted, setShowRefuted] = useState(false);
+  /** Which finding the comment editor is rewriting, when it is not a new comment. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [chat, setChat] = useState<ChatSession>({ id: null, turns: [] });
+  const [chatPending, setChatPending] = useState(false);
+  /** The hunk the open chat is about; moving to another one starts fresh. */
+  const [chatAnchor, setChatAnchor] = useState<string | null>(null);
 
   const visiblePrs = useMemo(() => filterPrs(props.prs, query), [props.prs, query]);
-  const units = useMemo(
-    () => (props.meat ? buildUnits(props.meat, { expandedFiles, foldedFiles }) : []),
-    [props.meat, expandedFiles, foldedFiles],
+  const shownFindings = useMemo(
+    () => visibleFindings(findings, showRefuted),
+    [findings, showRefuted],
   );
+  const units = useMemo(
+    () => (props.meat
+      ? buildUnits(props.meat, { expandedFiles, foldedFiles, findings: shownFindings })
+      : []),
+    [props.meat, expandedFiles, foldedFiles, shownFindings],
+  );
+  /** Manual comments plus every accepted finding, in one list, once. */
+  const staged = useMemo(
+    () => [...draft.comments, ...toStagedComments(findings)],
+    [draft.comments, findings],
+  );
+  const fullDraft = useMemo(() => ({ ...draft, comments: staged }), [draft, staged]);
 
   // One row for the horizontal rule, one for the status line.
   const bodyHeight = Math.max(1, rows - 2);
@@ -129,6 +238,61 @@ export function App(props: AppProps) {
     setUnitScroll(0);
     setMode('detail');
   }, [openNumber]);
+
+  // The two agent passes. Both swallow their own failures and yield nothing on
+  // one, so every branch below renders identically whether they succeed, come
+  // back empty, or never run — findings are additive, never load-bearing.
+  const { transport, cwd, model } = props;
+  const openPr = props.pr;
+  const openMeat = props.meat;
+  useEffect(() => {
+    setFindings([]);
+    if (!openPr || !openMeat || !transport || !cwd) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const found = await runFindings(
+        transport,
+        model,
+        {
+          prTitle: openPr.title,
+          prBody: openPr.body,
+          meat: openMeat,
+          threads: props.threads,
+          failingChecks: props.checks.filter((c) => c.conclusion === 'failure'),
+        },
+        cwd,
+      );
+      if (cancelled || found.length === 0) return;
+
+      // Progressive reveal: findings appear the moment they exist and the
+      // verifier's verdicts fill in behind them. `plausible` is what an
+      // unverified finding is, and scoreVerdict says the same for no evidence.
+      setFindings(
+        initTriage(found.map((f) => ({ ...f, verdict: 'plausible' as const, refutations: [] }))),
+      );
+
+      const verified = await runVerify(transport, model, found, cwd);
+      if (cancelled) return;
+      setFindings((held) => mergeTriage(held, verified));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Threads and checks arrive with the pull request itself; keying on them
+    // too would only re-bill the model for a review it already did.
+  }, [openPr, openMeat, transport, cwd, model]);
+
+  // Findings arriving grows the unit list under the cursor and `v` shrinks it
+  // again. The cursor indexes that list, so it and the viewport are pulled back
+  // into range here rather than left pointing past the end.
+  useEffect(() => {
+    const clamped = clampCursor(unitCursor, units.length);
+    setUnitCursor(clamped);
+    setUnitScroll((prev) => nextScrollTop(units.length, detailRows, clamped, prev));
+  }, [units.length]);
 
   function moveList(next: number) {
     const clamped = clampCursor(next, visiblePrs.length);
@@ -185,7 +349,62 @@ export function App(props: AppProps) {
     enterOverlay('comment');
   }
 
+  function currentFinding(): TriagedFinding | null {
+    const unit = units[cursor];
+    return unit && unit.kind === 'finding' ? unit.finding : null;
+  }
+
+  /** Every triage key is a no-op unless the cursor is actually on a finding. */
+  function triage(change: (list: TriagedFinding[], id: string) => TriagedFinding[]) {
+    const finding = currentFinding();
+    if (finding) setFindings((list) => change(list, finding.id));
+  }
+
+  function startEdit() {
+    const finding = currentFinding();
+    if (!finding) return;
+    setPending(null);
+    setEditingId(finding.id);
+    enterOverlay('comment');
+  }
+
+  function openChat() {
+    const context = chatContextForUnit(units[cursor]);
+    if (context === null) return;
+    // A question about a different hunk is a different conversation; resuming
+    // the old session would answer it with the wrong code in view.
+    if (context !== chatAnchor) {
+      setChat({ id: null, turns: [] });
+      setChatAnchor(context);
+    }
+    enterOverlay('chat');
+  }
+
+  async function askAboutHunk(question: string) {
+    if (!transport || !cwd || chatAnchor === null) return;
+    // The hunk goes in only on the opening turn; after that the session
+    // already has it and the model is resumed rather than re-primed.
+    const sent = chat.turns.length === 0 ? `${chatAnchor}\n\nQuestion: ${question}` : question;
+    const asked = chat.turns.length;
+
+    setChatPending(true);
+    const next = await askAgent(transport, model, chat, sent, cwd);
+    setChatPending(false);
+    // The reviewer reads back their own question, not the hunk pasted around it.
+    setChat({
+      id: next.id,
+      turns: next.turns.map((t, i) => (i === asked ? { ...t, text: question } : t)),
+    });
+  }
+
   function saveComment(body: string) {
+    if (editingId !== null) {
+      if (body.trim().length > 0) setFindings((list) => edit(list, editingId, body));
+      setEditingId(null);
+      setMode('detail');
+      return;
+    }
+
     if (pending && body.trim().length > 0) {
       const comment: StagedComment = {
         id: `${pending.anchor.path}:${pending.anchor.line}:${draft.comments.length}`,
@@ -218,8 +437,9 @@ export function App(props: AppProps) {
   }
 
   useInput((input, key) => {
-    // The comment editor owns every key while it is up, including esc.
-    if (mode === 'comment') return;
+    // The comment editor and the chat prompt own every key while they are up,
+    // including esc.
+    if (mode === 'comment' || mode === 'chat') return;
 
     if (mode === 'search') {
       if (key.escape) {
@@ -235,7 +455,7 @@ export function App(props: AppProps) {
 
     if (mode === 'submit') {
       if (key.escape) return setMode('detail');
-      if (key.return) return props.onSubmit(draft, verdict);
+      if (key.return) return props.onSubmit(fullDraft, verdict);
       if (key.downArrow || input === 'j') return moveVerdict(1);
       if (key.upArrow || input === 'k') return moveVerdict(-1);
       return;
@@ -255,6 +475,22 @@ export function App(props: AppProps) {
         return moveUnits(
           action.dir === 1 ? nextFileIndex(units, cursor) : prevFileIndex(units, cursor),
         );
+      case 'finding':
+        return moveUnits(
+          action.dir === 1 ? nextFindingIndex(units, cursor) : prevFindingIndex(units, cursor),
+        );
+      case 'accept-finding':
+        return triage(accept);
+      case 'drop-finding':
+        return triage(drop);
+      case 'toggle-finding-suggestion':
+        return triage(toggleSuggestion);
+      case 'edit-finding':
+        return startEdit();
+      case 'toggle-refuted':
+        return setShowRefuted((v) => !v);
+      case 'chat':
+        return openChat();
       case 'open': {
         const selected = visiblePrs[prCursor];
         if (selected) props.onOpenPr(selected.number);
@@ -314,27 +550,40 @@ export function App(props: AppProps) {
   if (mode === 'submit' && props.pr && props.meat) {
     return (
       <SubmitScreen
-        draft={draft}
+        draft={fullDraft}
         files={props.meat.files.map((f) => f.file)}
         viewerIsAuthor={props.pr.viewerIsAuthor}
         selected={verdict}
         onSelect={setVerdict}
-        onConfirm={() => props.onSubmit(draft, verdict)}
+        onConfirm={() => props.onSubmit(fullDraft, verdict)}
         onCancel={() => setMode('detail')}
       />
     );
   }
 
-  if (mode === 'comment' && pending) {
+  if (mode === 'comment' && (pending || editingId !== null)) {
+    const editing = editingId === null ? null : (findings.find((f) => f.id === editingId) ?? null);
     return (
       <CommentEditor
-        initial=""
-        isSuggestion={pending.isSuggestion}
+        initial={editing ? (editing.editedBody ?? editing.body) : ''}
+        isSuggestion={pending?.isSuggestion ?? false}
         onSubmit={saveComment}
         onCancel={() => {
           setPending(null);
+          setEditingId(null);
           setMode('detail');
         }}
+      />
+    );
+  }
+
+  if (mode === 'chat') {
+    return (
+      <ChatOverlay
+        session={chat}
+        pending={chatPending}
+        onAsk={(question) => void askAboutHunk(question)}
+        onClose={() => setMode(underlay)}
       />
     );
   }
@@ -387,7 +636,7 @@ export function App(props: AppProps) {
           repoLabel={props.repoLabel}
           prNumber={props.pr.number}
           meat={props.meat}
-          stagedCount={draft.comments.length}
+          stagedCount={staged.length}
           model={props.model}
           worktreeOk={props.worktreeOk}
         />

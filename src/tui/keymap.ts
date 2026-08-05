@@ -1,11 +1,18 @@
 import type { PullFilter } from '../core/github/types.js';
 
-export type Mode = 'list' | 'detail' | 'comment' | 'submit' | 'help' | 'search';
+export type Mode = 'list' | 'detail' | 'comment' | 'submit' | 'help' | 'search' | 'chat';
 
 export type Action =
   | { type: 'move'; delta: number }
   | { type: 'half-page'; dir: -1 | 1 }
   | { type: 'file'; dir: -1 | 1 }
+  | { type: 'finding'; dir: -1 | 1 }
+  | { type: 'accept-finding' }
+  | { type: 'drop-finding' }
+  | { type: 'edit-finding' }
+  | { type: 'toggle-finding-suggestion' }
+  | { type: 'toggle-refuted' }
+  | { type: 'chat' }
   | { type: 'open' }
   | { type: 'back' }
   | { type: 'toggle-dropped' }
@@ -46,6 +53,11 @@ export const KEY_HELP: ReadonlyArray<{ keys: string; description: string; modes:
   { keys: 'o', description: 'open this hunk on github.com', modes: ['detail'] },
   { keys: 'C', description: 'comment on this line', modes: ['detail'] },
   { keys: 'S', description: 'suggest a change on this line', modes: ['detail'] },
+  { keys: 'n / p', description: 'next / previous finding', modes: ['detail'] },
+  { keys: 'a / x', description: 'accept this finding as a comment / drop it', modes: ['detail'] },
+  { keys: 'e / s', description: 'rewrite this finding / send it as a suggestion', modes: ['detail'] },
+  { keys: 'v', description: 'show refuted findings and why they were refuted', modes: ['detail'] },
+  { keys: 'i', description: 'ask the model about this hunk', modes: ['detail'] },
   { keys: '!', description: 'open the submit screen', modes: ['detail'] },
   { keys: 'enter', description: 'open the selected pull request', modes: ['list'] },
   { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'] },
@@ -53,7 +65,7 @@ export const KEY_HELP: ReadonlyArray<{ keys: string; description: string; modes:
   { keys: 'R', description: 'refetch from GitHub', modes: ['list', 'detail'] },
   { keys: '?', description: 'this help', modes: ['list', 'detail'] },
   { keys: 'q', description: 'quit', modes: ['list', 'detail'] },
-  { keys: 'esc', description: 'back', modes: ['comment', 'submit', 'help', 'search'] },
+  { keys: 'esc', description: 'back', modes: ['comment', 'submit', 'help', 'search', 'chat'] },
 ];
 
 const FILTERS: Record<string, PullFilter> = {
@@ -64,8 +76,9 @@ const FILTERS: Record<string, PullFilter> = {
 
 export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
   // Text-entry modes swallow everything except an explicit escape, so a stray
-  // '!' or 'q' while typing a comment can never trigger a command.
-  if (mode === 'comment' || mode === 'search') {
+  // '!' or 'q' while typing a comment — or a question for the model — can never
+  // trigger a command.
+  if (mode === 'comment' || mode === 'search' || mode === 'chat') {
     return key.escape ? { type: 'back' } : null;
   }
 
@@ -109,6 +122,18 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
   if (input === 'C') return { type: 'comment' };
   if (input === 'S') return { type: 'suggest' };
   if (input === '!') return { type: 'submit-screen' };
+
+  // Findings triage. These act on the finding under the cursor and do nothing
+  // anywhere else, so they are safe to give single unshifted letters — unlike
+  // submit, which must never be one keystroke away.
+  if (input === 'n') return { type: 'finding', dir: 1 };
+  if (input === 'p') return { type: 'finding', dir: -1 };
+  if (input === 'a') return { type: 'accept-finding' };
+  if (input === 'e') return { type: 'edit-finding' };
+  if (input === 's') return { type: 'toggle-finding-suggestion' };
+  if (input === 'x') return { type: 'drop-finding' };
+  if (input === 'v') return { type: 'toggle-refuted' };
+  if (input === 'i') return { type: 'chat' };
 
   return null;
 }

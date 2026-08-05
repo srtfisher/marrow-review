@@ -1,5 +1,7 @@
 import { test, expect, describe } from 'bun:test';
-import { buildUnits, nextFileIndex, prevFileIndex } from '../../src/tui/units.js';
+import {
+  buildUnits, nextFileIndex, nextFindingIndex, prevFileIndex, prevFindingIndex,
+} from '../../src/tui/units.js';
 import { initTriage } from '../../src/core/findings/triage.js';
 import type { TriagedFinding } from '../../src/core/findings/triage.js';
 import type { VerifiedFinding } from '../../src/core/findings/verify.js';
@@ -163,5 +165,38 @@ describe('file navigation', () => {
 
   test('prevFileIndex stays put at the first file', () => {
     expect(prevFileIndex(units, 0)).toBe(0);
+  });
+});
+
+describe('finding navigation', () => {
+  const withFindings = buildUnits(
+    result([meatFile('a.ts', 2, 0), meatFile('b.ts', 1, 0)]),
+    { ...none, findings: [finding('f1', 'a.ts', 1, 'One'), finding('f2', 'b.ts', 1, 'Two')] },
+  );
+  // 0 hdr(a) 1 hunk 2 finding 3 hunk 4 finding? — both a.ts hunks anchor at
+  // line 1, so f1 lands after the first, and f2 after b.ts's only hunk.
+  const findingIndexes = withFindings
+    .map((u, i) => (u.kind === 'finding' ? i : -1))
+    .filter((i) => i >= 0);
+
+  test('n walks forward through the findings', () => {
+    expect(findingIndexes).toHaveLength(2);
+    expect(nextFindingIndex(withFindings, 0)).toBe(findingIndexes[0]!);
+    expect(nextFindingIndex(withFindings, findingIndexes[0]!)).toBe(findingIndexes[1]!);
+  });
+
+  test('p walks back through the findings', () => {
+    expect(prevFindingIndex(withFindings, findingIndexes[1]!)).toBe(findingIndexes[0]!);
+  });
+
+  test('the cursor holds still when there is no finding that way', () => {
+    expect(nextFindingIndex(withFindings, findingIndexes[1]!)).toBe(findingIndexes[1]!);
+    expect(prevFindingIndex(withFindings, findingIndexes[0]!)).toBe(findingIndexes[0]!);
+  });
+
+  test('a diff with no findings at all never moves the cursor', () => {
+    const plain = buildUnits(result([meatFile('a.ts', 2, 0)]), none);
+    expect(nextFindingIndex(plain, 1)).toBe(1);
+    expect(prevFindingIndex(plain, 1)).toBe(1);
   });
 });
