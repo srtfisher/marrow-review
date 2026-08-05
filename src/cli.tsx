@@ -1,19 +1,29 @@
 #!/usr/bin/env node
 import { Octokit } from '@octokit/rest';
+import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseArgs } from './cli/args.js';
+import { render } from 'ink';
+import { parseArgs, type CliArgs } from './cli/args.js';
 import { SdkTransport } from './core/agent/sdk.js';
 import { GitHubClient } from './core/github/client.js';
 import { fetchPullContext } from './core/github/graphql.js';
 import { resolveGitHubToken } from './core/github/auth.js';
-import { detectRepo } from './core/git/repo.js';
+import { submitReview, type ReviewSubmitter } from './core/github/submit.js';
+import { detectRepo, type RepoContext } from './core/git/repo.js';
 import { ensureWorktree } from './core/git/worktree.js';
 import { parseGeneratedPaths } from './core/git/gitattributes.js';
 import { parseUnifiedDiff } from './core/diff/parse.js';
-import { computeMeat } from './core/meat/index.js';
+import { computeMeat, type MeatResult } from './core/meat/index.js';
 import { FileVerdictCache } from './core/meat/cache.js';
 import { renderMeat } from './core/render/text.js';
+import { demoteUnanchorable } from './core/review/anchors.js';
+import { buildReviewPayload } from './core/review/payload.js';
+import type { ReviewDraft, Verdict } from './core/review/types.js';
+import type {
+  CheckRun, PullFilter, PullRequestDetail, PullRequestSummary, ReviewThread,
+} from './core/github/types.js';
+import { App } from './tui/App.js';
 
 const HELP = `marrow — review large pull requests in the terminal
 
@@ -31,69 +41,50 @@ Options:
   -h, --help            show this help
 `;
 
-async function main(): Promise<number> {
-  const args = parseArgs(process.argv.slice(2));
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-  if (args.showHelp) {
-    process.stdout.write(HELP);
-    return 0;
-  }
-
-  const repo = await detectRepo(process.cwd());
-  if (!repo) {
-    process.stderr.write(
-      'Not inside a GitHub clone. Run marrow from a repository with a github.com origin.\n',
-    );
-    return 1;
-  }
-
-  const token = await resolveGitHubToken();
-  const octokit = new Octokit({ auth: token });
-  const client = new GitHubClient(token, octokit as never);
-
-  const viewer = (await octokit.rest.users.getAuthenticated()).data.login;
-
-  if (args.prNumber === null) {
-    const prs = await client.listPulls(repo.owner, repo.repo, args.filter);
-    for (const pr of prs) {
-      process.stdout.write(
-        `#${pr.number}\t${pr.state}\t${pr.author}\t${pr.title}\n`,
-      );
-    }
-    return 0;
-  }
-
-  const pr = await client.getPull(repo.owner, repo.repo, args.prNumber, viewer);
-  const context = await fetchPullContext(
-    (query, vars) => octokit.graphql(query, vars),
-    repo.owner,
-    repo.repo,
-    args.prNumber,
-  );
-
+/**
+ * Every degraded-mode note goes to stderr, in the TUI as much as in text mode:
+ * the alternate screen hides it while marrow runs and the terminal shows it
+ * again on exit, so a redirect captures it either way.
+ */
+function noteApiKeyWithheld(args: CliArgs): void {
   if (!args.useApiKey && (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)) {
     process.stderr.write(
       'note: ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN found and withheld from the agent so your Claude Code subscription is used. Pass --use-api-key to override.\n',
     );
   }
+}
 
-  // The worktree only supplies reading context; failing to create one is not fatal.
+/** The worktree only supplies reading context; failing to create one is not fatal. */
+async function tryWorktree(repo: RepoContext, pr: PullRequestDetail): Promise<boolean> {
   try {
     await ensureWorktree(repo, pr.number, pr.headSha);
+    return true;
   } catch {
     process.stderr.write('note: could not create a worktree; continuing diff-only.\n');
+    return false;
   }
+}
 
-  let generatedPaths = new Set<string>();
+async function readGeneratedPaths(repo: RepoContext): Promise<Set<string>> {
   try {
-    generatedPaths = parseGeneratedPaths(
-      await readFile(join(repo.root, '.gitattributes'), 'utf8'),
-    );
+    return parseGeneratedPaths(await readFile(join(repo.root, '.gitattributes'), 'utf8'));
   } catch {
     // No .gitattributes is the common case.
+    return new Set<string>();
   }
+}
 
-  const result = await computeMeat({
+function runMeat(
+  args: CliArgs,
+  repo: RepoContext,
+  pr: PullRequestDetail,
+  generatedPaths: Set<string>,
+): Promise<MeatResult> {
+  return computeMeat({
     files: parseUnifiedDiff(pr.diff),
     ruleContext: { generatedPaths },
     transport: new SdkTransport({ useApiKey: args.useApiKey }),
@@ -102,6 +93,50 @@ async function main(): Promise<number> {
     prTitle: pr.title,
     prBody: pr.body,
   });
+}
+
+function openInBrowser(url: string): void {
+  const command =
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+  const child = spawn(command, [url], { stdio: 'ignore', detached: true });
+  child.on('error', () => {
+    // No opener on this machine. Nothing to report from inside a full-screen app.
+  });
+  child.unref();
+}
+
+interface Session {
+  args: CliArgs;
+  repo: RepoContext;
+  client: GitHubClient;
+  octokit: Octokit;
+  viewer: string;
+}
+
+async function listToStdout(session: Session, filter: PullFilter): Promise<number> {
+  const { repo, client } = session;
+  const prs = await client.listPulls(repo.owner, repo.repo, filter);
+  for (const pr of prs) {
+    process.stdout.write(`#${pr.number}\t${pr.state}\t${pr.author}\t${pr.title}\n`);
+  }
+  return 0;
+}
+
+/** The text path, unchanged: `--dry-run`, and any non-interactive invocation. */
+async function reviewToStdout(session: Session, prNumber: number): Promise<number> {
+  const { args, repo, client, octokit, viewer } = session;
+
+  const pr = await client.getPull(repo.owner, repo.repo, prNumber, viewer);
+  const context = await fetchPullContext(
+    (query, vars) => octokit.graphql(query, vars),
+    repo.owner,
+    repo.repo,
+    prNumber,
+  );
+
+  noteApiKeyWithheld(args);
+  await tryWorktree(repo, pr);
+  const result = await runMeat(args, repo, pr, await readGeneratedPaths(repo));
 
   process.stdout.write(`${pr.title} #${pr.number} by ${pr.author}\n`);
   process.stdout.write(`${pr.baseRef} <- ${pr.headRef}\n\n`);
@@ -126,10 +161,171 @@ async function main(): Promise<number> {
   return 0;
 }
 
+async function runTui(session: Session): Promise<number> {
+  const { args, repo, client, octokit, viewer } = session;
+  const repoLabel = `${repo.owner}/${repo.repo}`;
+
+  let filter = args.filter;
+  let prs: PullRequestSummary[] = await client.listPulls(repo.owner, repo.repo, filter);
+  let pr: PullRequestDetail | null = null;
+  let meat: MeatResult | null = null;
+  let checks: CheckRun[] = [];
+  let threads: ReviewThread[] = [];
+  let worktreeOk = false;
+  let status: string | null = null;
+  /** Printed after the alternate screen is torn down, so it survives on screen. */
+  let farewell: string | null = null;
+
+  noteApiKeyWithheld(args);
+
+  function view() {
+    return (
+      <App
+        repoLabel={repoLabel}
+        prs={prs}
+        pr={pr}
+        meat={meat}
+        checks={checks}
+        threads={threads}
+        model={args.model}
+        worktreeOk={worktreeOk}
+        filter={filter}
+        status={status}
+        onOpenPr={(number) => void openPr(number)}
+        onSubmit={(draft, verdict) => void submit(draft, verdict)}
+        onFilter={(next) => void changeFilter(next)}
+        onRefresh={() => void refresh()}
+        onOpenUrl={openInBrowser}
+      />
+    );
+  }
+
+  // The alternate screen is what makes `q` leave the terminal exactly as it was
+  // found, the way vim and less do.
+  const instance = render(view(), { alternateScreen: true });
+
+  function draw(): void {
+    instance.rerender(view());
+  }
+
+  async function openPr(number: number): Promise<void> {
+    pr = null;
+    meat = null;
+    checks = [];
+    threads = [];
+    status = `Loading #${number}…`;
+    draw();
+
+    try {
+      const loaded = await client.getPull(repo.owner, repo.repo, number, viewer);
+      const context = await fetchPullContext(
+        (query, vars) => octokit.graphql(query, vars),
+        repo.owner,
+        repo.repo,
+        number,
+      );
+      worktreeOk = await tryWorktree(repo, loaded);
+      const result = await runMeat(args, repo, loaded, await readGeneratedPaths(repo));
+
+      pr = loaded;
+      meat = result;
+      checks = context.checks;
+      threads = context.threads;
+      status =
+        context.viewerPendingReviewId === null
+          ? null
+          : 'You have an unsubmitted review on this pull request from the web UI.';
+    } catch (error) {
+      status = `Could not load #${number}: ${message(error)}`;
+    }
+
+    draw();
+  }
+
+  async function changeFilter(next: PullFilter): Promise<void> {
+    filter = next;
+    await refresh();
+  }
+
+  async function refresh(): Promise<void> {
+    try {
+      prs = await client.listPulls(repo.owner, repo.repo, filter);
+    } catch (error) {
+      status = `Could not refresh: ${message(error)}`;
+    }
+    draw();
+  }
+
+  async function submit(draft: ReviewDraft, verdict: Verdict): Promise<void> {
+    if (!pr || !meat) return;
+    const files = meat.files.map((f) => f.file);
+
+    try {
+      // A finding about a line GitHub will not accept is still worth telling the
+      // author, so it moves into the review body rather than being discarded.
+      const { draft: adjusted } = demoteUnanchorable({ ...draft, verdict }, files);
+      const payload = buildReviewPayload(adjusted, files);
+      const result = await submitReview(
+        octokit as unknown as ReviewSubmitter,
+        repo.owner,
+        repo.repo,
+        pr.number,
+        payload,
+      );
+      farewell = `Submitted ${verdict} on #${pr.number}: ${result.htmlUrl}`;
+      instance.unmount();
+    } catch (error) {
+      status = message(error);
+      draw();
+    }
+  }
+
+  if (args.prNumber !== null) void openPr(args.prNumber);
+
+  await instance.waitUntilExit();
+  if (farewell) process.stdout.write(`${farewell}\n`);
+  return 0;
+}
+
+async function main(): Promise<number> {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.showHelp) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+
+  const repo = await detectRepo(process.cwd());
+  if (!repo) {
+    process.stderr.write(
+      'Not inside a GitHub clone. Run marrow from a repository with a github.com origin.\n',
+    );
+    return 1;
+  }
+
+  const token = await resolveGitHubToken();
+  const octokit = new Octokit({ auth: token });
+  const client = new GitHubClient(token, octokit as never);
+  const viewer = (await octokit.rest.users.getAuthenticated()).data.login;
+  const session: Session = { args, repo, client, octokit, viewer };
+
+  // The TUI needs a keyboard. Without one — a pipe, a cron job, a CI step —
+  // marrow stays the text tool it was rather than failing to enter raw mode.
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
+
+  if (args.dryRun || !interactive) {
+    return args.prNumber === null
+      ? listToStdout(session, args.filter)
+      : reviewToStdout(session, args.prNumber);
+  }
+
+  return runTui(session);
+}
+
 main().then(
   (code) => process.exit(code),
   (error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`${message(error)}\n`);
     process.exit(1);
   },
 );
