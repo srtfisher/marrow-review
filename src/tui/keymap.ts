@@ -62,10 +62,10 @@ export const KEY_HELP: ReadonlyArray<{ keys: string; description: string; modes:
   { keys: 'enter', description: 'open the selected pull request', modes: ['list'] },
   { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'] },
   { keys: '/', description: 'search by title, author, or number', modes: ['list'] },
-  { keys: 'R', description: 'refetch from GitHub', modes: ['list', 'detail'] },
+  { keys: 'R', description: 'refetch from GitHub; retry the model pass', modes: ['list', 'detail'] },
   { keys: '?', description: 'this help', modes: ['list', 'detail'] },
   { keys: 'q', description: 'quit', modes: ['list', 'detail'] },
-  { keys: 'esc', description: 'back', modes: ['comment', 'submit', 'help', 'search', 'chat'] },
+  { keys: 'esc / q', description: 'close this overlay', modes: ['comment', 'submit', 'help', 'search', 'chat'] },
 ];
 
 const FILTERS: Record<string, PullFilter> = {
@@ -84,11 +84,13 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
 
   if (key.escape) return { type: 'back' };
 
-  if (mode === 'help' || mode === 'submit') {
-    // Submit-screen internals are handled by the screen itself; only global
-    // navigation is resolved here.
-    return null;
-  }
+  // An overlay you cannot leave with the key you leave everything else with is
+  // a trap, and `q` in help reads as "quit this, not the program".
+  if (mode === 'help') return input === 'q' ? { type: 'back' } : null;
+
+  // Submit-screen internals are handled by the screen itself; only global
+  // navigation is resolved here.
+  if (mode === 'submit') return null;
 
   if (key.upArrow) return { type: 'move', delta: -1 };
   if (key.downArrow) return { type: 'move', delta: 1 };

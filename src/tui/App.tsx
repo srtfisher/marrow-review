@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useWindowSize } from 'ink';
 import TextInput from 'ink-text-input';
 import type { AgentTransport } from '../core/agent/types.js';
@@ -44,6 +44,12 @@ export interface AppProps {
   /** One-line note: loading, a load failure, a pending web-UI review. */
   status?: string | null;
   /**
+   * How to read `status`. `muted` is progress, `pending` is unsubmitted work,
+   * `danger` is a failure — yellow is reserved for the first of those, so a
+   * load error wearing it says the wrong thing.
+   */
+  statusTone?: 'muted' | 'pending' | 'danger';
+  /**
    * Transport for the findings, verify, and chat passes. All three are
    * additive: leave it out and the review works exactly as it always has,
    * minus the model's opinions.
@@ -71,6 +77,13 @@ export interface CommentAnchor {
 
 /** Same order as the submit screen renders them, so j/k matches what you see. */
 const VERDICTS: readonly Verdict[] = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
+
+/** `danger` is red AND bold; the weight is what separates it from `del`. */
+function toneStyle(tone: 'muted' | 'pending' | 'danger') {
+  if (tone === 'danger') return { color: theme.color.danger, bold: true };
+  if (tone === 'pending') return { color: theme.color.pending };
+  return theme.tier.muted;
+}
 
 export function clampCursor(cursor: number, length: number): number {
   return Math.min(Math.max(cursor, 0), Math.max(0, length - 1));
@@ -191,6 +204,14 @@ export function App(props: AppProps) {
   const [verdict, setVerdict] = useState<Verdict>('COMMENT');
   const [pending, setPending] = useState<{ anchor: CommentAnchor; isSuggestion: boolean } | null>(null);
   const [findings, setFindings] = useState<TriagedFinding[]>([]);
+  /**
+   * `ok` and `failed` are the whole point: `runFindings` returns `[]` both when
+   * the model found nothing and when it never ran, so without this a dead
+   * transport looked exactly like a clean pull request.
+   */
+  const [findingsStatus, setFindingsStatus] = useState<'idle' | 'running' | 'ok' | 'failed'>('idle');
+  /** Bumped by `R`, which is what re-runs the pass after a failure. */
+  const [findingsAttempt, setFindingsAttempt] = useState(0);
   const [showRefuted, setShowRefuted] = useState(false);
   /** Which finding the comment editor is rewriting, when it is not a new comment. */
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -198,6 +219,14 @@ export function App(props: AppProps) {
   const [chatPending, setChatPending] = useState(false);
   /** The hunk the open chat is about; moving to another one starts fresh. */
   const [chatAnchor, setChatAnchor] = useState<string | null>(null);
+  /**
+   * Bumped whenever the conversation an answer would belong to stops being the
+   * one on screen. Without it, escaping a pending question, moving to another
+   * hunk, and reopening chat let the first hunk's answer land in the second
+   * hunk's pane — and the next question then resumed that session, putting the
+   * wrong code in front of the model.
+   */
+  const chatToken = useRef(0);
 
   const visiblePrs = useMemo(() => filterPrs(props.prs, query), [props.prs, query]);
   const shownFindings = useMemo(
@@ -263,9 +292,12 @@ export function App(props: AppProps) {
   const openMeat = props.meat;
   useEffect(() => {
     setFindings([]);
+    setFindingsStatus('idle');
     if (!openPr || !openMeat || !transport || !cwd) return;
 
     let cancelled = false;
+    let failed = false;
+    setFindingsStatus('running');
 
     void (async () => {
       const found = await runFindings(
@@ -279,8 +311,15 @@ export function App(props: AppProps) {
           failingChecks: props.checks.filter((c) => c.conclusion === 'failure'),
         },
         cwd,
+        () => {
+          failed = true;
+        },
       );
-      if (cancelled || found.length === 0) return;
+      if (cancelled) return;
+      // "Found nothing" and "could not run" are different answers, and the
+      // reviewer is entitled to know which one they got.
+      setFindingsStatus(failed ? 'failed' : 'ok');
+      if (found.length === 0) return;
 
       // Progressive reveal: findings appear the moment they exist and the
       // verifier's verdicts fill in behind them. `plausible` is what an
@@ -299,7 +338,7 @@ export function App(props: AppProps) {
     };
     // Threads and checks arrive with the pull request itself; keying on them
     // too would only re-bill the model for a review it already did.
-  }, [openPr, openMeat, transport, cwd, model]);
+  }, [openPr, openMeat, transport, cwd, model, findingsAttempt]);
 
   // Findings arriving grows the unit list under the cursor and `v` shrinks it
   // again. The cursor indexes that list, so it and the viewport are pulled back
@@ -401,6 +440,7 @@ export function App(props: AppProps) {
     // A question about a different hunk is a different conversation; resuming
     // the old session would answer it with the wrong code in view.
     if (context !== chatAnchor) {
+      chatToken.current += 1;
       setChat({ id: null, turns: [] });
       setChatAnchor(context);
     }
@@ -408,15 +448,22 @@ export function App(props: AppProps) {
   }
 
   async function askAboutHunk(question: string) {
-    if (!transport || !cwd || chatAnchor === null) return;
+    // One question in flight at a time: two racing answers would resolve in
+    // whatever order the model happened to finish them.
+    if (!transport || !cwd || chatAnchor === null || chatPending) return;
     // The hunk goes in only on the opening turn; after that the session
     // already has it and the model is resumed rather than re-primed.
     const sent = chat.turns.length === 0 ? `${chatAnchor}\n\nQuestion: ${question}` : question;
     const asked = chat.turns.length;
+    const token = (chatToken.current += 1);
 
     setChatPending(true);
     const next = await askAgent(transport, model, chat, sent, cwd);
     setChatPending(false);
+    // The cursor moved to another hunk while this was out. The answer is about
+    // code the reviewer is no longer looking at, so it is dropped rather than
+    // shown under the wrong diff.
+    if (token !== chatToken.current) return;
     // The reviewer reads back their own question, not the hunk pasted around it.
     setChat({
       id: next.id,
@@ -550,6 +597,9 @@ export function App(props: AppProps) {
       case 'filter':
         return props.onFilter?.(action.filter);
       case 'refresh':
+        // In the detail pane `R` is also how a failed model pass is retried;
+        // the reviewer should not have to close and reopen the pull request.
+        if (mode === 'detail') setFindingsAttempt((n) => n + 1);
         return props.onRefresh?.();
       case 'search':
         return enterOverlay('search');
@@ -579,9 +629,6 @@ export function App(props: AppProps) {
         files={props.meat.files.map((f) => f.file)}
         viewerIsAuthor={props.pr.viewerIsAuthor}
         selected={verdict}
-        onSelect={setVerdict}
-        onConfirm={() => props.onSubmit(fullDraft, verdict)}
-        onCancel={() => setMode('detail')}
       />
     );
   }
@@ -615,6 +662,27 @@ export function App(props: AppProps) {
 
   const paneRule = Array.from({ length: bodyHeight }, () => theme.glyph.rule).join('\n');
 
+  // Notes sit under the detail pane, so the pane's row budget has to pay for
+  // them — otherwise adding one pushes the status bar off the bottom again.
+  const findingsFailed = findingsStatus === 'failed';
+  const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
+  const notes = (
+    <>
+      {/* Truncate, never wrap: a note that takes two rows costs a row the
+          viewport already spent, and the status bar pays for it. */}
+      {props.status && (
+        <Text {...toneStyle(props.statusTone ?? 'muted')} wrap="truncate">{props.status}</Text>
+      )}
+      {/* No spinner while it runs — verdicts fill in progressively and there is
+          nothing to wait on. A pass that DIED is the one thing worth saying. */}
+      {findingsFailed && (
+        <Text color={theme.color.danger} bold wrap="truncate">
+          Model pass failed — press R to retry.
+        </Text>
+      )}
+    </>
+  );
+
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1}>
@@ -634,24 +702,28 @@ export function App(props: AppProps) {
         </Box>
         <Box flexDirection="column" flexGrow={1} marginLeft={1}>
           {props.pr && props.meat ? (
-            <Detail
-              pr={props.pr}
-              meat={props.meat}
-              units={units}
-              cursor={cursor}
-              scrollTop={unitScroll}
-              height={bodyHeight}
-              checks={props.checks}
-              threads={props.threads}
-              showThreads={showThreads}
-              stagedCount={staged.length}
-            />
+            <>
+              <Detail
+                pr={props.pr}
+                meat={props.meat}
+                units={units}
+                cursor={cursor}
+                scrollTop={unitScroll}
+                height={bodyHeight - noteRows}
+                checks={props.checks}
+                threads={props.threads}
+                showThreads={showThreads}
+                stagedCount={staged.length}
+              />
+              {notes}
+            </>
           ) : (
-            <Text {...theme.tier.muted}>
+            // One note, not two: with a pull request selected but no meat yet,
+            // this branch and a second line below it both said the same thing.
+            <Text {...toneStyle(props.statusTone ?? 'muted')}>
               {props.status ?? 'Select a pull request and press enter.'}
             </Text>
           )}
-          {props.pr && props.status && <Text color={theme.color.pending}>{props.status}</Text>}
         </Box>
       </Box>
 

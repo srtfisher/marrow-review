@@ -398,6 +398,165 @@ describe('App findings', () => {
   });
 });
 
+const secondFile: MeatFile = {
+  file: {
+    path: 'src/store.ts', oldPath: null, status: 'modified', similarity: null,
+    hunks: [], additions: 1, deletions: 0,
+  },
+  dropped: null,
+  hunks: [{
+    hunk: {
+      header: '@@ -5,1 +5,2 @@', section: '', oldStart: 5, oldLines: 1, newStart: 5, newLines: 2,
+      lines: [
+        { kind: 'context', text: 'const rows = [];', oldLine: 5, newLine: 5, noNewlineAtEof: false },
+        { kind: 'add', text: 'store.persist(rows);', oldLine: null, newLine: 6, noNewlineAtEof: false },
+      ],
+    },
+    keep: true, reason: 'writes to disk', source: 'model',
+  }],
+};
+
+const twoFileMeat: MeatResult = {
+  summary: 'Caches the lookup.', files: [meatFile, secondFile],
+  keptLines: 2, totalLines: 4, keptFiles: 2, totalFiles: 2,
+};
+
+/** A transport that answers nothing until the test says so, so a question can
+ *  be left in flight while the reviewer moves on. */
+function deferredTransport() {
+  const inflight: Array<{ prompt: string; resume?: string; answer: (text: string) => void }> = [];
+  const transport = {
+    inflight,
+    async run(req: { prompt: string; resume?: string }) {
+      return new Promise((resolve) => {
+        inflight.push({
+          prompt: req.prompt,
+          resume: req.resume,
+          answer: (text: string) =>
+            resolve({
+              text, structured: null, sessionId: 'session-a',
+              usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 }, usageWarning: null,
+            }),
+        });
+      });
+    },
+  };
+  return transport;
+}
+
+describe('chat never attaches an answer to the wrong hunk', () => {
+  test('an answer that arrives after the cursor moved is dropped', async () => {
+    const transport = deferredTransport();
+    const app = mount({ pr: detail, meat: twoFileMeat, transport: transport as never, cwd: '/tmp/worktree' });
+    await delay(40);
+
+    // inflight[0] is the findings pass, which never answers here.
+    await app.press('i');
+    await app.press('is the first file unbounded');
+    await app.press('\r');
+    await delay(20);
+    const asked = transport.inflight.at(-1)!;
+    expect(asked.prompt).toContain('cache.set(key, value);');
+
+    // Escape while it is still out, move to the other file, reopen chat.
+    await app.press(ESC);
+    await app.press(']');
+    await app.press('i');
+    await delay(20);
+
+    asked.answer('ANSWER ABOUT THE CACHE');
+    await delay(60);
+
+    // The second file's pane must not show the first file's transcript.
+    expect(app.frame()).not.toContain('ANSWER ABOUT THE CACHE');
+  });
+
+  test('the next question starts a new session rather than resuming the stale one', async () => {
+    const transport = deferredTransport();
+    const app = mount({ pr: detail, meat: twoFileMeat, transport: transport as never, cwd: '/tmp/worktree' });
+    await delay(40);
+
+    await app.press('i');
+    await app.press('first question');
+    await app.press('\r');
+    await delay(20);
+    const first = transport.inflight.at(-1)!;
+
+    await app.press(ESC);
+    await app.press(']');
+    await app.press('i');
+    first.answer('ANSWER ABOUT THE CACHE');
+    await delay(60);
+
+    await app.press('second question');
+    await app.press('\r');
+    await delay(20);
+
+    const second = transport.inflight.at(-1)!;
+    expect(second).not.toBe(first);
+    // A resumed session would put the first file's code back in front of the
+    // model while the reviewer is looking at the second file's.
+    expect(second.resume).toBeUndefined();
+    expect(second.prompt).toContain('store.persist(rows);');
+    expect(second.prompt).not.toContain('cache.set(key, value);');
+  });
+
+  test('a second question while one is pending does not race it', async () => {
+    const transport = deferredTransport();
+    const app = mount({ pr: detail, meat: twoFileMeat, transport: transport as never, cwd: '/tmp/worktree' });
+    await delay(40);
+    const before = transport.inflight.length;
+
+    await app.press('i');
+    await app.press('first');
+    await app.press('\r');
+    await delay(20);
+    await app.press('second');
+    await app.press('\r');
+    await delay(20);
+
+    expect(transport.inflight.length - before).toBe(1);
+  });
+});
+
+describe('a failed model pass is stated, not swallowed', () => {
+  test('says the pass failed and names the retry key', async () => {
+    // An empty queue makes every run throw — a dead transport.
+    const app = mount({
+      pr: detail, meat, transport: new FakeTransport(), cwd: '/tmp/worktree',
+    });
+    await delay(80);
+    expect(app.frame()).toContain('Model pass failed');
+    expect(app.frame()).toContain('press R to retry');
+  });
+
+  test('a pass that ran and found nothing says nothing', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [] } });
+
+    const app = mount({ pr: detail, meat, transport, cwd: '/tmp/worktree' });
+    await delay(80);
+    expect(app.frame().toLowerCase()).not.toContain('model pass failed');
+    expect(app.frame()).toContain('cache.set(key, value);');
+  });
+
+  test('R retries the pass and the notice clears once it succeeds', async () => {
+    const transport = new FakeTransport();
+    const app = mount({ pr: detail, meat, transport, cwd: '/tmp/worktree' });
+    await delay(80);
+    expect(app.frame().toLowerCase()).toContain('model pass failed');
+
+    transport.queue({ structured: { findings: [rawFinding] } });
+    transport.queue({ structured: { refuted: false, reasoning: 'reachable' } });
+    transport.queue({ structured: { refuted: false, reasoning: 'reproduces' } });
+
+    await app.press('R');
+    await delay(120);
+    expect(app.frame()).toContain('Unbounded cache');
+    expect(app.frame().toLowerCase()).not.toContain('model pass failed');
+  });
+});
+
 describe('findings are additive', () => {
   test('a findings pass that yields nothing leaves the whole review working', async () => {
     // An empty queue makes every FakeTransport run throw, which is what a dead

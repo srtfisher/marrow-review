@@ -139,6 +139,17 @@ describe('global keys', () => {
     expect(resolveAction('q', noKey, 'comment')).toBeNull();
     expect(resolveAction('?', noKey, 'comment')).toBeNull();
   });
+
+  test('q closes the help overlay rather than doing nothing', () => {
+    expect(resolveAction('q', noKey, 'help')).toEqual({ type: 'back' });
+    expect(resolveAction('', { escape: true }, 'help')).toEqual({ type: 'back' });
+    // It must close help, not quit the program out from under it.
+    expect(resolveAction('q', noKey, 'help')).not.toEqual({ type: 'quit' });
+  });
+
+  test('the submit screen still swallows q, since submit is not an overlay to dismiss', () => {
+    expect(resolveAction('q', noKey, 'submit')).toBeNull();
+  });
 });
 
 describe('KEY_HELP', () => {

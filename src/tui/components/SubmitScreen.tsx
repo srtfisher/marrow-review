@@ -4,14 +4,16 @@ import { findAnchorProblems } from '../../core/review/anchors.js';
 import type { ReviewDraft, Verdict } from '../../core/review/types.js';
 import { theme } from '../theme.js';
 
+/**
+ * Presentational only. Selection, confirm, and cancel are all driven by `App`'s
+ * own key handler — a second submit path living here would be one nobody reads
+ * until it fires twice.
+ */
 export interface SubmitScreenProps {
   draft: ReviewDraft;
   files: DiffFile[];
   viewerIsAuthor: boolean;
   selected: Verdict;
-  onSelect: (verdict: Verdict) => void;
-  onConfirm: () => void;
-  onCancel: () => void;
 }
 
 const LABELS: Array<{ verdict: Verdict; label: string }> = [

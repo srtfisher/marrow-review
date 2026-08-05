@@ -22,13 +22,11 @@ function comment(over: Partial<StagedComment> = {}): StagedComment {
 const draft = (comments: StagedComment[]): ReviewDraft =>
   ({ verdict: 'COMMENT', body: 'Overall fine.', comments });
 
-const noop = () => {};
-
 describe('SubmitScreen', () => {
   test('lists the three verdicts and the staged comment count', () => {
     const out = renderToString(
       <SubmitScreen draft={draft([comment()])} files={files} viewerIsAuthor={false}
-        selected="COMMENT" onSelect={noop} onConfirm={noop} onCancel={noop} />,
+        selected="COMMENT" />,
     );
     expect(out.toLowerCase()).toContain('approve');
     expect(out.toLowerCase()).toContain('request changes');
@@ -39,7 +37,7 @@ describe('SubmitScreen', () => {
   test('disables approve with a reason when the viewer is the author', () => {
     const out = renderToString(
       <SubmitScreen draft={draft([])} files={files} viewerIsAuthor
-        selected="COMMENT" onSelect={noop} onConfirm={noop} onCancel={noop} />,
+        selected="COMMENT" />,
     );
     expect(out.toLowerCase()).toContain('cannot approve your own');
   });
@@ -47,7 +45,7 @@ describe('SubmitScreen', () => {
   test('warns that unanchorable comments move into the body', () => {
     const out = renderToString(
       <SubmitScreen draft={draft([comment({ id: 'bad', line: 999 })])} files={files}
-        viewerIsAuthor={false} selected="COMMENT" onSelect={noop} onConfirm={noop} onCancel={noop} />,
+        viewerIsAuthor={false} selected="COMMENT" />,
     );
     expect(out.toLowerCase()).toContain('review body');
   });
@@ -55,7 +53,7 @@ describe('SubmitScreen', () => {
   test('shows the review body text', () => {
     const out = renderToString(
       <SubmitScreen draft={draft([])} files={files} viewerIsAuthor={false}
-        selected="APPROVE" onSelect={noop} onConfirm={noop} onCancel={noop} />,
+        selected="APPROVE" />,
     );
     expect(out).toContain('Overall fine.');
   });
