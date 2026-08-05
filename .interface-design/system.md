@@ -64,6 +64,26 @@ Horizontal rules only at the two hard boundaries: below the header, above the st
 Squint test: you should perceive two panes and a status line, and nothing should jump —
 except the meat gauge and anything yellow.
 
+## Revision: align with `srtfisher/atproto-inspect`
+
+The user pointed at their own Ink project as the reference — a tool we built together.
+Reading its source corrects two rules I had written abstractly. Their stated preference
+wins over my abstraction:
+
+| I had banned | The reference does | Ruling |
+|---|---|---|
+| Spinners | `ink-spinner` dots, accent color, `paddingX={1} paddingY={1}` | **Allowed for genuine waits**, paired with named steps and elapsed time. |
+| Box borders | `borderStyle="round"` + `borderColor` on the header | **Allowed on the header only.** Panes still separate by tonal tiers and one vertical rule. |
+
+Conventions adopted verbatim, so the two tools feel like the same hand made them:
+
+- **`paddingX={1}` on every pane and panel.** Nothing sits flush against the terminal edge.
+- **Selection is `❯ ` in the accent color**, never reverse video. Unselected rows get two
+  spaces so text never shifts horizontally as the cursor moves.
+- **A muted position indicator under a scrolled list**: `1–10 of 47`.
+- **Breadcrumbs with a muted `›`**, last crumb in the accent color.
+- Colors stay ANSI slot names, which the reference also uses.
+
 ## Revision, after first real use
 
 The first run on a real repository showed the list reading as a wall of text: two-row
@@ -75,9 +95,9 @@ block on the selected row. Corrections, all in the direction of more air:
 - **One column of left padding** on every pane. Text flush against the terminal edge reads
   as unfinished.
 - **Selection is a marker plus brightness, not a reverse-video block.** A full-width
-  inverse bar is the heaviest thing on screen and fights everything around it. Use the
-  cyan `▸` in the left margin — the same marker the detail pane already uses — plus a
-  bold title.
+  inverse bar is the heaviest thing on screen and fights everything around it. The list
+  uses `❯ ` in the accent color (matching the reference project); the detail pane keeps
+  `▸`, which distinguishes "which pull request" from "where in the diff".
 - **A blank row under the pane header** before the first entry.
 
 The density rule stands, but it was applied too literally: dense *within* a row, airy
@@ -108,8 +128,9 @@ as decoration.
   terminal's version of `tabular-nums`.
 - **Rhythm is uneven on purpose:** zero blank rows between hunk lines (dense, scannable),
   one blank row between hunks, one between files. Reading is tight; navigating breathes.
-- **Two-row list entries** (title, then author · file count dimmed) rather than one dense
-  row — the list is chosen from, not scanned in bulk.
+- **Three-row list entries**: title, a dimmed `author · relative time` row, then a blank
+  row. The list is chosen from deliberately, not scanned in bulk, so it gets air.
+  (GitHub's `pulls.list` returns no file counts — showing `0 files` was a bug.)
 
 ## Signature elements
 
@@ -128,7 +149,7 @@ Three things that could only exist in this product:
 
 | State | Treatment |
 |---|---|
-| selected (list) | reverse video on the title row only, not the whole two-row block |
+| selected (list) | `❯ ` in the accent color plus a bold title. Never reverse video — a full-width inverse bar is the heaviest thing on screen. |
 | cursor (detail) | cyan `▸` in the left margin; no reverse — it would fight the diff colors |
 | folded | the folded-noise rule, dim |
 | dropped file | dim path plus `· dropped: <rule>`, never omitted |
@@ -137,7 +158,8 @@ Three things that could only exist in this product:
 | empty list | "No pull requests." — never a blank pane |
 | no search match | `No match for "query".` — never a blank pane |
 | degraded (no worktree) | `diff-only` in the status bar, stated not hidden |
-| model still running | **no spinner** — rule verdicts render immediately and model verdicts fill in; there is nothing to wait on, so nothing should imply waiting |
+| model still running (findings filling in) | no indicator — rule verdicts already rendered and nothing is blocked |
+| user is blocked (opening a PR, awaiting a chat answer) | `ink-spinner` dots plus named steps and a ticking elapsed counter. The counter is what proves it is alive. |
 
 ## Motion
 
