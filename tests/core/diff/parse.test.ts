@@ -91,4 +91,24 @@ describe('parseUnifiedDiff', () => {
     expect(hunk.oldLines).toBe(1);
     expect(hunk.newLines).toBe(1);
   });
+
+  test('parses a binary file with spaces in the filename', () => {
+    const [file] = parseUnifiedDiff(fixture('binary-with-space'));
+    expect(file!.status).toBe('binary');
+    expect(file!.path).toBe('my logo.png');
+    expect(file!.hunks).toHaveLength(0);
+  });
+
+  test('throws on unrecognized line prefix inside a hunk', () => {
+    const malformed = `diff --git a/test.ts b/test.ts
+index 1234567..89abcde 100644
+--- a/test.ts
++++ b/test.ts
+@@ -1,2 +1,2 @@
+ context
+?invalid prefix
+ context
+`;
+    expect(() => parseUnifiedDiff(malformed)).toThrow(/Unrecognized line prefix/);
+  });
 });

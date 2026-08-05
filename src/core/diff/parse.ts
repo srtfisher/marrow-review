@@ -56,10 +56,16 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       draft = newDraft();
       hunk = null;
       // Fall back to the paths on the diff --git line; ---/+++ overrides below.
-      const parts = raw.slice('diff --git '.length).split(' ');
-      if (parts.length === 2) {
-        draft.oldPath = stripPrefix(parts[0]!);
-        draft.path = stripPrefix(parts[1]!);
+      // Find the ` b/` separator, preferring the last occurrence to handle pathological
+      // filenames containing ` b/`.
+      const prefix = 'diff --git ';
+      const content = raw.slice(prefix.length);
+      const bSeparatorIdx = content.lastIndexOf(' b/');
+      if (bSeparatorIdx > 0) {
+        const oldPath = content.slice(0, bSeparatorIdx);
+        const newPath = content.slice(bSeparatorIdx + 1);
+        draft.oldPath = stripPrefix(oldPath);
+        draft.path = stripPrefix(newPath);
       }
       continue;
     }
@@ -134,6 +140,9 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       continue;
     }
 
+    // Skip empty lines (e.g., from trailing newline at end of diff).
+    if (raw.length === 0) continue;
+
     const marker = raw[0];
     const text = raw.slice(1);
     let line: DiffLine | null = null;
@@ -146,8 +155,9 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       draft.deletions += 1;
     } else if (marker === ' ') {
       line = { kind: 'context', text, oldLine: oldNo++, newLine: newNo++, noNewlineAtEof: false };
+    } else {
+      throw new Error(`Unrecognized line prefix '${marker}' in hunk starting at ${hunk!.header}\nOffending line: ${raw}`);
     }
-    // Any other leading character is not part of a hunk body; ignore it.
 
     if (line) hunk.lines.push(line);
   }
