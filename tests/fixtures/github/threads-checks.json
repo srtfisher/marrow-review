@@ -1,0 +1,56 @@
+{
+  "repository": {
+    "pullRequest": {
+      "reviewThreads": {
+        "nodes": [
+          {
+            "path": "mdv/SmartTypography.swift",
+            "line": 57,
+            "isResolved": false,
+            "isOutdated": false,
+            "comments": {
+              "nodes": [
+                {
+                  "author": { "login": "tqbf" },
+                  "body": "Does this handle setext headings?",
+                  "createdAt": "2026-08-01T13:00:00Z"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "reviews": {
+        "nodes": [{ "id": "PRR_pending1", "state": "PENDING" }]
+      },
+      "commits": {
+        "nodes": [
+          {
+            "commit": {
+              "statusCheckRollup": {
+                "contexts": {
+                  "nodes": [
+                    {
+                      "__typename": "CheckRun",
+                      "name": "unit-tests",
+                      "status": "COMPLETED",
+                      "conclusion": "FAILURE",
+                      "detailsUrl": "https://github.com/x/y/runs/1",
+                      "summary": "3 tests failed"
+                    },
+                    {
+                      "__typename": "StatusContext",
+                      "context": "ci/legacy",
+                      "state": "SUCCESS",
+                      "targetUrl": "https://ci.example.com/1"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
