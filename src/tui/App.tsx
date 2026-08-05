@@ -283,8 +283,14 @@ export function App(props: AppProps) {
   // One row for the horizontal rule, one for the status line.
   const bodyHeight = Math.max(1, rows - 2);
   const listRows = visibleEntryCount(bodyHeight, mode === 'search');
+  // Notes render under the detail pane, so the pane's budget pays for them —
+  // otherwise adding one pushes the status bar off the bottom again. Scrolling
+  // and rendering must agree on this number or the cursor leaves the window.
+  const findingsFailed = findingsStatus === 'failed';
+  const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
+  const detailHeight = Math.max(0, bodyHeight - noteRows);
   const detailRows = props.meat
-    ? Math.max(0, bodyHeight - detailHeaderRows(props.meat, props.checks))
+    ? Math.max(0, detailHeight - detailHeaderRows(props.meat, props.checks))
     : 0;
 
   // Folding shrinks the unit list under the cursor, and a query shrinks the
@@ -406,7 +412,10 @@ export function App(props: AppProps) {
   function halfPage(dir: -1 | 1) {
     if (mode === 'list') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
     const from = rowOffsets(unitRows)[cursor] ?? 0;
-    return moveUnits(indexAtRow(unitRows, from + dir * Math.floor(detailRows / 2)));
+    const target = indexAtRow(unitRows, from + dir * Math.floor(detailRows / 2));
+    // A hunk taller than half a page would otherwise swallow the keystroke:
+    // the target row is still inside the unit the cursor is already on.
+    return moveUnits(target === cursor ? cursor + dir : target);
   }
 
   function move(next: number) {
@@ -741,10 +750,6 @@ export function App(props: AppProps) {
 
   const paneRule = Array.from({ length: bodyHeight }, () => theme.glyph.rule).join('\n');
 
-  // Notes sit under the detail pane, so the pane's row budget has to pay for
-  // them — otherwise adding one pushes the status bar off the bottom again.
-  const findingsFailed = findingsStatus === 'failed';
-  const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
   const notes = (
     <>
       {/* Truncate, never wrap: a note that takes two rows costs a row the
@@ -788,7 +793,7 @@ export function App(props: AppProps) {
                 units={units}
                 cursor={cursor}
                 scrollTop={unitScroll}
-                height={bodyHeight - noteRows}
+                height={detailHeight}
                 checks={props.checks}
                 threads={props.threads}
                 showThreads={showThreads}
@@ -810,8 +815,10 @@ export function App(props: AppProps) {
 
       {/* The confirm takes the status bar's row rather than adding one, so the
           layout does not shift under a question about losing work. */}
+      {/* `pending`, not `danger`: the default here is to keep the work, so this
+          is the yellow that nags about unsubmitted work, not a red confirm. */}
       {confirmQuit ? (
-        <Text color={theme.color.pending} bold wrap="truncate">
+        <Text color={theme.color.pending} wrap="truncate">
           {`${staged.length} unsubmitted comment(s) · enter saves the draft and quits · x discards · esc stays`}
         </Text>
       ) : props.pr && props.meat ? (

@@ -597,6 +597,68 @@ describe('a failed model pass is stated, not swallowed', () => {
   });
 });
 
+describe('the app fits the terminal it was given', () => {
+  /** Twelve hunks of twelve lines: far more than the harness's 30 rows. */
+  const tallMeat: MeatResult = {
+    summary: 'A large change.',
+    files: [{
+      file: {
+        path: 'src/big.ts', oldPath: null, status: 'modified', similarity: null,
+        hunks: [], additions: 144, deletions: 0,
+      },
+      dropped: null,
+      hunks: Array.from({ length: 12 }, (_, h) => ({
+        hunk: {
+          header: `@@ -${h * 20},12 +${h * 20},12 @@`, section: '',
+          oldStart: h * 20, oldLines: 12, newStart: h * 20, newLines: 12,
+          lines: Array.from({ length: 12 }, (_, i) => ({
+            kind: 'add' as const, text: `line ${h}.${i}`,
+            oldLine: null, newLine: h * 20 + i, noNewlineAtEof: false,
+          })),
+        },
+        keep: true, reason: 'meaningful', source: 'model' as const,
+      })),
+    }],
+    keptLines: 144, totalLines: 144, keptFiles: 1, totalFiles: 1,
+  };
+
+  function frameRows(frame: string): number {
+    return frame.split('\n').length;
+  }
+
+  test('a diff many screens long still leaves the status bar on screen', async () => {
+    const app = mount({ pr: detail, meat: tallMeat });
+    await app.press('j');
+    // The status bar is the last row; if the pane overran it would be gone.
+    expect(app.frame()).toContain('worktree ok');
+    expect(frameRows(app.frame())).toBeLessThanOrEqual(30);
+  });
+
+  test('a status note is paid for out of the pane, not out of the status bar', async () => {
+    const app = mount({
+      pr: detail, meat: tallMeat,
+      status: 'You have an unsubmitted review on this pull request from the web UI.',
+      statusTone: 'pending',
+    });
+    await app.press('j');
+    expect(app.frame()).toContain('unsubmitted review');
+    expect(app.frame()).toContain('worktree ok');
+    expect(frameRows(app.frame())).toBeLessThanOrEqual(30);
+  });
+
+  test('ctrl-d moves a real half page and stays inside the frame', async () => {
+    const app = mount({ pr: detail, meat: tallMeat });
+    await app.press('j');
+    const first = app.frame();
+    await app.press('\u0004');
+    const after = app.frame();
+
+    expect(after).not.toBe(first);
+    expect(after).toContain('worktree ok');
+    expect(frameRows(after)).toBeLessThanOrEqual(30);
+  });
+});
+
 describe('unsubmitted work survives the session', () => {
   test('a restored draft is staged the moment the pull request opens', async () => {
     const app = mount({
