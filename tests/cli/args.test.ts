@@ -15,7 +15,7 @@ test('parses a bare PR number', () => {
 });
 
 test('parses a PR URL', () => {
-  expect(parseArgs(['https://github.com/srtfisher/marrow/pull/42']).prNumber).toBe(42);
+  expect(parseArgs(['https://github.com/octocat/marrow/pull/42']).prNumber).toBe(42);
 });
 
 test('--model shifts the meat model down a tier', () => {

@@ -11,7 +11,7 @@ test('maps review threads', async () => {
   expect(ctx.threads).toHaveLength(1);
   expect(ctx.threads[0]!.path).toBe('mdv/SmartTypography.swift');
   expect(ctx.threads[0]!.line).toBe(57);
-  expect(ctx.threads[0]!.comments[0]!.author).toBe('tqbf');
+  expect(ctx.threads[0]!.comments[0]!.author).toBe('hubot');
 });
 
 test('maps both CheckRun and StatusContext into CheckRun', async () => {

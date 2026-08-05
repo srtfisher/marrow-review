@@ -59,10 +59,10 @@ describe('buildFindingsPrompt', () => {
     const prompt = buildFindingsPrompt({
       ...input,
       threads: [{ path: 'src/api.ts', line: 11, isResolved: false, isOutdated: false,
-                  comments: [{ author: 'tqbf', body: 'This busy-waits.', createdAt: 'now' }] }],
+                  comments: [{ author: 'hubot', body: 'This busy-waits.', createdAt: 'now' }] }],
     });
     expect(prompt).toContain('This busy-waits.');
-    expect(prompt).toContain('tqbf');
+    expect(prompt).toContain('hubot');
   });
 
   test('includes failing check output', () => {

@@ -5,7 +5,7 @@ import type { PullRequestSummary } from '../../src/core/github/types.js';
 
 function pr(number: number, title: string, over: Partial<PullRequestSummary> = {}): PullRequestSummary {
   return {
-    number, title, author: 'srtfisher', state: 'open', isDraft: false,
+    number, title, author: 'octocat', state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'feat/x',
     updatedAt: '2026-08-01T00:00:00Z',
     ...over,
@@ -43,11 +43,11 @@ describe('PrList', () => {
     );
     expect(out).toContain('#42');
     expect(out).toContain('Fix rendering');
-    expect(out).toContain('srtfisher');
+    expect(out).toContain('octocat');
   });
 
   // The bug this replaced: `pulls.list` sends no file count, so every row read
-  // `srtfisher · 0 files`. Nothing in the list may claim a size.
+  // `octocat · 0 files`. Nothing in the list may claim a size.
   test('shows when a pull request was last touched, never a file count', () => {
     const out = renderToString(
       <PrList prs={[pr(42, 'Fix rendering', { updatedAt: new Date().toISOString() })]}

@@ -87,7 +87,7 @@ describe('buildRows', () => {
   test('threads only cost rows when they are being shown', () => {
     const threads: ReviewThread[] = [{
       path: 'a.ts', line: 1, isResolved: false, isOutdated: false,
-      comments: [{ author: 'tqbf', body: 'why?', createdAt: 'now' }],
+      comments: [{ author: 'hubot', body: 'why?', createdAt: 'now' }],
     }];
     const units = buildUnits(meatOf([file('a.ts', 1, 3)]), {
       expandedFiles: new Set(), foldedFiles: new Set(),

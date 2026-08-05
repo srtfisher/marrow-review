@@ -11,7 +11,7 @@
             "comments": {
               "nodes": [
                 {
-                  "author": { "login": "tqbf" },
+                  "author": { "login": "hubot" },
                   "body": "Does this handle setext headings?",
                   "createdAt": "2026-08-01T13:00:00Z"
                 }

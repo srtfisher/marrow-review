@@ -179,11 +179,11 @@ describe('evaluateHunk', () => {
 
   test('drops license header changes', () => {
     const h = hunk([
-      line('del', ' * Copyright (c) 2025 Alley'),
-      line('add', ' * Copyright (c) 2026 Alley'),
+      line('del', ' * Copyright (c) 2025 Example Corp'),
+      line('add', ' * Copyright (c) 2026 Example Corp'),
     ]);
     expect(evaluateHunk(h, 'src/a.ts')?.rule).toBe('license-header');
-    expect(evaluateHunk(hunk([line('add', '# Copyright 2026 Alley')]), 'app/db.py')?.rule).toBe(
+    expect(evaluateHunk(hunk([line('add', '# Copyright 2026 Example Corp')]), 'app/db.py')?.rule).toBe(
       'license-header',
     );
   });

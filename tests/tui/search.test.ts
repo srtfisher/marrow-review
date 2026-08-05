@@ -11,7 +11,7 @@ function pr(number: number, title: string, author: string): PullRequestSummary {
 }
 
 const prs = [
-  pr(142, 'Fix thematic-break rendering', 'hazadus'),
+  pr(142, 'Fix thematic-break rendering', 'hubot'),
   pr(143, 'Add mermaid diagrams', 'darvell'),
   pr(144, 'Bump dependencies', 'dependabot[bot]'),
 ];

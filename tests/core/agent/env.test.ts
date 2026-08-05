@@ -3,7 +3,7 @@ import { buildSubprocessEnv } from '../../../src/core/agent/sdk.js';
 
 const source = {
   PATH: '/usr/bin',
-  HOME: '/Users/srtfisher',
+  HOME: '/Users/octocat',
   ANTHROPIC_API_KEY: 'sk-ant-leaked',
   ANTHROPIC_AUTH_TOKEN: 'tok-leaked',
 };
@@ -13,7 +13,7 @@ test('strips Anthropic credentials so the subscription is used', () => {
   expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   expect(env.PATH).toBe('/usr/bin');
-  expect(env.HOME).toBe('/Users/srtfisher');
+  expect(env.HOME).toBe('/Users/octocat');
 });
 
 test('preserves credentials when the user opts into API billing', () => {

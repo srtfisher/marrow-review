@@ -52,7 +52,7 @@ function fakeStdout() {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function summary(number: number, title: string, author = 'srtfisher'): PullRequestSummary {
+function summary(number: number, title: string, author = 'octocat'): PullRequestSummary {
   return {
     number, title, author, state: 'open', isDraft: false,
     headSha: 'abc', baseRef: 'main', headRef: 'feat/x',
@@ -62,7 +62,7 @@ function summary(number: number, title: string, author = 'srtfisher'): PullReque
 
 const prs = [
   summary(41, 'Alpha rendering'),
-  summary(42, 'Beta caching', 'tqbf'),
+  summary(42, 'Beta caching', 'hubot'),
   summary(43, 'Gamma parsing'),
 ];
 
@@ -76,6 +76,8 @@ afterEach(() => {
 interface Harness {
   press: (keys: string) => Promise<void>;
   frame: () => string;
+  /** Everything written since the last key, escapes and all. */
+  raw: () => string;
   instance: Instance;
 }
 
@@ -85,7 +87,7 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
 
   const instance = render(
     <App
-      repoLabel="srtfisher/marrow"
+      repoLabel="octocat/marrow"
       prs={prs}
       pr={null}
       meat={null}
@@ -114,6 +116,7 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
       await delay(40);
     },
     frame: () => stdout.frames.slice(mark).join('').replaceAll(/\[[\d;?]*[a-zA-Z]/g, ''),
+    raw: () => stdout.frames.join(''),
   };
 }
 
@@ -195,7 +198,7 @@ describe('App key handling', () => {
 });
 
 const detail: PullRequestDetail = {
-  ...summary(42, 'Beta caching', 'tqbf'),
+  ...summary(42, 'Beta caching', 'hubot'),
   body: 'Adds a cache.',
   diff: '',
   viewerIsAuthor: false,
@@ -1029,5 +1032,267 @@ describe('esc comes back out of the diff', () => {
     await app.press(ESC);
     expect(app.frame()).toContain('search');
     expect(app.frame()).not.toContain('comment on this line');
+  });
+});
+
+/**
+ * The mouse. Every one of these is also a key and stays one — this is a keyboard
+ * tool — but a reviewer scrolling a diff reaches for the wheel without deciding
+ * to, and a window that ignores it feels like it is not really running there.
+ *
+ * Reports are SGR, one-based, `ESC [ < button ; column ; row M`.
+ */
+describe('the mouse', () => {
+  const wheelDown = (column = 20, row = 10) => `${ESC}[<65;${column};${row}M`;
+  const wheelUp = (column = 20, row = 10) => `${ESC}[<64;${column};${row}M`;
+  const click = (column: number, row: number) => `${ESC}[<0;${column};${row}M`;
+
+  /** One file, one hunk, forty lines — taller than the pane, so it scrolls. */
+  const scrollable: MeatResult = {
+    summary: 'A large change.',
+    files: [{
+      file: {
+        path: 'src/big.ts', oldPath: null, status: 'modified', similarity: null,
+        hunks: [], additions: 40, deletions: 0,
+      },
+      dropped: null,
+      hunks: [{
+        hunk: {
+          header: '@@ -1,40 +1,40 @@', section: '',
+          oldStart: 1, oldLines: 40, newStart: 1, newLines: 40,
+          lines: Array.from({ length: 40 }, (_, i) => ({
+            kind: 'add' as const, text: `line ${i}`,
+            oldLine: null, newLine: i + 1, noNewlineAtEof: false,
+          })),
+        },
+        keep: true, reason: 'meaningful', source: 'model' as const,
+      }],
+    }],
+    keptLines: 40, totalLines: 40, keptFiles: 1, totalFiles: 1,
+    unclassified: 0,
+  };
+
+  test('turns reporting on while it owns the terminal', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    // SGR specifically: the original encoding cannot address past column 223,
+    // and these terminals are wider than that.
+    expect(app.raw()).toContain('?1006h');
+    expect(app.raw()).toContain('?1000h');
+  });
+
+  test('turns reporting off again on the way out', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    app.instance.unmount();
+    await delay(40);
+    // Left on, the reviewer's shell prints `[<0;12;7M` at the prompt on every
+    // click and nothing says which program did that to their terminal.
+    expect(app.raw()).toContain('?1006l');
+    expect(app.raw()).toContain('?1000l');
+  });
+
+  test('the wheel scrolls the diff', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+    expect(app.frame()).toContain('line 0');
+
+    for (let i = 0; i < 4; i += 1) await app.press(wheelDown());
+    const after = app.frame();
+    expect(after).not.toContain('line 0');
+    expect(after).toContain('line 20');
+  });
+
+  test('and scrolls it back', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+    for (let i = 0; i < 4; i += 1) await app.press(wheelDown());
+    expect(app.frame()).not.toContain('line 0');
+
+    // Exactly as far back as it came: a fifth notch would repaint nothing, and
+    // a frame is only what was repainted since the last key.
+    for (let i = 0; i < 4; i += 1) await app.press(wheelUp());
+    expect(app.frame()).toContain('line 0');
+  });
+
+  test('the wheel at the top of the diff does nothing rather than wrapping', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+    expect(app.frame()).toContain('line 0');
+    // Nothing repainted, which is the strongest available form of "nothing
+    // happened" — the view did not move and the cursor did not either.
+    await app.press(wheelUp());
+    expect(app.frame()).toBe('');
+  });
+
+  // The reason a mouse report is taken off the front of the input: left in, it
+  // reaches the keymap as a string starting with `[`, which is "previous file".
+  test('a report never reaches the keymap as a keystroke', async () => {
+    const opened: number[] = [];
+    const app = mount({ prs, onOpenPr: (n) => opened.push(n) });
+    await delay(60);
+
+    // In the list, a wheel notch moves the selection and nothing else — no
+    // filter change, no search, no quit, and no pull request opened. The
+    // sequence contains `[`, `<`, digits and `M`, none of which may land.
+    await app.press(wheelDown(1, 1));
+    const after = app.frame();
+    expect(after).toContain('Alpha rendering');
+    expect(after).toContain('Gamma parsing');
+    expect(after).not.toContain('No match');
+    expect(opened).toEqual([]);
+  });
+
+  test('a click puts the cursor on the line clicked, and C comments there', async () => {
+    const saved: ReviewDraft[] = [];
+    const app = mount({ pr: detail, meat: scrollable, onPersist: (d) => saved.push(d) });
+    await delay(60);
+
+    // The header is title, meta, summary, gauge, one row of file index, and a
+    // blank — six rows — so the diff starts at terminal row 6, zero-based. Rows
+    // 0 and 1 of the diff are the file and hunk headers, so `line 3` is diff row
+    // 5 and terminal row 11, which the terminal reports as 12.
+    await app.press(click(20, 12));
+    await app.press('C');
+    await app.press('The fourth line.');
+    await app.press('\r');
+    await delay(40);
+
+    expect(saved.at(-1)?.comments[0]).toMatchObject({
+      path: 'src/big.ts', line: 4, body: 'The fourth line.',
+    });
+  });
+
+  test('a click does not yank the view out from under the click', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+    const before = app.frame();
+    // The row is already on screen; recentring on it would be the pane moving
+    // for no reason the reviewer asked for.
+    await app.press(click(20, 12));
+    expect(app.frame()).toContain('line 3');
+    expect(before).toContain('line 3');
+  });
+
+  test('a click on the header above the diff leaves the cursor alone', async () => {
+    const saved: ReviewDraft[] = [];
+    const app = mount({ pr: detail, meat: scrollable, onPersist: (d) => saved.push(d) });
+    await delay(60);
+
+    // Aim at `line 3`, then click the title row and the gauge row. Neither is a
+    // row of the diff, so the comment must still land where the cursor was put.
+    await app.press(click(20, 12));
+    await app.press(click(20, 1));
+    await app.press(click(20, 4));
+    await app.press('C');
+    await app.press('Still the fourth line.');
+    await app.press('\r');
+    await delay(40);
+
+    expect(saved.at(-1)?.comments[0]).toMatchObject({ line: 4 });
+  });
+
+  test('a click on the file index jumps to that file', async () => {
+    // Two files, so the index has a second cell to click.
+    const twoFiles: MeatResult = {
+      ...scrollable,
+      files: [scrollable.files[0]!, meatFile],
+      keptFiles: 2, totalFiles: 2,
+    };
+    const app = mount({ pr: detail, meat: twoFiles });
+    await delay(60);
+    expect(app.frame()).toContain('line 0');
+
+    // Labels are `big.ts` and `cache.ts`, so cells are 8 + 3 + 2 = 13 wide from
+    // the pane's own column 1. The second cell starts at column 14, reported 15.
+    // The index sits on terminal row 4, reported 5.
+    await app.press(click(15, 5));
+    const after = app.frame();
+    // The view moved off the first file and onto the second.
+    expect(after).toContain('src/cache.ts');
+    expect(after).not.toContain('line 0');
+  });
+
+  test('in the list, the wheel moves the selection and a second click opens', async () => {
+    const opened: number[] = [];
+    const app = mount({ onOpenPr: (n) => opened.push(n) });
+    await delay(60);
+
+    // The list pane's chrome is the filter line and a blank, so the first entry
+    // starts at terminal row 2 and the second at row 5, reported 6.
+    await app.press(click(5, 6));
+    expect(opened).toEqual([]);
+
+    // Clicking the entry already selected is the commit. One click to aim and
+    // one to fire, so a stray click cannot spend a minute fetching a diff.
+    await app.press(click(5, 6));
+    expect(opened).toEqual([42]);
+  });
+
+  test('a click on the list pane chrome selects nothing', async () => {
+    const opened: number[] = [];
+    const app = mount({ onOpenPr: (n) => opened.push(n) });
+    await delay(60);
+    await app.press(click(5, 1));
+    await app.press(click(5, 1));
+    expect(opened).toEqual([]);
+  });
+
+  test('a right click and a release are ignored, not treated as a left click', async () => {
+    const opened: number[] = [];
+    const app = mount({ onOpenPr: (n) => opened.push(n) });
+    await delay(60);
+    await app.press(`${ESC}[<2;5;3M`);
+    await app.press(`${ESC}[<0;5;3m`);
+    await app.press(`${ESC}[<0;5;3m`);
+    expect(opened).toEqual([]);
+  });
+});
+
+describe('the help overlay', () => {
+  test('opens grouped, and j scrolls to what did not fit', async () => {
+    const app = mount();
+    await app.press('?');
+    const first = app.frame();
+    expect(first).toContain('move');
+    expect(first).toContain('read the diff');
+
+    // A hundred columns fits one column of bindings, which is taller than the
+    // thirty rows this terminal has, so the rest is below the fold.
+    expect(first).toMatch(/1–\d+ of \d+/);
+
+    await app.press('j');
+    expect(app.frame()).toMatch(/2–\d+ of \d+/);
+  });
+
+  test('documents the mouse, which nobody would otherwise try', async () => {
+    const app = mount();
+    await app.press('?');
+    expect(app.frame()).toContain('scroll the diff');
+  });
+
+  test('reopens at the top rather than where it was left', async () => {
+    const app = mount();
+    await app.press('?');
+    await app.press('j');
+    await app.press('j');
+    expect(app.frame()).toMatch(/3–\d+ of \d+/);
+
+    await app.press(ESC);
+    await app.press('?');
+    expect(app.frame()).toMatch(/1–\d+ of \d+/);
+  });
+
+  test('q closes it rather than quitting the program', async () => {
+    const app = mount();
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+    await app.press('?');
+    await app.press('q');
+    await delay(40);
+    expect(exited).toBe(false);
+    expect(app.frame()).toContain('Alpha rendering');
   });
 });

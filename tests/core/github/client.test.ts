@@ -24,10 +24,10 @@ function fakeOctokit(diff = 'diff --git a/x b/x\n') {
 
 test('maps a PR detail response to the domain type', async () => {
   const client = new GitHubClient('tok', fakeOctokit());
-  const pr = await client.getPull('srtfisher', 'marrow', 42, 'srtfisher');
+  const pr = await client.getPull('octocat', 'marrow', 42, 'octocat');
 
   expect(pr.number).toBe(42);
-  expect(pr.author).toBe('hazadus');
+  expect(pr.author).toBe('hubot');
   expect(pr.state).toBe('open');
   expect(pr.headSha).toBe('abc1234def5678');
   expect(pr.baseRef).toBe('main');
@@ -38,7 +38,7 @@ test('maps a PR detail response to the domain type', async () => {
 
 test('flags the viewer as author when logins match', async () => {
   const client = new GitHubClient('tok', fakeOctokit());
-  const pr = await client.getPull('srtfisher', 'marrow', 42, 'hazadus');
+  const pr = await client.getPull('octocat', 'marrow', 42, 'hubot');
   expect(pr.viewerIsAuthor).toBe(true);
 });
 
@@ -55,13 +55,13 @@ test('reports merged state distinctly from closed', async () => {
     paginate: async () => [],
   };
   const client = new GitHubClient('tok', octokit);
-  const pr = await client.getPull('srtfisher', 'marrow', 42, 'srtfisher');
+  const pr = await client.getPull('octocat', 'marrow', 42, 'octocat');
   expect(pr.state).toBe('merged');
 });
 
 test('maps a PR list response', async () => {
   const client = new GitHubClient('tok', fakeOctokit());
-  const prs = await client.listPulls('srtfisher', 'marrow', 'open');
+  const prs = await client.listPulls('octocat', 'marrow', 'open');
   expect(prs).toHaveLength(2);
   expect(prs[0]!.title).toBe('Fix thematic-break rendering');
   expect(prs[0]!.headRef).toBe('fix/thematic-break');
@@ -73,7 +73,7 @@ test('maps a PR list response', async () => {
 // how every row came to read `0 files`.
 test('a list summary carries no size figures at all', async () => {
   const client = new GitHubClient('tok', fakeOctokit());
-  const prs = await client.listPulls('srtfisher', 'marrow', 'open');
+  const prs = await client.listPulls('octocat', 'marrow', 'open');
   expect(prs[0]!).not.toHaveProperty('changedFiles');
   expect(prs[0]!).not.toHaveProperty('additions');
   expect(prs[0]!).not.toHaveProperty('deletions');

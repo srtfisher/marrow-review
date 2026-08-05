@@ -54,10 +54,10 @@ test('MemoryVerdictCache round-trips', async () => {
 test('FileVerdictCache persists across instances', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'marrow-cache-'));
   try {
-    const first = new FileVerdictCache('srtfisher/marrow', dir);
+    const first = new FileVerdictCache('octocat/marrow', dir);
     await first.set('abc', { keep: false, reason: 'noise' });
 
-    const second = new FileVerdictCache('srtfisher/marrow', dir);
+    const second = new FileVerdictCache('octocat/marrow', dir);
     expect(await second.get('abc')).toEqual({ keep: false, reason: 'noise' });
 
     const otherRepo = new FileVerdictCache('other/repo', dir);
@@ -70,11 +70,11 @@ test('FileVerdictCache persists across instances', async () => {
 test('FileVerdictCache survives a corrupt cache file', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'marrow-cache-'));
   try {
-    const cache = new FileVerdictCache('srtfisher/marrow', dir);
+    const cache = new FileVerdictCache('octocat/marrow', dir);
     await cache.set('abc', { keep: true, reason: 'ok' });
-    await Bun.write(join(dir, 'srtfisher__marrow.json'), '{not json');
+    await Bun.write(join(dir, 'octocat__marrow.json'), '{not json');
 
-    const reopened = new FileVerdictCache('srtfisher/marrow', dir);
+    const reopened = new FileVerdictCache('octocat/marrow', dir);
     expect(await reopened.get('abc')).toBeNull();
     await reopened.set('def', { keep: true, reason: 'recovered' });
     expect(await reopened.get('def')).toEqual({ keep: true, reason: 'recovered' });

@@ -8,7 +8,7 @@ import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
 import type { PullRequestDetail } from '../../src/core/github/types.js';
 
 const pr: PullRequestDetail = {
-  number: 42, title: 'Fix rendering', author: 'hazadus', state: 'open', isDraft: false,
+  number: 42, title: 'Fix rendering', author: 'hubot', state: 'open', isDraft: false,
   headSha: 'abc', baseRef: 'main', headRef: 'fix/render',
   updatedAt: '2026-08-01T00:00:00Z', additions: 106, deletions: 0, changedFiles: 3,
   body: 'Body text.', diff: '', viewerIsAuthor: false,
@@ -57,7 +57,7 @@ describe('Detail', () => {
     const out = render();
     expect(out).toContain('Fix rendering');
     expect(out).toContain('#42');
-    expect(out).toContain('hazadus');
+    expect(out).toContain('hubot');
     expect(out).toContain('main');
     expect(out).toContain('fix/render');
   });
@@ -81,7 +81,7 @@ describe('Detail', () => {
   test('hides threads until asked, then shows them', () => {
     const threads: ReviewThread[] = [{
       path: 'src/app.ts', line: 1, isResolved: false, isOutdated: false,
-      comments: [{ author: 'tqbf', body: 'Is this safe?', createdAt: 'now' }],
+      comments: [{ author: 'hubot', body: 'Is this safe?', createdAt: 'now' }],
     }];
     expect(render({}, threads, false)).not.toContain('Is this safe?');
     expect(render({}, threads, true)).toContain('Is this safe?');

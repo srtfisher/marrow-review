@@ -9,7 +9,7 @@ import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
 import type { PullRequestDetail } from '../../src/core/github/types.js';
 
 const pr: PullRequestDetail = {
-  number: 42, title: 'Fix rendering', author: 'hazadus', state: 'open', isDraft: false,
+  number: 42, title: 'Fix rendering', author: 'hubot', state: 'open', isDraft: false,
   headSha: 'abc', baseRef: 'main', headRef: 'fix/render',
   updatedAt: '2026-08-01T00:00:00Z', additions: 240, deletions: 0, changedFiles: 5,
   body: '', diff: '', viewerIsAuthor: false,
