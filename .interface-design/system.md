@@ -218,6 +218,68 @@ Effectively none. This is a keyboard tool used hundreds of times a day; per the 
 rule, high-frequency actions get no animation because it makes them feel slow. No
 transitions, no fades. The only "motion" is progressive reveal as model verdicts arrive.
 
+## Revision, after looking at the thing on a wide terminal
+
+Four fixes, all of them the same mistake in different places: a layout that divided the
+space it was given instead of asking what the content needed.
+
+**The wordmark was drawn wrong and nobody noticed for weeks.** Three rows of half-blocks
+are a 6×31 bitmap, and the letters have to be legible *as pixels*. The R was drawn with a
+bowl and no leg, which is a P, so the welcome panel proudly read **MAPPOW**. The M had
+three stems and the W had a solid bar through it. The glyphs are now documented as their
+pixel grid in the source, and the test unpacks the half-blocks back into that grid and
+asserts the letterforms — the only kind of check that can see this class of bug, since the
+half-block strings themselves look plausible either way.
+
+**The file index sized its cells to a share of the width.** Four columns of `width / 4`
+put `app.css` in a fifty-seven-column cell on a 230-column terminal, so the index read as
+four unrelated lists with a gutter of nothing between them — and still truncated the one
+name long enough to need the room. Cells are sized to their longest label now, and the
+column count follows from how many of those fit. The old cap of four columns was recorded
+as "a very wide terminal does not get eight columns of nothing", which was right about the
+symptom and wrong about the cause: with content-sized cells, more columns is a *tighter*
+block, not a more spread-out one. Six, and the same 17-file change that took five header
+rows now takes three — two more rows of diff.
+
+**The help overlay did not fit the terminal.** Twenty-four bindings in one flat column is
+twenty-six rows, and Ink overdraws rather than clipping, so an eighty-by-twenty-four
+terminal garbled it exactly the way the welcome panel used to. Bindings are grouped under
+headings now, packed into as many columns as the width allows and as *few* as the height
+needs — two roomy columns beat three cramped ones when two already fit — and what still
+does not fit scrolls, with the same `1–21 of 37` indicator the pull-request list uses.
+Clipping was the tempting fix and the wrong one: this is the screen that exists to tell you
+about a key, so the key it omits is the one you came for.
+
+**Consequence for the whole app:** layout arithmetic is a pure module, unit-tested, and the
+renderer and the scroll maths read the *same* function rather than each deriving the number.
+`detailHeaderRows`, `planFileIndex`, `layoutHelp`, `hitDetail` are all this shape. One row
+of disagreement between them is a cursor pointing at the wrong line, which is a review tool
+commenting in the wrong place.
+
+## The mouse, admitted narrowly
+
+The keyboard does everything and stays that way. But a reviewer scrolling a diff reaches
+for the wheel without deciding to, and a window where that does nothing feels like the tool
+is not really running in it.
+
+So: the wheel scrolls, and a left click puts the cursor on a line or jumps to a file on the
+index. Nothing else — no drag, no selection, no hover. Motion reporting is deliberately not
+enabled: Ink repaints on input, and tracking a mouse across an idle window would redraw the
+whole diff for nothing.
+
+Two details that matter more than the feature:
+
+- **The wheel scrolls the view and drags the cursor along**, which is the opposite of `j`,
+  where the cursor moves and the view follows. The cursor is not decoration here — `C`
+  comments on the line it points at — so a view that scrolled out from under it would leave
+  a reviewer able to comment on a line they cannot see.
+- **A click on a line already on screen does not recentre.** The pane moving in response to
+  the reviewer's own click is the pane moving for no reason.
+
+Reporting is turned off again on every exit path, including while `$EDITOR` owns the
+terminal. A shell left in reporting mode prints `[<0;12;7M` at the prompt on every click,
+and nothing tells the user which program did that to them.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme
@@ -225,3 +287,7 @@ transitions, no fades. The only "motion" is progressive reveal as model verdicts
 - Emoji status icons → typographic marks; emoji cell width is unreliable and reads as toy
 - A spinner during model calls → progressive reveal
 - Equal-weight rows → two-tier list entries, one bold figure per view
+- Grid cells sized to a share of the width → cells sized to their contents, column count
+  derived from those
+- Clipping an overlay that does not fit → group, reflow into columns, then scroll
+- Mouse motion/drag reporting → wheel and click only
