@@ -229,7 +229,7 @@ diff --git a/src/app.ts b/src/app.ts
 index 1234567..89abcde 100644
 --- a/src/app.ts
 +++ b/src/app.ts
-@@ -10,7 +10,8 @@ export function boot() {
+@@ -10,5 +10,6 @@ export function boot() {
    const config = load();
    validate(config);
 -  start(config);
@@ -238,6 +238,11 @@ index 1234567..89abcde 100644
    return config;
  }
 ```
+
+The hunk counts above are the real ones for this body: 4 context + 1 deletion = 5
+old lines, 4 context + 2 additions = 6 new lines. Verified against actual `git diff`
+output for the same edit. Transcribe them exactly — a fixture that is not valid git
+output would teach the parser the wrong thing while still showing a green suite.
 
 `tests/fixtures/diffs/added.diff`:
 
