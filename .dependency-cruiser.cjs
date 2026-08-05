@@ -14,5 +14,16 @@ module.exports = {
   options: {
     doNotFollow: { path: 'node_modules' },
     tsConfig: { fileName: 'tsconfig.json' },
+    // Without these, an ESM-only package that ships an `exports` map — Ink is
+    // exactly this — comes back `couldNotResolve`, and a rule that names it can
+    // never fire. The guard then reports "no violations" for `src/core`
+    // importing Ink directly, which is worse than having no guard at all.
+    // Verified: with these options a core -> ink import is reported as an error;
+    // without them it passes silently.
+    enhancedResolveOptions: {
+      exportsFields: ['exports'],
+      conditionNames: ['import', 'node', 'default'],
+      mainFields: ['module', 'main'],
+    },
   },
 };
