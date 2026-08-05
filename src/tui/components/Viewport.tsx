@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
-import { computeWindow } from './viewport.js';
+import { computeWindow } from '../viewport.js';
 
 export interface ViewportProps {
   items: ReactNode[];
