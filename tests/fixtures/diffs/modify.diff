@@ -1,0 +1,12 @@
+diff --git a/src/app.ts b/src/app.ts
+index 1234567..89abcde 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -10,5 +10,6 @@ export function boot() {
+   const config = load();
+   validate(config);
+-  start(config);
++  const server = start(config);
++  server.on('error', fail);
+   return config;
+ }
