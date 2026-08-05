@@ -64,25 +64,56 @@ another hunk you kept.
 Bias toward keeping when genuinely uncertain — a reviewer can skim an extra hunk,
 but cannot review one they never saw. Give every verdict a short reason.`;
 
-function renderHunk(item: ClassifyItem): string {
-  const body = item.hunk.lines
-    .map((l) => `${l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}${l.text}`)
-    .join('\n');
-  return `<hunk id="${item.id}" file="${item.filePath}">\n${item.hunk.header}\n${body}\n</hunk>`;
+/**
+ * Lines of a hunk the classifier is shown before it is elided.
+ *
+ * The question here is "does a reviewer need to read this", and a nine-hundred
+ * line prose hunk answers that in its first forty lines. Sending the rest costs
+ * tokens and latency on every run, and crowds out the hunks after it.
+ */
+export const MAX_HUNK_LINES = 80;
+
+export function renderHunk(item: ClassifyItem): string {
+  const lines = item.hunk.lines.map(
+    (l) => `${l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}${l.text}`,
+  );
+
+  const body = lines.length <= MAX_HUNK_LINES
+    ? lines
+    : [
+      ...lines.slice(0, MAX_HUNK_LINES - 20),
+      `… ${lines.length - MAX_HUNK_LINES} more lines of this hunk elided …`,
+      ...lines.slice(-20),
+    ];
+
+  return `<hunk id="${item.id}" file="${item.filePath}">\n${item.hunk.header}\n${body.join('\n')}\n</hunk>`;
 }
 
 /**
- * Groups hunks into chunks under a character budget, never splitting a hunk. A
- * single hunk larger than the budget gets its own chunk rather than being cut.
+ * Groups hunks into chunks under a character budget AND a count, never
+ * splitting a hunk. A single hunk larger than the budget gets its own chunk
+ * rather than being cut.
+ *
+ * The count is the part that was missing. One run asked to return sixty
+ * verdicts came back with a handful and no error, so every hunk it skipped was
+ * kept by fallback — a real seventeen-file pull request abridged to
+ * 1038 of 1040 lines, which is no abridgement at all, and reads as the meat
+ * pass being broken rather than incomplete. Smaller asks come back complete,
+ * and they run concurrently, so the wall clock improves too.
  */
-export function chunkHunks(items: ClassifyItem[], maxChars: number): ClassifyItem[][] {
+export function chunkHunks(
+  items: ClassifyItem[],
+  maxChars: number,
+  maxItems = 15,
+): ClassifyItem[][] {
   const chunks: ClassifyItem[][] = [];
   let current: ClassifyItem[] = [];
   let size = 0;
 
   for (const item of items) {
     const rendered = renderHunk(item).length;
-    if (current.length > 0 && size + rendered > maxChars) {
+    const full = current.length >= Math.max(1, maxItems) || size + rendered > maxChars;
+    if (current.length > 0 && full) {
       chunks.push(current);
       current = [];
       size = 0;
@@ -107,12 +138,13 @@ export async function classifyHunks(
   prTitle: string,
   prBody: string,
   items: ClassifyItem[],
-  maxChars = 40_000,
+  maxChars = 12_000,
+  maxItems = 15,
 ): Promise<ClassifyResult> {
   const verdicts = new Map<string, ClassifiedVerdict>();
   if (items.length === 0) return { summary: '', verdicts };
 
-  const chunks = chunkHunks(items, maxChars);
+  const chunks = chunkHunks(items, maxChars, maxItems);
 
   // allSettled, not all: one chunk whose run rejects must not discard the
   // verdicts its siblings returned. The agent pass is additive — a model
@@ -127,7 +159,13 @@ export async function classifyHunks(
         prompt: [
           `Pull request: ${prTitle}`,
           prBody.trim().length > 0 ? `\nDescription:\n${prBody.trim()}` : '',
-          '\nClassify every hunk below. Return one verdict per hunk id.\n',
+          // Naming the count and the ids is what makes a short return
+          // detectable by the model itself. A run that quietly omitted verdicts
+          // left those hunks kept by fallback, which looks like no abridgement.
+          `\nThere are ${chunk.length} hunks below, with these ids:`,
+          chunk.map((item) => item.id).join(', '),
+          `\nReturn exactly ${chunk.length} verdicts — one for every id above, `
+            + 'and no ids that are not above.\n',
           chunk.map(renderHunk).join('\n\n'),
         ].join('\n'),
       }),

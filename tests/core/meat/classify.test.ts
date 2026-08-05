@@ -1,5 +1,7 @@
 import { test, expect } from 'bun:test';
-import { chunkHunks, classifyHunks, CLASSIFY_SCHEMA } from '../../../src/core/meat/classify.js';
+import {
+  chunkHunks, classifyHunks, renderHunk, CLASSIFY_SCHEMA, MAX_HUNK_LINES,
+} from '../../../src/core/meat/classify.js';
 import { FakeTransport } from '../../../src/core/agent/fake.js';
 import type { AgentRequest, AgentRun, AgentTransport } from '../../../src/core/agent/types.js';
 import type { Hunk } from '../../../src/core/diff/types.js';
@@ -138,4 +140,57 @@ test('verdicts from a chunk that succeeded survive a sibling chunk failing', asy
     reason: 'classification failed',
     synthetic: true,
   });
+});
+
+function manyLineHunk(lines: number): Hunk {
+  return {
+    header: `@@ -1,${lines} +1,${lines} @@`,
+    section: '', oldStart: 1, oldLines: lines, newStart: 1, newLines: lines,
+    lines: Array.from({ length: lines }, (_, i) => ({
+      kind: 'add' as const, text: `paragraph ${i}`, oldLine: null, newLine: i + 1,
+      noNewlineAtEof: false,
+    })),
+  };
+}
+
+test('a chunk is capped by hunk count, not only by characters', () => {
+  // The failure this prevents: one run asked for sixty verdicts returned a
+  // handful and no error, so every hunk it skipped was kept by fallback and a
+  // seventeen-file pull request came out abridged to 1038 of 1040 lines.
+  const many = Array.from({ length: 40 }, (_, i) => ({
+    id: `h${i}`, filePath: 'a.ts', hunk: hunk('short'),
+  }));
+  const chunks = chunkHunks(many, 1_000_000, 15);
+
+  expect(chunks.length).toBe(3);
+  for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(15);
+  expect(chunks.flat().map((i) => i.id)).toEqual(many.map((i) => i.id));
+});
+
+test('a very long hunk is elided for the classifier, not sent whole', () => {
+  const rendered = renderHunk({ id: 'h1', filePath: 'docs/design.md', hunk: manyLineHunk(900) });
+
+  // The verdict is "does a reviewer need to read this", which nine hundred
+  // lines of prose does not answer any better than eighty do.
+  expect(rendered).toContain('paragraph 0');
+  expect(rendered).toContain('paragraph 899');
+  expect(rendered).toContain('more lines of this hunk elided');
+  expect(rendered.split('\n').length).toBeLessThan(MAX_HUNK_LINES + 6);
+});
+
+test('a short hunk is sent whole, with nothing elided', () => {
+  const rendered = renderHunk({ id: 'h1', filePath: 'a.ts', hunk: manyLineHunk(10) });
+  expect(rendered).not.toContain('elided');
+  for (let i = 0; i < 10; i += 1) expect(rendered).toContain(`paragraph ${i}`);
+});
+
+test('the prompt names every id it expects back', async () => {
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 's', verdicts: [] } });
+  await classifyHunks(transport, 'opus', 'Title', '', items);
+
+  const prompt = transport.requests[0]!.prompt;
+  expect(prompt).toContain('There are 2 hunks');
+  expect(prompt).toContain('h1, h2');
+  expect(prompt).toContain('Return exactly 2 verdicts');
 });
