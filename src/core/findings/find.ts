@@ -90,12 +90,18 @@ export function findingId(raw: RawFinding): string {
 /**
  * Runs the findings pass. Never throws: the agent passes are additive, and a
  * model failure must leave the reviewer with a fully usable manual review.
+ *
+ * `onError` exists because "ran and found nothing" and "never ran" both used to
+ * come back as `[]`, so a dead transport was indistinguishable from a clean
+ * pull request. The caller decides what to say about it; this function still
+ * never throws.
  */
 export async function runFindings(
   transport: AgentTransport,
   model: string,
   input: FindingsInput,
   cwd: string,
+  onError?: (error: unknown) => void,
 ): Promise<Finding[]> {
   let structured: unknown;
   try {
@@ -109,7 +115,8 @@ export async function runFindings(
       disallowedTools: [...DENIED_TOOLS],
     });
     structured = run.structured;
-  } catch {
+  } catch (error) {
+    onError?.(error);
     return [];
   }
 

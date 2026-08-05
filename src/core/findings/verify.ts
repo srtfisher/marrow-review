@@ -63,40 +63,80 @@ export function scoreVerdict(refutations: Refutation[]): Verdict {
 }
 
 /**
- * Runs both lenses against every finding. Never throws: a per-lens failure
- * yields no refutation for that lens, and the finding survives with whatever
- * verdict the remaining evidence supports.
+ * Every lens on every finding is one Claude Code subprocess. Unbounded, twenty
+ * findings meant forty of them at once — enough to make the reviewer's machine
+ * unusable during the pass that is supposed to run quietly behind the diff.
+ */
+export const VERIFY_CONCURRENCY = 4;
+
+/** Runs `worker` over `items` with at most `limit` in flight, results in order. */
+async function pooled<T, R>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  const runners = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]!);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+}
+
+/**
+ * Runs both lenses against every finding, at most `VERIFY_CONCURRENCY` model
+ * calls at a time. Never throws: a per-lens failure yields no refutation for
+ * that lens, and the finding survives with whatever verdict the remaining
+ * evidence supports.
  */
 export async function runVerify(
   transport: AgentTransport,
   model: string,
   findings: Finding[],
   cwd: string,
+  onError?: (error: unknown) => void,
 ): Promise<VerifiedFinding[]> {
-  return Promise.all(
-    findings.map(async (finding) => {
-      const results = await Promise.all(
-        LENSES.map(async (lens): Promise<Refutation | null> => {
-          try {
-            const run = await transport.run({
-              model,
-              cwd,
-              prompt: buildVerifyPrompt(finding, lens),
-              schema: VERIFY_SCHEMA,
-              allowedTools: [...READ_ONLY_TOOLS],
-              disallowedTools: [...DENIED_TOOLS],
-            });
-            const s = run.structured as { refuted?: boolean; reasoning?: string } | null;
-            if (!s) return null;
-            return { lens, refuted: s.refuted === true, reasoning: s.reasoning ?? '' };
-          } catch {
-            return null;
-          }
-        }),
-      );
-
-      const refutations = results.filter((r): r is Refutation => r !== null);
-      return { ...finding, verdict: scoreVerdict(refutations), refutations };
-    }),
+  const tasks = findings.flatMap((finding, index) =>
+    LENSES.map((lens) => ({ finding, index, lens })),
   );
+
+  const results = await pooled(tasks, VERIFY_CONCURRENCY, async ({ finding, lens }) => {
+    try {
+      const run = await transport.run({
+        model,
+        cwd,
+        prompt: buildVerifyPrompt(finding, lens),
+        schema: VERIFY_SCHEMA,
+        allowedTools: [...READ_ONLY_TOOLS],
+        disallowedTools: [...DENIED_TOOLS],
+      });
+      const s = run.structured as { refuted?: boolean; reasoning?: string } | null;
+      if (!s) return null;
+      return { lens, refuted: s.refuted === true, reasoning: s.reasoning ?? '' };
+    } catch (error) {
+      onError?.(error);
+      return null;
+    }
+  });
+
+  // Grouped from the task list rather than from completion order, so a
+  // finding's refutations stay in LENSES order however the pool interleaves.
+  const byFinding: Refutation[][] = findings.map(() => []);
+  tasks.forEach((task, i) => {
+    const refutation = results[i];
+    if (refutation) byFinding[task.index]!.push(refutation);
+  });
+
+  return findings.map((finding, i) => {
+    const refutations = byFinding[i] ?? [];
+    return { ...finding, verdict: scoreVerdict(refutations), refutations };
+  });
 }

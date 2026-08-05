@@ -1,6 +1,9 @@
 import { test, expect, describe } from 'bun:test';
-import { buildVerifyPrompt, runVerify, scoreVerdict, VERIFY_SCHEMA } from '../../../src/core/findings/verify.js';
+import {
+  buildVerifyPrompt, runVerify, scoreVerdict, VERIFY_CONCURRENCY, VERIFY_SCHEMA,
+} from '../../../src/core/findings/verify.js';
 import { FakeTransport } from '../../../src/core/agent/fake.js';
+import type { AgentRequest, AgentRun, AgentTransport } from '../../../src/core/agent/types.js';
 import type { Finding } from '../../../src/core/findings/types.js';
 
 const finding: Finding = {
@@ -76,6 +79,78 @@ describe('runVerify', () => {
     const [verified] = await runVerify(transport as never, 'opus', [finding], '/tmp/wt');
     expect(verified!.verdict).toBe('plausible');
     expect(verified!.refutations).toEqual([]);
+  });
+
+  test('never runs more model calls at once than the pool allows', async () => {
+    // Each lens on each finding is one Claude Code subprocess; twenty findings
+    // used to mean forty of them at the same instant.
+    let inFlight = 0;
+    let peak = 0;
+    const transport: AgentTransport = {
+      async run(_req: AgentRequest): Promise<AgentRun> {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return {
+          text: '', structured: { refuted: false, reasoning: 'r' },
+          sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+          usageWarning: null,
+        };
+      },
+    };
+
+    const findings = Array.from({ length: 20 }, (_, i) => ({ ...finding, id: `f${i}` }));
+    const verified = await runVerify(transport, 'opus', findings, '/tmp/wt');
+
+    expect(peak).toBeLessThanOrEqual(VERIFY_CONCURRENCY);
+    expect(peak).toBeGreaterThan(1);
+    expect(verified).toHaveLength(20);
+    for (const f of verified) expect(f.verdict).toBe('confirmed');
+  });
+
+  test('keeps refutations in lens order however the pool interleaves', async () => {
+    // Slow reachability, fast reproduction: completion order is not task order.
+    const transport: AgentTransport = {
+      async run(req: AgentRequest): Promise<AgentRun> {
+        const slow = req.prompt.toLowerCase().includes('reachable');
+        await new Promise((resolve) => setTimeout(resolve, slow ? 12 : 1));
+        return {
+          text: '', structured: { refuted: false, reasoning: slow ? 'reach' : 'repro' },
+          sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+          usageWarning: null,
+        };
+      },
+    };
+
+    const findings = [{ ...finding, id: 'a' }, { ...finding, id: 'b' }];
+    const verified = await runVerify(transport, 'opus', findings, '/tmp/wt');
+
+    expect(verified.map((f) => f.id)).toEqual(['a', 'b']);
+    for (const f of verified) {
+      expect(f.refutations.map((r) => r.lens)).toEqual(['reachability', 'reproduction']);
+    }
+  });
+
+  test('a per-lens failure still leaves the other lens counted', async () => {
+    let call = 0;
+    const transport: AgentTransport = {
+      async run(): Promise<AgentRun> {
+        call += 1;
+        if (call === 1) throw new Error('lens died');
+        return {
+          text: '', structured: { refuted: true, reasoning: 'cannot occur' },
+          sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+          usageWarning: null,
+        };
+      },
+    };
+
+    const errors: unknown[] = [];
+    const [verified] = await runVerify(transport, 'opus', [finding], '/tmp/wt', (e) => errors.push(e));
+    expect(verified!.refutations).toHaveLength(1);
+    expect(verified!.verdict).toBe('refuted');
+    expect(errors).toHaveLength(1);
   });
 
   test('verifiers get the read-only tool policy and the schema', async () => {
