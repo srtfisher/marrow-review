@@ -3081,9 +3081,19 @@ index 111..222 100644
 +const s = start(c);
 +s.on('error', fail);
  return c;
+@@ -50,2 +47,1 @@ function shutdown()
+ keep();
+-drop();
 `;
 
 const files = parseUnifiedDiff(DIFF);
+
+// The second hunk is load-bearing for this fixture. With only the first hunk,
+// the old and new ranges both start at 10, so every valid LEFT line is also a
+// valid RIGHT line — and the "reject a RIGHT comment on a deleted line" test
+// would pass for the wrong reason. The trailing pure deletion gives old line 51
+// no counterpart on the RIGHT side, so the rule is actually exercised.
+// Hunk counts verified: 1 context + 1 deletion = 2 old, 1 new.
 
 function comment(over: Partial<StagedComment> = {}): StagedComment {
   return {
@@ -3107,11 +3117,11 @@ test('accepts a comment on an added line', () => {
 });
 
 test('accepts a comment on a context line', () => {
-  expect(findAnchorProblems(draft([comment({ line: 14 })]), files)).toEqual([]);
+  expect(findAnchorProblems(draft([comment({ line: 13 })]), files)).toEqual([]);
 });
 
 test('accepts a LEFT comment on a deleted line', () => {
-  const problems = findAnchorProblems(draft([comment({ line: 11, side: 'LEFT' })]), files);
+  const problems = findAnchorProblems(draft([comment({ line: 51, side: 'LEFT' })]), files);
   expect(problems).toEqual([]);
 });
 
@@ -3128,7 +3138,7 @@ test('rejects an unknown file path', () => {
 });
 
 test('rejects a RIGHT comment aimed at a deleted line', () => {
-  const problems = findAnchorProblems(draft([comment({ line: 11, side: 'RIGHT' })]), files);
+  const problems = findAnchorProblems(draft([comment({ line: 51, side: 'RIGHT' })]), files);
   expect(problems).toHaveLength(1);
 });
 
