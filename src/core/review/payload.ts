@@ -34,19 +34,23 @@ export function buildReviewPayload(draft: ReviewDraft, files: DiffFile[]): Revie
     throw new Error('Cannot build a review payload without a verdict.');
   }
 
-  // GitHub requires a review body for anything other than an approval.
-  if (draft.verdict !== 'APPROVE' && draft.body.trim().length === 0) {
-    throw new Error(
-      `Cannot submit: a ${draft.verdict} review needs a body. GitHub only accepts an empty body on APPROVE.`,
-    );
-  }
-
   for (const c of draft.comments) {
     if (renderCommentBody(c).trim().length === 0) {
       throw new Error(
         `Cannot submit: the comment on ${c.path}:${c.line} is empty. GitHub rejects a comment with no body.`,
       );
     }
+  }
+
+  // GitHub wants a non-approval to say *something*, but not in the review body
+  // specifically — a blank body rides along fine behind a comment that has text.
+  // Sending `{event: COMMENT, body: "", comments: [one comment with a body]}`
+  // clears this check; blanking that comment's body too answers "Body required
+  // when requesting changes". So the rule is content somewhere, not a body.
+  if (draft.verdict !== 'APPROVE' && draft.body.trim().length === 0 && draft.comments.length === 0) {
+    throw new Error(
+      `Cannot submit: a ${draft.verdict} review with no comments has nothing to say. Write a review body, or stage a comment.`,
+    );
   }
 
   const problems = findAnchorProblems(draft, files);

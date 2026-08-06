@@ -260,8 +260,12 @@ resubmit. Triage work is never lost to an API error.
 
 Two GitHub rules the UI knows rather than discovers:
 
-- **You cannot approve your own PR.** If you are the author, approve is disabled with a
-  stated reason rather than failing at submit.
+- **You cannot approve or request changes on your own PR.** If you are the author, both
+  are disabled with a stated reason rather than failing at submit; comment is all that is
+  left, and it is the default.
+- **A review needs content, not a body.** GitHub accepts an empty review body on a
+  non-approval as long as at least one inline comment carries text — only a review with
+  neither a body nor a comment is rejected.
 - **A pending review from the web UI conflicts.** Detected on open, with a choice to adopt
   or discard it.
 

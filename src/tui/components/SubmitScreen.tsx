@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import type { DiffFile } from '../../core/diff/types.js';
 import { findAnchorProblems } from '../../core/review/anchors.js';
 import type { ReviewDraft, Verdict } from '../../core/review/types.js';
+import { authorBlockReason, blockedForAuthor } from '../../core/review/verdicts.js';
 import { theme } from '../theme.js';
 
 /**
@@ -32,10 +33,10 @@ export function SubmitScreen({
       <Text {...theme.tier.primary}>Submit review</Text>
 
       {LABELS.map(({ verdict, label }) => {
-        const blocked = verdict === 'APPROVE' && viewerIsAuthor;
+        const blocked = blockedForAuthor(verdict, viewerIsAuthor);
         return (
           <Text key={verdict} inverse={verdict === selected} color={blocked ? theme.color.chrome : undefined} dimColor={blocked}>
-            {`  ${label}${blocked ? '  (cannot approve your own pull request — GitHub rejects it)' : ''}`}
+            {`  ${label}${blocked ? `  (${authorBlockReason(verdict)})` : ''}`}
           </Text>
         );
       })}

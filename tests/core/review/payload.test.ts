@@ -102,10 +102,21 @@ test('throws rather than submitting an invalid anchor', () => {
   expect(() => buildReviewPayload(draft, files)).toThrow(/not present in the diff/);
 });
 
-test('throws when REQUEST_CHANGES or COMMENT has an empty body', () => {
+// Measured against the live API: `{"event":"COMMENT","body":"","comments":[one
+// non-empty comment]}` gets past the body check and fails only on the comment,
+// while the same request with an empty comment body answers "Body required when
+// requesting changes". GitHub wants content somewhere, not a body specifically.
+test('an empty body is fine when the review carries a comment', () => {
   for (const verdict of ['REQUEST_CHANGES', 'COMMENT'] as const) {
     const draft: ReviewDraft = { verdict, body: '   \n', comments: [comment()] };
-    expect(() => buildReviewPayload(draft, files)).toThrow(/needs a body/);
+    expect(buildReviewPayload(draft, files).comments).toHaveLength(1);
+  }
+});
+
+test('throws when a non-approval has neither a body nor a comment', () => {
+  for (const verdict of ['REQUEST_CHANGES', 'COMMENT'] as const) {
+    const draft: ReviewDraft = { verdict, body: '   \n', comments: [] };
+    expect(() => buildReviewPayload(draft, files)).toThrow(/nothing to say/);
   }
 });
 

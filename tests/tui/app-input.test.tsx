@@ -8,7 +8,7 @@ import { findingId } from '../../src/core/findings/find.js';
 import type { PullRequestDetail, PullRequestSummary } from '../../src/core/github/types.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
 import type { RawFinding } from '../../src/core/findings/types.js';
-import type { ReviewDraft } from '../../src/core/review/types.js';
+import type { ReviewDraft, Verdict } from '../../src/core/review/types.js';
 
 /**
  * A pty stand-in. Ink refuses to enter raw mode without `isTTY`, so driving the
@@ -323,6 +323,25 @@ describe('App findings', () => {
     expect(submitted).toHaveLength(1);
     expect(submitted[0]?.comments.map((c) => c.path)).toEqual(['src/cache.ts']);
     expect(submitted[0]?.comments[0]?.body).toContain('Nothing ever evicts');
+  });
+
+  // The author of a pull request can only comment on it. Cycling used to skip
+  // APPROVE but stop on REQUEST_CHANGES, which GitHub rejects just as hard.
+  test('the author cannot cycle onto a verdict GitHub will reject', async () => {
+    const verdicts: Verdict[] = [];
+    const app = mount({
+      pr: { ...detail, viewerIsAuthor: true }, meat, transport: findingTransport(),
+      cwd: '/tmp/worktree', onSubmit: (_draft, verdict) => verdicts.push(verdict),
+    });
+    await delay(80);
+
+    await app.press('n');
+    await app.press('a');
+    await app.press('!');
+    for (const key of ['j', 'j', 'k']) await app.press(key);
+    await app.press('\r');
+
+    expect(verdicts).toEqual(['COMMENT']);
   });
 
   test('x drops a finding, which unstages it', async () => {

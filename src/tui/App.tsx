@@ -18,6 +18,7 @@ import type { MeatResult } from '../core/meat/index.js';
 import type {
   CommentAnchor, ReviewDraft, StagedComment, Verdict,
 } from '../core/review/types.js';
+import { VERDICTS, blockedForAuthor } from '../core/review/verdicts.js';
 
 export type { CommentAnchor };
 import { buildUnits, type ReviewUnit } from './units.js';
@@ -114,9 +115,6 @@ export interface AppProps {
    */
   editText?: (initial: string) => Promise<string>;
 }
-
-/** Same order as the submit screen renders them, so j/k matches what you see. */
-const VERDICTS: readonly Verdict[] = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'];
 
 /** `danger` is red AND bold; the weight is what separates it from `del`. */
 function toneStyle(tone: 'muted' | 'pending' | 'danger') {
@@ -941,9 +939,9 @@ export function App(props: AppProps) {
         (from + delta * step + VERDICTS.length * step) % VERDICTS.length
       ];
       if (!candidate) continue;
-      // GitHub rejects approving your own pull request, so the option is not
-      // merely dimmed — it cannot be landed on.
-      if (candidate === 'APPROVE' && props.pr?.viewerIsAuthor) continue;
+      // GitHub rejects both an approval and a change request on your own pull
+      // request, so neither is merely dimmed — they cannot be landed on.
+      if (blockedForAuthor(candidate, props.pr?.viewerIsAuthor ?? false)) continue;
       setVerdict(candidate);
       return;
     }

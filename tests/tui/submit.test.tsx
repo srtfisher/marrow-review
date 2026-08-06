@@ -42,6 +42,16 @@ describe('SubmitScreen', () => {
     expect(out.toLowerCase()).toContain('cannot approve your own');
   });
 
+  // GitHub rejects a change request from the author for the same reason it
+  // rejects an approval, so leaving it selectable only fails at the API.
+  test('disables request changes too when the viewer is the author', () => {
+    const out = renderToString(
+      <SubmitScreen draft={draft([])} files={files} viewerIsAuthor
+        selected="COMMENT" />,
+    );
+    expect(out.toLowerCase()).toContain('cannot request changes on your own');
+  });
+
   test('warns that unanchorable comments move into the body', () => {
     const out = renderToString(
       <SubmitScreen draft={draft([comment({ id: 'bad', line: 999 })])} files={files}
