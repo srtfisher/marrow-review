@@ -1623,3 +1623,39 @@ describe('reading a file through checks it off', () => {
     expect(app.frame()).toContain('▸✓ cache.ts');
   });
 });
+
+/**
+ * The reported bug. Pressing down off the end of a file moved the marker in the
+ * file index to the next file while the marker in the diff disappeared, because
+ * the cursor was sitting on the blank separator — which draws no cursor. The
+ * reviewer read that as "it changed the file and jumped me to the top", and the
+ * next press as "back down in the tree listing".
+ */
+describe('the arrows cross a file boundary in one press', () => {
+  const DOWN = `${ESC}[B`;
+  const UP = `${ESC}[A`;
+
+  test('down off a file last line lands on the next file header', async () => {
+    const app = mount({ pr: detail, meat: twoFileMeat });
+    await delay(60);
+
+    // 0 header, 1 hunk-header, 2-3 lines. The fourth press leaves the file.
+    for (let i = 0; i < 3; i += 1) await app.press(DOWN);
+    expect(app.frame()).toMatch(/▸\s+2 \+cache\.set\(key, value\);/);
+
+    await app.press(DOWN);
+    expect(app.frame()).toContain('▸ ▍ src/store.ts');
+  });
+
+  test('up off a file header lands on the previous file last line', async () => {
+    const app = mount({ pr: detail, meat: twoFileMeat });
+    await delay(60);
+
+    for (let i = 0; i < 4; i += 1) await app.press(DOWN);
+    expect(app.frame()).toContain('▸ ▍ src/store.ts');
+
+    await app.press(UP);
+    expect(app.frame()).toMatch(/▸\s+2 \+cache\.set\(key, value\);/);
+    expect(app.frame()).not.toContain('▸ ▍ src/store.ts');
+  });
+});

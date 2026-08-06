@@ -23,7 +23,8 @@ import { VERDICTS, blockedForAuthor } from '../core/review/verdicts.js';
 export type { CommentAnchor };
 import { buildUnits, type ReviewUnit } from './units.js';
 import {
-  anchorAtRow, buildRows, composerTitle, findingAtRow, hunkAtRow, nextFileRow, nextFindingRow,
+  anchorAtRow, buildRows, composerTitle, findingAtRow, hunkAtRow, nearestStop, nextFileRow,
+  nextFindingRow,
   pathAtRow, prevFileRow, prevFindingRow, rangeAnchor, rowForAnchor, unitAtRow, unitStartRows,
   withComposer, type ComposerView, type DetailRow,
 } from './rows.js';
@@ -522,9 +523,11 @@ export function App(props: AppProps) {
   // again. The cursor indexes that list, so it and the viewport are pulled back
   // into range here rather than left pointing past the end.
   useEffect(() => {
-    const clamped = clampCursor(rowCursor, detailRowList.length);
-    setRowCursor(clamped);
-    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, clamped, prev));
+    // Prefers upward: this exists to pull a cursor left past the end of a
+    // shrunken list back into it.
+    const rested = landing(rowCursor, -1);
+    setRowCursor(rested);
+    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, rested, prev));
   }, [detailRowList.length]);
 
   function moveList(next: number) {
@@ -533,11 +536,24 @@ export function App(props: AppProps) {
     setListScroll((prev) => nextScrollTop(visiblePrs.length, listRows, clamped, prev));
   }
 
+  /**
+   * Where a cursor aimed at `row` actually comes to rest.
+   *
+   * Every write to the row cursor goes through here — keys, wheel, click — so
+   * that "a blank separator is not a place" is stated once. There are five
+   * writers, and enforcing a rule at five sites is how one of them gets missed.
+   */
+  function landing(row: number, prefer: 1 | -1): number {
+    return nearestStop(detailRowList, clampCursor(row, detailRowList.length), prefer);
+  }
+
   function moveRows(next: number) {
-    const clamped = clampCursor(next, detailRowList.length);
-    setRowCursor(clamped);
-    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, clamped, prev));
-    markSeen(clamped);
+    // The direction of travel, so that stepping off the bottom of a file
+    // reaches the next one and stepping off the top reaches the previous one.
+    const rested = landing(next, next >= cursor ? 1 : -1);
+    setRowCursor(rested);
+    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, rested, prev));
+    markSeen(rested);
   }
 
   /**
@@ -881,8 +897,11 @@ export function App(props: AppProps) {
         detailRowList.length, detailRows, cursor, rowScroll, wheel * WHEEL_ROWS,
       );
       setRowScroll(next.scrollTop);
-      setRowCursor(next.cursor);
-      markSeen(next.cursor);
+      // `scrollBy` drags the cursor to the nearest row in the new window, which
+      // can be a blank. Push it on the way the wheel is already going.
+      const rested = landing(next.cursor, wheel);
+      setRowCursor(rested);
+      markSeen(rested);
       return true;
     }
 
@@ -912,9 +931,10 @@ export function App(props: AppProps) {
         const now = { row: hit.index, at: Date.now() };
         if (isDoubleClick(lastClick.current, now)) {
           lastClick.current = null;
-          setRowCursor(hit.index);
-          markSeen(hit.index);
-          startComment(false, { from: hit.index, to: hit.index });
+          const rested = landing(hit.index, 1);
+          setRowCursor(rested);
+          markSeen(rested);
+          startComment(false, { from: rested, to: rested });
           return true;
         }
         lastClick.current = now;
@@ -924,8 +944,9 @@ export function App(props: AppProps) {
 
       // Not `moveRows`: the row is already on screen, so recentring the view
       // under the reviewer's own click would be the pane moving for no reason.
-      setRowCursor(hit.index);
-      markSeen(hit.index);
+      const rested = landing(hit.index, 1);
+      setRowCursor(rested);
+      markSeen(rested);
       return true;
     }
 
