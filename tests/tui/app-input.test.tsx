@@ -1903,7 +1903,7 @@ describe('the warm review', () => {
     const opened: number[] = [];
     const app = await mountWithOpenPr({ onOpenPr: (n) => opened.push(n) });
 
-    await app.press(ESC); // leave to the picker
+    await app.press(ESC); // leave to the picker (Task 8: a confirm's \r goes here)
     await app.press('\r'); // enter on the (still-selected) warm PR
 
     expect(opened).toEqual([]); // no refetch, no meat re-run
@@ -1924,10 +1924,10 @@ describe('the warm review', () => {
     await app.press('j');
     const before = app.frame();
 
-    await app.press(ESC); // out to the picker
+    await app.press(ESC); // out to the picker (Task 8: a confirm's \r goes here)
     expect(app.frame()).toContain('filter ›');
 
-    await app.press(ESC); // straight back in — no confirm exists yet (Task 8)
+    await app.press(ESC); // straight back in — no confirm exists yet
     expect(app.frame()).toBe(before);
   });
 
@@ -1935,10 +1935,10 @@ describe('the warm review', () => {
     const opened: number[] = [];
     const app = await mountWithOpenPr({ onOpenPr: (n) => opened.push(n) });
 
-    await app.press(ESC);
+    await app.press(ESC); // leave to the picker (Task 8: a confirm's \r goes here)
     await app.press(DOWN); // #42 -> #43, a different entry
     await app.press('\r');
 
-    expect(opened.length).toBe(1);
+    expect(opened).toEqual([43]);
   });
 });
