@@ -290,14 +290,14 @@ describe('hunkUrl', () => {
 });
 
 describe('App', () => {
-  // The right pane used to be one dim line pinned to the top. It is the
-  // largest region on screen at the moment a new reviewer knows least.
-  test('renders the list pane and the welcome panel when no pull request is open', () => {
+  // Choosing a pull request is the whole screen at the moment a new reviewer
+  // knows least, with the chrome row naming where they are.
+  test('renders the full-screen picker when no pull request is open', () => {
     const out = renderToString(<App {...base} />);
-    expect(out).toContain('#42');
-    expect(out).toContain('Fix rendering');
-    expect(out).toContain('marrow');
-    expect(out).toContain('2 open');
+    expect(out).toContain('marrow · octocat/marrow · open');
+    expect(out).toContain('filter ›');
+    expect(out).toContain('❯ #42 Fix rendering');
+    expect(out).toContain('#43 Add caching');
     // The picker's bar, which is its complete key list — `?` is absent because
     // in a mode where typing filters there is no key spare to ask for help.
     expect(out).toContain('review this one');
@@ -305,12 +305,12 @@ describe('App', () => {
     expect(out).toContain('esc quit');
   });
 
-  // A status note is something the app has to say right now; the welcome
-  // panel is orientation. Two at once would say the same thing twice.
-  test('a status note takes the pane back from the welcome panel', () => {
+  // Under the list rather than instead of it: the note is something the app has
+  // to say right now, and what it is about is the list still on screen.
+  test('a status note renders under the picker rather than replacing it', () => {
     const out = renderToString(<App {...base} status="Fetching pull requests…" />);
     expect(out).toContain('Fetching pull requests…');
-    expect(out).not.toContain('abridged to what carries meaning');
+    expect(out).toContain('❯ #42 Fix rendering');
   });
 
   test('renders the empty state rather than a blank pane', () => {

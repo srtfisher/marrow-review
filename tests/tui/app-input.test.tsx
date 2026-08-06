@@ -7,6 +7,7 @@ import { FakeTransport } from '../../src/core/agent/fake.js';
 import { findingId } from '../../src/core/findings/find.js';
 import type { PullRequestDetail, PullRequestSummary } from '../../src/core/github/types.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
+import { loadSteps } from '../../src/tui/progress.js';
 import type { RawFinding } from '../../src/core/findings/types.js';
 import type { ReviewDraft, Verdict } from '../../src/core/review/types.js';
 
@@ -272,6 +273,74 @@ describe('the picker is search-first', () => {
     await app.press('\x10');
     await app.press('\r');
     expect(opened).toEqual([42]);
+  });
+});
+
+describe('the app frames every screen', () => {
+  test('the picker is full screen with the chrome row on top', async () => {
+    const app = mount();
+    await delay(40);
+    expect(app.frame()).toContain('marrow · octocat/marrow · open');
+    expect(app.frame()).toContain('filter ›');
+    expect(app.frame()).toContain('❯ #41 Alpha rendering');
+  });
+
+  test('a null list renders the launch frame rather than an empty picker', async () => {
+    const app = mount({ prs: null });
+    await delay(40);
+    expect(app.frame()).toContain('fetching open pull requests…');
+    // No filter input exists yet, so there is nothing to type into and nothing
+    // that could be mistaken for a repository with no pull requests in it.
+    expect(app.frame()).not.toContain('filter ›');
+    expect(app.frame()).not.toContain('No pull requests');
+  });
+
+  test('typing on the launch frame is not a query', async () => {
+    const app = mount({ prs: null });
+    await app.press('beta');
+    expect(app.frame()).not.toContain('filter ›');
+  });
+
+  test('a list error offers retry, and r takes it', async () => {
+    let refreshed = 0;
+    const app = mount({
+      prs: null, listError: 'gh: could not reach github.com',
+      onRefresh: () => { refreshed += 1; },
+    });
+    await delay(40);
+    expect(app.frame()).toContain('could not reach github.com');
+    expect(app.frame()).toContain('r retry · q quit');
+
+    await app.press('r');
+    expect(refreshed).toBe(1);
+  });
+
+  test('r on the launch frame does nothing while the fetch is still out', async () => {
+    let refreshed = 0;
+    const app = mount({ prs: null, onRefresh: () => { refreshed += 1; } });
+    await app.press('r');
+    expect(refreshed).toBe(0);
+  });
+
+  test('q on the launch frame quits', async () => {
+    const app = mount({ prs: null });
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+    await app.press('q');
+    await delay(40);
+    expect(exited).toBe(true);
+  });
+
+  test('the chrome names the warm review once the picker is back on top', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    // Not in the review itself: the title block two rows down already says it.
+    expect(app.frame()).not.toContain('reviewing #42');
+
+    await app.press(ESC);
+    expect(app.frame()).toContain('reviewing #42');
   });
 });
 
@@ -1020,9 +1089,10 @@ describe('reviewing a large diff', () => {
 
     expect(frame).toContain('docs/design.md');
     expect(frame).toContain('paragraph 0');
-    // Twenty rows deep into the hunk. Under the old whole-unit windowing the
-    // hunk did not fit, so the pane showed the file header and nothing else.
-    expect(frame).toContain('paragraph 19');
+    // Eighteen rows deep into the hunk, which is the bottom of the pane on this
+    // terminal. Under the old whole-unit windowing the hunk did not fit, so the
+    // pane showed the file header and nothing else.
+    expect(frame).toContain('paragraph 17');
   });
 
   test('lists every file in the header, not only the ones on screen', async () => {
@@ -1036,7 +1106,7 @@ describe('reviewing a large diff', () => {
     expect(frame).toContain('other.ts');
   });
 
-  test('the sidebar gives way to the diff once a pull request is open', async () => {
+  test('the picker gives way to the diff once a pull request is open', async () => {
     const closed = mount({});
     await delay(40);
     expect(closed.frame()).toContain('Alpha rendering');
@@ -1137,14 +1207,14 @@ describe('commenting on a line', () => {
 });
 
 describe('esc comes back out of the diff', () => {
-  test('the sidebar returns and the list takes the cursor again', async () => {
+  test('the picker returns and the list takes the cursor again', async () => {
     const app = mount({ pr: detail, meat });
     await delay(60);
     // Reviewing: the diff owns the terminal.
     expect(app.frame()).not.toContain('Alpha rendering');
 
     await app.press(ESC);
-    // Keying the sidebar on "a pull request is loaded" rather than on the mode
+    // Keying the picker on "a pull request is loaded" rather than on the mode
     // left it hidden here, and esc looked like a dead key.
     expect(app.frame()).toContain('Alpha rendering');
     expect(app.frame()).toContain('Gamma parsing');
@@ -1280,11 +1350,12 @@ describe('the mouse', () => {
     const app = mount({ pr: detail, meat: scrollable, onPersist: (d) => saved.push(d) });
     await delay(60);
 
-    // The header is title, meta, summary, gauge, one row of file index, and a
-    // blank — six rows — so the diff starts at terminal row 6, zero-based. Rows
-    // 0 and 1 of the diff are the file and hunk headers, so `line 3` is diff row
-    // 5 and terminal row 11, which the terminal reports as 12.
-    await app.press(click(20, 12));
+    // The chrome row and its rule take the first two rows. The header under
+    // them is title, meta, summary, gauge, one row of file index, and a blank —
+    // six rows — so the diff starts at terminal row 8, zero-based. Rows 0 and 1
+    // of the diff are the file and hunk headers, so `line 3` is diff row 5 and
+    // terminal row 13, which the terminal reports as 14.
+    await app.press(click(20, 14));
     await app.press('c');
     await app.press('The fourth line.');
     await app.press(SAVE);
@@ -1301,7 +1372,7 @@ describe('the mouse', () => {
     const before = app.frame();
     // The row is already on screen; recentring on it would be the pane moving
     // for no reason the reviewer asked for.
-    await app.press(click(20, 12));
+    await app.press(click(20, 14));
     expect(app.frame()).toContain('line 3');
     expect(before).toContain('line 3');
   });
@@ -1311,11 +1382,13 @@ describe('the mouse', () => {
     const app = mount({ pr: detail, meat: scrollable, onPersist: (d) => saved.push(d) });
     await delay(60);
 
-    // Aim at `line 3`, then click the title row and the gauge row. Neither is a
-    // row of the diff, so the comment must still land where the cursor was put.
-    await app.press(click(20, 12));
+    // Aim at `line 3`, then click the chrome row, the title row, and the gauge
+    // row. None is a row of the diff, so the comment must still land where the
+    // cursor was put.
+    await app.press(click(20, 14));
     await app.press(click(20, 1));
-    await app.press(click(20, 4));
+    await app.press(click(20, 3));
+    await app.press(click(20, 6));
     await app.press('c');
     await app.press('Still the fourth line.');
     await app.press(SAVE);
@@ -1337,8 +1410,8 @@ describe('the mouse', () => {
 
     // Labels are `big.ts` and `cache.ts`, so cells are 8 + 3 + 2 = 13 wide from
     // the pane's own column 1. The second cell starts at column 14, reported 15.
-    // The index sits on terminal row 4, reported 5.
-    await app.press(click(15, 5));
+    // The index sits two rows below the chrome, on terminal row 6, reported 7.
+    await app.press(click(15, 7));
     const after = app.frame();
     // The view moved off the first file and onto the second — and landed on its
     // header, not on the blank above it, which draws no cursor at all.
@@ -1346,28 +1419,51 @@ describe('the mouse', () => {
     expect(after).not.toContain('line 0');
   });
 
-  test('in the list, the wheel moves the selection and a second click opens', async () => {
+  test('in the picker, the wheel moves the selection and a second click opens', async () => {
     const opened: number[] = [];
     const app = mount({ onOpenPr: (n) => opened.push(n) });
     await delay(60);
 
-    // The list pane's chrome is the filter line and a blank, so the first entry
-    // starts at terminal row 2 and the second at row 5, reported 6.
-    await app.press(click(5, 6));
+    // Above the entries: the chrome row and its rule, the banner block, the
+    // filter line and a blank — nine rows — so the first entry starts at
+    // terminal row 9 and, these titles fitting one row each, the second at row
+    // 12, reported 13.
+    await app.press(click(5, 13));
     expect(opened).toEqual([]);
 
     // Clicking the entry already selected is the commit. One click to aim and
     // one to fire, so a stray click cannot spend a minute fetching a diff.
-    await app.press(click(5, 6));
+    await app.press(click(5, 13));
     expect(opened).toEqual([42]);
   });
 
-  test('a click on the list pane chrome selects nothing', async () => {
+  test('a click on the picker chrome selects nothing', async () => {
     const opened: number[] = [];
     const app = mount({ onOpenPr: (n) => opened.push(n) });
     await delay(60);
-    await app.press(click(5, 1));
-    await app.press(click(5, 1));
+
+    // The filter line, then the blank row between the first two entries. The
+    // first entry is the one already selected, so a hit on either would open it.
+    await app.press(click(5, 8));
+    await app.press(click(5, 8));
+    await app.press(click(5, 12));
+    await app.press(click(5, 12));
+    expect(opened).toEqual([]);
+  });
+
+  test('a click while a pull request is loading aims at nothing', async () => {
+    const opened: number[] = [];
+    const app = mount({
+      onOpenPr: (n) => opened.push(n),
+      progress: { prNumber: 41, steps: loadSteps() },
+    });
+    await delay(60);
+
+    // The steps replace the entry region, so the row the first entry occupied is
+    // no longer that entry — and it is the one the cursor is already on, which a
+    // hit would open.
+    await app.press(click(5, 10));
+    await app.press(click(5, 10));
     expect(opened).toEqual([]);
   });
 
@@ -1375,9 +1471,10 @@ describe('the mouse', () => {
     const opened: number[] = [];
     const app = mount({ onOpenPr: (n) => opened.push(n) });
     await delay(60);
-    await app.press(`${ESC}[<2;5;3M`);
-    await app.press(`${ESC}[<0;5;3m`);
-    await app.press(`${ESC}[<0;5;3m`);
+    // Aimed at the entry already selected, which a left press would open.
+    await app.press(`${ESC}[<2;5;10M`);
+    await app.press(`${ESC}[<0;5;10m`);
+    await app.press(`${ESC}[<0;5;10m`);
     expect(opened).toEqual([]);
   });
 });
@@ -1639,14 +1736,15 @@ describe('sweeping a range with the mouse', () => {
     unclassified: 0,
   };
 
-  // Terminal row 12 is `line 3` (new line 4); row 14 is `line 5` (new line 6).
+  // With the chrome row above the pane, terminal row 14 is `line 3` (new line
+  // 4); row 16 is `line 5` (new line 6).
   test('dragging down the gutter selects everything it crossed', async () => {
     const app = mount({ pr: detail, meat: scrollable });
     await delay(60);
 
-    await app.press(click(20, 12));
-    await app.press(drag(20, 13));
-    await app.press(drag(20, 14));
+    await app.press(click(20, 14));
+    await app.press(drag(20, 15));
+    await app.press(drag(20, 16));
     await app.press('c');
 
     expect(app.frame()).toContain('Comment on lines R4 to R6');
@@ -1656,8 +1754,8 @@ describe('sweeping a range with the mouse', () => {
     const app = mount({ pr: detail, meat: scrollable });
     await delay(60);
 
-    await app.press(click(20, 12));
-    await app.press(shiftClick(20, 14));
+    await app.press(click(20, 14));
+    await app.press(shiftClick(20, 16));
     await app.press('c');
 
     expect(app.frame()).toContain('Comment on lines R4 to R6');
@@ -1667,9 +1765,9 @@ describe('sweeping a range with the mouse', () => {
     const app = mount({ pr: detail, meat: scrollable });
     await delay(60);
 
-    await app.press(click(20, 12));
-    await app.press(drag(20, 14));
-    await app.press(click(20, 13));
+    await app.press(click(20, 14));
+    await app.press(drag(20, 16));
+    await app.press(click(20, 15));
     await app.press('c');
 
     expect(app.frame()).toContain('Comment on line R5');
@@ -1679,8 +1777,8 @@ describe('sweeping a range with the mouse', () => {
     const app = mount({ pr: detail, meat: scrollable });
     await delay(60);
 
-    await app.press(click(20, 12));
-    await app.press(click(20, 12));
+    await app.press(click(20, 14));
+    await app.press(click(20, 14));
 
     expect(app.frame()).toContain('Comment on line R4');
   });
@@ -1689,8 +1787,8 @@ describe('sweeping a range with the mouse', () => {
     const app = mount({ pr: detail, meat: scrollable });
     await delay(60);
 
-    await app.press(click(20, 12));
-    await app.press(click(20, 13));
+    await app.press(click(20, 14));
+    await app.press(click(20, 15));
 
     expect(app.frame()).not.toContain('Comment on line');
   });

@@ -33,32 +33,39 @@ import {
 } from './textarea.js';
 import { editInEditor } from './editor.js';
 import { nextScrollTop, scrollBy } from './viewport.js';
-import { hitDetail, hitList } from './hittest.js';
+import { hitDetail } from './hittest.js';
 import {
   MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_ROWS, isDoubleClick, parseMouse, type Click,
 } from './mouse.js';
 import { planFileIndex } from './fileindex.js';
 import { resolveAction, type Mode } from './keymap.js';
-import { nextFilter } from './picker.js';
+import { buildEntries, hitPicker, layoutPicker, nextFilter, pickerScroll } from './picker.js';
+import { chromeLine } from './chrome.js';
 import type { LoadProgress } from './progress.js';
 import { filterPrs } from './search.js';
 import { ChatPane } from './components/ChatPane.js';
 import { Detail, detailHeaderRows } from './components/Detail.js';
 import { Help } from './components/Help.js';
 import { helpBodyRows, layoutHelp } from './help.js';
+import { Launch } from './components/Launch.js';
 import { LoadingSteps } from './components/LoadingSteps.js';
-import {
-  PrList, ROWS_PER_ENTRY, headerRows as listHeaderRows, visibleEntryCount,
-} from './components/PrList.js';
+import { PrPicker } from './components/PrPicker.js';
 import { HintBar } from './components/HintBar.js';
 import { detailHints, pickerHints } from './hints.js';
 import { SubmitScreen } from './components/SubmitScreen.js';
-import { Welcome } from './components/Welcome.js';
 import { theme } from './theme.js';
 
 export interface AppProps {
   repoLabel: string;
-  prs: PullRequestSummary[];
+  /**
+   * The open pull requests, or null while the first fetch is still out. The two
+   * are different screens: null is the launch frame, an empty array is a
+   * repository with nothing open. Collapsed into one, "No pull requests." was
+   * the first thing a reviewer read while the list was still loading.
+   */
+  prs: PullRequestSummary[] | null;
+  /** Why the list fetch failed, if it did. `r` on the launch frame retries. */
+  listError?: string | null;
   pr: PullRequestDetail | null;
   meat: MeatResult | null;
   checks: CheckRun[];
@@ -117,6 +124,15 @@ export interface AppProps {
    */
   editText?: (initial: string) => Promise<string>;
 }
+
+/**
+ * The chrome row and the rule under it, above every settled screen.
+ *
+ * Counted by the row budget and by both hit tests: the panes now start two rows
+ * down, and a hit test that skipped the offset put the cursor two lines above
+ * the one the reviewer clicked.
+ */
+const CHROME_ROWS = 2;
 
 /** `danger` is red AND bold; the weight is what separates it from `del`. */
 function toneStyle(tone: 'muted' | 'pending' | 'danger') {
@@ -307,7 +323,7 @@ export function App(props: AppProps) {
   /** The last left press, so the next one can tell whether it is a double. */
   const lastClick = useRef<Click | null>(null);
 
-  const visiblePrs = useMemo(() => filterPrs(props.prs, query), [props.prs, query]);
+  const visiblePrs = useMemo(() => filterPrs(props.prs ?? [], query), [props.prs, query]);
   const shownFindings = useMemo(
     () => visibleFindings(findings, showRefuted),
     [findings, showRefuted],
@@ -331,16 +347,9 @@ export function App(props: AppProps) {
    * renders, what the viewport windows on, and what the cursor indexes — so a
    * height calculation can no longer disagree with what was drawn.
    */
-  // While reviewing, the sidebar goes away and the diff owns the terminal: on a
-  // 17-file monorepo change the paths are the content, and a 32-column column
-  // truncated every one of them to `#546 feat(packages): resolv…`.
-  //
-  // Keyed on the mode, not merely on a pull request being loaded. `esc` from
-  // the diff sets the mode back to `picker` without unloading it, so keying on
-  // the pull request alone left the sidebar hidden and `esc` looking dead.
-  //
-  // These sit above the row list because the pane's width decides where a
-  // comment body wraps, and wrapping happens when the rows are built.
+  // Keyed on the mode, not merely on a pull request being loaded: `esc` sets the
+  // mode back to `picker` without unloading it, so the hint bar has to follow
+  // the screen the reviewer is looking at rather than what is still in memory.
   const browsing = mode === 'picker';
   const reviewing = props.pr !== null && props.meat !== null && !browsing;
   /**
@@ -351,10 +360,10 @@ export function App(props: AppProps) {
    * the hint bar names it. One derived value, so the three cannot disagree.
    */
   const warmPr = props.pr !== null && props.meat !== null ? props.pr.number : null;
-  const detailWidth = Math.max(
-    1,
-    columns - (reviewing ? 2 : theme.layout.sidebarWidth + 3),
-  );
+  // Every pane is inset by one cell on either side, and nothing competes with
+  // the body for width any more. Above the row list because the pane's width
+  // decides where a comment body wraps, and wrapping happens when rows are built.
+  const detailWidth = Math.max(1, columns - 2);
   /**
    * Manual comments plus every accepted finding, in one list, once. A restored
    * draft already holds the comment an accepted finding produced, so the id
@@ -388,22 +397,34 @@ export function App(props: AppProps) {
   }, [units, props.threads, showThreads, staged, composer, detailWidth]);
   const fullDraft = useMemo(() => ({ ...draft, comments: staged }), [draft, staged]);
 
-  // One row for the horizontal rule, one for the status line.
-  const bodyHeight = Math.max(1, rows - 2);
-  // Keyed on there being a query rather than on a mode: the query line is what
-  // costs the row, and scrolling has to spend the same budget the pane renders
-  // with or the cursor leaves the window.
-  const listRows = visibleEntryCount(bodyHeight, query.length > 0);
-  // Notes render under the detail pane, so the pane's budget pays for them —
+  // The bottom horizontal rule and the status line, under the chrome row and
+  // the rule of its own.
+  const bodyHeight = Math.max(1, rows - CHROME_ROWS - 2);
+  /** What a full-screen takeover gets: everything under the chrome row. Read by
+   *  the renderer and by both scroll calculations, so they cannot split. */
+  const overlayHeight = Math.max(1, rows - CHROME_ROWS);
+  // Notes render under the body pane, so the pane's budget pays for them —
   // otherwise adding one pushes the status bar off the bottom again. Scrolling
   // and rendering must agree on this number or the cursor leaves the window.
   const findingsFailed = findingsStatus === 'failed';
   const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
-  const detailHeight = Math.max(0, bodyHeight - noteRows);
+  const paneHeight = Math.max(0, bodyHeight - noteRows);
   const detailHeaderHeight = props.meat
     ? detailHeaderRows(props.meat, props.checks, detailWidth)
     : 0;
-  const detailRows = props.meat ? Math.max(0, detailHeight - detailHeaderHeight) : 0;
+  const detailRows = props.meat ? Math.max(0, paneHeight - detailHeaderHeight) : 0;
+  // The picker's entries, measured once. Their heights vary with how many rows
+  // a title needs, and the renderer, the scroll clamp, and the hit test all
+  // count those rows — a second measurement is how they would come to disagree
+  // about which pull request the cursor is on. `detailWidth` is the width
+  // `PrPicker` wraps at: it is handed the whole terminal and pays for its own
+  // inset out of it.
+  const pickerEntries = useMemo(
+    () => buildEntries(visiblePrs, detailWidth),
+    [visiblePrs, detailWidth],
+  );
+  const pickerLayout = layoutPicker(paneHeight, detailWidth);
+  const entryHeights = pickerEntries.map((entry) => entry.height);
 
   // The file index, planned once: the pane draws from this and a click is
   // resolved against it, so the two cannot disagree about where a cell is.
@@ -415,8 +436,8 @@ export function App(props: AppProps) {
     () => planFileIndex(indexPaths, detailWidth),
     [indexPaths, detailWidth],
   );
-  /** Where the detail pane's content starts, the sidebar and padding counted. */
-  const paneLeft = reviewing ? 1 : theme.layout.sidebarWidth + 2;
+  /** Where the detail pane's content starts: its own one cell of padding. */
+  const paneLeft = 1;
 
   // Folding shrinks the row list under the cursor, and a query shrinks the
   // pull-request list under it; clamp on the way out rather than trusting the
@@ -538,7 +559,7 @@ export function App(props: AppProps) {
   function moveList(next: number) {
     const clamped = clampCursor(next, visiblePrs.length);
     setListCursor(clamped);
-    setListScroll((prev) => nextScrollTop(visiblePrs.length, listRows, clamped, prev));
+    setListScroll((prev) => pickerScroll(entryHeights, pickerLayout.entryRows, clamped, prev));
   }
 
   /**
@@ -582,15 +603,17 @@ export function App(props: AppProps) {
 
   /** Half a page of rows — the cursor and the budget are the same unit now. */
   function halfPage(dir: -1 | 1) {
-    if (mode === 'help') return moveHelp(dir * Math.max(1, Math.floor(helpBodyRows(rows) / 2)));
+    if (mode === 'help') {
+      return moveHelp(dir * Math.max(1, Math.floor(helpBodyRows(overlayHeight) / 2)));
+    }
     if (mode === 'picker') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
     return moveRows(cursor + dir * Math.max(1, Math.floor(detailRows / 2)));
   }
 
   /** The help overlay scrolls rather than clipping; this is its offset. */
   function moveHelp(delta: number) {
-    const layout = layoutHelp(columns, rows);
-    const body = helpBodyRows(rows);
+    const layout = layoutHelp(columns, overlayHeight);
+    const body = helpBodyRows(overlayHeight);
     setHelpScroll((prev) => Math.min(
       Math.max(0, prev + delta),
       Math.max(0, layout.rows.length - body),
@@ -606,10 +629,17 @@ export function App(props: AppProps) {
     setQuery(next);
     // The cursor indexes the filtered list, so narrowing must pull it back in
     // range immediately — otherwise enter opens whatever the stale index hits.
-    const narrowed = filterPrs(props.prs, next);
+    const narrowed = filterPrs(props.prs ?? [], next);
     const clamped = clampCursor(listCursor, narrowed.length);
     setListCursor(clamped);
-    setListScroll(nextScrollTop(narrowed.length, listRows, clamped, 0));
+    // The narrowed list's own heights: the ones measured above still belong to
+    // the query this call is replacing.
+    setListScroll(pickerScroll(
+      buildEntries(narrowed, detailWidth).map((entry) => entry.height),
+      pickerLayout.entryRows,
+      clamped,
+      0,
+    ));
   }
 
   function toggleIn(set: ReadonlySet<string>, path: string): ReadonlySet<string> {
@@ -863,23 +893,27 @@ export function App(props: AppProps) {
     const wheel = report.action === 'wheel-up' ? -1 : 1;
 
     if (mode === 'picker') {
-      // One entry per notch, not three rows: entries are three rows tall, and a
-      // list of a dozen pull requests is chosen from, not scrolled through.
+      // One entry per notch, not three rows: an entry is three or four rows
+      // tall, and a list of a dozen pull requests is chosen from rather than
+      // scrolled through.
       if (report.action === 'wheel-up' || report.action === 'wheel-down') {
         moveList(prCursor + wheel);
         return true;
       }
       if (report.action !== 'press' || report.button !== 'left') return true;
+      // While the loading steps own the entry region there are no entries drawn
+      // there to aim at, and a press resolved against them would fetch a pull
+      // request the reviewer cannot see and abandon the one they asked for.
+      if (props.progress) return true;
 
-      const hit = hitList({
-        top: listHeaderRows(query.length > 0),
-        rowsPerEntry: ROWS_PER_ENTRY,
-        visibleEntries: listRows,
+      // The row alone decides: the picker is the full width of the terminal, so
+      // there is no neighbouring pane for a click to miss into.
+      const hit = hitPicker({
+        headerRows: pickerLayout.headerRows + CHROME_ROWS,
+        heights: entryHeights,
         scrollTop: listScroll,
-        total: visiblePrs.length,
-        left: 1,
-        right: theme.layout.sidebarWidth - 1,
-      }, report.column, report.row);
+        viewRows: pickerLayout.entryRows,
+      }, report.row);
       if (hit === null) return true;
 
       // Clicking the entry that is already selected opens it. One click to aim
@@ -887,7 +921,11 @@ export function App(props: AppProps) {
       // pull request nobody asked for.
       if (hit === prCursor) {
         const selected = visiblePrs[hit];
-        if (selected) props.onOpenPr(selected.number);
+        if (!selected) return true;
+        // The same short-circuit enter takes: reopening the warm review would
+        // refetch it and lose the reviewer's place in a diff they never left.
+        if (selected.number === warmPr) setMode('detail');
+        else props.onOpenPr(selected.number);
       } else {
         moveList(hit);
       }
@@ -914,7 +952,7 @@ export function App(props: AppProps) {
     if (!dragging && (report.action !== 'press' || report.button !== 'left')) return true;
 
     const hit = hitDetail({
-      headerRows: detailHeaderHeight,
+      headerRows: detailHeaderHeight + CHROME_ROWS,
       indexRows: indexPlan.rows,
       indexColumns: indexPlan.columns,
       indexCellWidth: indexPlan.cellWidth,
@@ -1019,6 +1057,14 @@ export function App(props: AppProps) {
     // that `q` is a letter in this one mode. Escape unwinds one layer at a time
     // — the query, then the review behind it, then the program.
     if (mode === 'picker') {
+      // The launch frame has no filter to type into, so it has exactly the two
+      // keys it names. Everything else waits for the list rather than editing a
+      // query that is not on screen.
+      if (props.prs === null) {
+        if (input === 'q') return exit();
+        if (input === 'r' && props.listError) return props.onRefresh?.();
+        return;
+      }
       if (key.escape) {
         if (query.length > 0) return applyQuery('');
         if (warmPr !== null) return setMode('detail');
@@ -1181,33 +1227,82 @@ export function App(props: AppProps) {
   // The editor has the terminal. Anything drawn here would land on top of it.
   if (editorOpen) return null;
 
-  // The overlay is the only thing on screen, so it gets the whole terminal to
-  // decide its own column count from.
-  if (mode === 'help') return <Help width={columns} height={rows} scrollTop={helpScroll} />;
+  const chrome = chromeLine({
+    repoLabel: props.repoLabel,
+    filter: props.filter,
+    // Named on every screen except the review itself, where the title block two
+    // rows down already says it — twice on one screen is noise.
+    warm: mode === 'picker' || mode === 'help' || mode === 'submit' || mode === 'chat'
+      ? warmPr
+      : null,
+    width: Math.max(1, columns - 2),
+  });
+  const chromeRow = (
+    <Box flexDirection="column">
+      <Box paddingX={1} justifyContent="space-between">
+        <Text {...theme.tier.tertiary} wrap="truncate">{chrome.left}</Text>
+        {chrome.right !== '' && <Text color={theme.color.structure}>{chrome.right}</Text>}
+      </Box>
+      <Text {...theme.tier.muted}>{theme.glyph.hrule.repeat(Math.max(1, columns))}</Text>
+    </Box>
+  );
+
+  // A takeover owns everything under the chrome row, and decides its own column
+  // count from the width it is given.
+  if (mode === 'help') {
+    return (
+      <Box flexDirection="column" height={rows}>
+        {chromeRow}
+        <Help width={columns} height={overlayHeight} scrollTop={helpScroll} />
+      </Box>
+    );
+  }
 
   if (mode === 'submit' && props.pr && props.meat) {
     return (
-      <SubmitScreen
-        draft={fullDraft}
-        files={props.meat.files.map((f) => f.file)}
-        viewerIsAuthor={props.pr.viewerIsAuthor}
-        selected={verdict}
-      />
+      <Box flexDirection="column" height={rows}>
+        {chromeRow}
+        <SubmitScreen
+          draft={fullDraft}
+          files={props.meat.files.map((f) => f.file)}
+          viewerIsAuthor={props.pr.viewerIsAuthor}
+          selected={verdict}
+        />
+      </Box>
     );
   }
 
   if (mode === 'chat') {
     return (
-      <ChatOverlay
-        session={chat}
-        pending={chatPending}
-        onAsk={(question) => void askAboutHunk(question)}
-        onClose={() => setMode(underlay)}
-      />
+      <Box flexDirection="column" height={rows}>
+        {chromeRow}
+        <ChatOverlay
+          session={chat}
+          pending={chatPending}
+          onAsk={(question) => void askAboutHunk(question)}
+          onClose={() => setMode(underlay)}
+        />
+      </Box>
     );
   }
 
-  const paneRule = Array.from({ length: bodyHeight }, () => theme.glyph.rule).join('\n');
+  // Before there is a list there is nothing to frame: no chrome row, because the
+  // launch frame is the brand moment and a header saying "marrow" above a banner
+  // saying "marrow" is the same word twice.
+  if (mode === 'picker' && props.prs === null) {
+    return (
+      <Launch
+        repoLabel={props.repoLabel}
+        width={columns}
+        height={rows}
+        body={props.progress
+          ? { kind: 'steps', progress: props.progress }
+          : props.listError
+            ? { kind: 'error', message: props.listError }
+            : { kind: 'spinner', label: 'fetching open pull requests…' }}
+      />
+    );
+  }
 
   const notes = (
     <>
@@ -1228,31 +1323,29 @@ export function App(props: AppProps) {
 
   return (
     <Box flexDirection="column" height={rows}>
-      <Box flexGrow={1}>
-        {/* The sidebar exists to choose a pull request. Once one is open it is
-            32 columns spent on a list you are no longer reading, taken from the
-            diff — which is the product. It comes back on esc. */}
-        {!reviewing && (
-          <>
-            <PrList
-              prs={props.prs}
-              cursor={mode === 'picker' ? prCursor : -1}
-              scrollTop={listScroll}
-              height={bodyHeight}
-              filter={props.filter}
-              width={theme.layout.sidebarWidth}
-              query={query}
-              searching={query.length > 0}
-            />
-            {/* The one vertical rule in the product: two panes, no boxes. Each
-                pane's own paddingX supplies the gap on either side of it. */}
-            <Box width={1}>
-              <Text {...theme.tier.muted}>{paneRule}</Text>
-            </Box>
-          </>
-        )}
-        {/* paddingX rather than marginLeft: nothing sits flush against either
-            terminal edge, the rule included. */}
+      {chromeRow}
+      {mode === 'picker' ? (
+        <Box flexDirection="column" flexGrow={1}>
+          {/* The whole terminal width: PrPicker owns its own inset, which is why
+              `detailWidth` is the width its titles wrap at. */}
+          <PrPicker
+            prs={visiblePrs}
+            total={props.prs?.length ?? 0}
+            query={query}
+            cursor={prCursor}
+            scrollTop={listScroll}
+            height={paneHeight}
+            width={columns}
+            warmPrNumber={warmPr}
+            progress={props.progress ?? null}
+          />
+          {noteRows > 0 && (
+            <Box flexDirection="column" paddingX={1}>{notes}</Box>
+          )}
+        </Box>
+      ) : (
+        /* paddingX rather than marginLeft: nothing sits flush against either
+           terminal edge. */
         <Box flexDirection="column" flexGrow={1} paddingX={1}>
           {props.pr && props.meat ? (
             <>
@@ -1262,7 +1355,7 @@ export function App(props: AppProps) {
                 rows={detailRowList}
                 cursor={cursor}
                 scrollTop={rowScroll}
-                height={detailHeight}
+                height={paneHeight}
                 width={detailWidth}
                 checks={props.checks}
                 fullDiff={fullDiff}
@@ -1285,19 +1378,9 @@ export function App(props: AppProps) {
             // One note, not two: with a pull request selected but no meat yet,
             // this branch and a second line below it both said the same thing.
             <Text {...toneStyle(props.statusTone ?? 'muted')}>{props.status}</Text>
-          ) : (
-            // Nothing open and nothing to say: the pane's job is orientation,
-            // not a one-line apology pinned to the top of an empty region.
-            <Welcome
-              repoLabel={props.repoLabel}
-              count={visiblePrs.length}
-              filter={props.filter}
-              height={bodyHeight}
-              width={detailWidth}
-            />
-          )}
+          ) : null}
         </Box>
-      </Box>
+      )}
 
       <Text {...theme.tier.muted}>{theme.glyph.hrule.repeat(Math.max(1, columns))}</Text>
 
