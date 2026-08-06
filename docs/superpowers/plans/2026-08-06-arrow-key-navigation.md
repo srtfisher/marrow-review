@@ -12,8 +12,7 @@
 
 - Every source file is `.ts`/`.tsx` with full type coverage. No `any`.
 - Tests run with `bun test`. Typecheck with `bun run typecheck`. Module-boundary lint with `bun run lint:boundary`.
-- **Baseline before any change, measured on `main` at `df64b8a`: `bun test tests/tui` gives 450 pass, 0 fail, 25 files.** That is this plan's gate — no task may reduce it.
-- `bun test` (the whole suite) currently reports **2 failures in `tests/core/meat/rules.test.ts`**, from another session's uncommitted work in `src/core/meat/rules.ts`. They are not caused by this plan and must not be fixed by it. Judge the full-suite runs below by "no *new* failures outside `tests/core/meat/`", not by a zero.
+- **Baseline, measured on `main` at `b112eea`: `bun test tests/tui` gives 450 pass, 0 fail, 25 files; the whole suite gives 655 pass, 0 fail.** `bun test tests/tui` is this plan's gate — no task may reduce it.
 
 ### Working alongside another session
 
@@ -22,9 +21,15 @@ content overlap with this plan, but its commit `3f5f6ec` already touched
 `src/tui/App.tsx` and `tests/tui/app-input.test.tsx` once and shifted every line
 number in an earlier draft of this plan by two.
 
-**Every line number below was re-verified against `main` at `df64b8a`.** If a quoted
-anchor does not match what you find, do not guess the offset — re-locate the code by the
-surrounding text quoted in the step, which is stable, and carry on.
+Two consequences:
+
+1. **Every line number below was re-verified against `main` at `df64b8a`.** If a quoted
+   anchor does not match what you find, do not guess the offset — re-locate the code by
+   the surrounding text quoted in the step, which is stable, and carry on.
+2. **Re-measure the baseline before starting, and judge each run against that**, not
+   against the numbers written here. The whole-suite count moves whenever the other
+   session commits. A failure in `tests/core/meat/` is theirs: do not fix it, and do not
+   let it block a task whose own `bun test tests/tui` run is green.
 - `src/tui/*` may not import from `src/cli/*`. Pure logic lives in `.ts` modules; `.tsx` files render.
 - Comments in this codebase explain *why*, in prose, and frequently record the bug a rule exists to prevent. Match that. Do not add comments that restate the code.
 - Commit after every task. Do not squash tasks together.
@@ -481,7 +486,7 @@ Run: `bun test tests/tui`
 Expected: PASS, 0 fail.
 
 Run: `bun test`
-Expected: no failures outside `tests/core/meat/rules.test.ts`.
+Expected: no failures outside `tests/core/meat/`, which belongs to the other session.
 
 Run: `bun run typecheck && bun run lint:boundary`
 Expected: no errors.
@@ -627,7 +632,7 @@ Run: `bun test tests/tui`
 Expected: PASS, 0 fail, 456 tests — the 450 baseline, plus the 13 added across Tasks 1-4, minus the 7 deleted here.
 
 Run: `bun test`
-Expected: no failures outside `tests/core/meat/rules.test.ts`.
+Expected: no failures outside `tests/core/meat/`, which belongs to the other session.
 
 Run: `bun run typecheck && bun run lint:boundary`
 Expected: no errors.
