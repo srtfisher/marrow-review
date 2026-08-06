@@ -1082,6 +1082,14 @@ export function App(props: AppProps) {
         if (input === 'r' && props.listError) return props.onRefresh?.();
         return;
       }
+      // Same reasoning as the mouse guard above: with the loading steps
+      // covering the entry region, an arrow would move a selection nobody can
+      // see, enter would call onOpenPr a second time on a fetch already under
+      // way, and typing would edit a filter line that is not drawn. Esc is
+      // swallowed too rather than carved out — the load resolves into detail
+      // on its own, and unwinding the query or raising the quit confirm here
+      // would fight the loading steps for the same row.
+      if (props.progress) return;
       if (key.escape) {
         if (query.length > 0) return applyQuery('');
         if (warmPr !== null) return setMode('detail');
@@ -1411,7 +1419,7 @@ export function App(props: AppProps) {
           </Text>
         ) : confirmLeave ? (
           <Text color={theme.color.pending} wrap="truncate">
-            {'leave this review? it stays warm — esc returns to it · ⏎ leave · esc stay'}
+            {'leave this review? it stays warm — ⏎ leave · esc stay'}
           </Text>
         ) : (
           // The verbs, not the metadata. Repository, number, and gauge already

@@ -288,6 +288,29 @@ describe('the picker is search-first', () => {
     await app.press('\r');
     expect(opened).toEqual([42]);
   });
+
+  test('the keyboard does nothing while a pull request is loading, the same guard as the mouse', async () => {
+    const opened: number[] = [];
+    const app = mount({
+      onOpenPr: (n) => opened.push(n),
+      progress: { prNumber: 41, steps: loadSteps() },
+    });
+    await delay(60);
+
+    // Enter would otherwise call onOpenPr a second time on the fetch already
+    // under way — the double-open race the guard exists to prevent. The arrow
+    // would move a selection the loading steps have covered, and typing would
+    // edit a filter line nobody can see. Esc is swallowed too rather than
+    // carved out: the load resolves into detail on its own.
+    await app.press(DOWN);
+    expect(app.frame()).toBe('');
+    await app.press('\r');
+    expect(opened).toEqual([]);
+    await app.press('x');
+    expect(app.frame()).toBe('');
+    await app.press('\x1b');
+    expect(app.frame()).toBe('');
+  });
 });
 
 describe('the app frames every screen', () => {
@@ -369,6 +392,18 @@ describe('the app frames every screen', () => {
     await app.press(ESC);
     // Back in the detail pane: the gauge line only the review header prints.
     expect(app.frame()).toContain('kept 1/2');
+  });
+
+  test('q on the launch frame with a warm review but no unsubmitted work quits directly', async () => {
+    const app = await mountWarmOnLaunchFrame();
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+
+    await app.press('q');
+    await delay(40);
+    expect(exited).toBe(true);
   });
 
   test('q on the launch frame with unsubmitted work asks before quitting', async () => {
@@ -1534,7 +1569,6 @@ describe('the mouse', () => {
   test('a wheel notch while a pull request is loading moves nothing', async () => {
     const app = mount({ progress: { prNumber: 41, steps: loadSteps() } });
     await delay(60);
-    app.frame();
 
     // The steps occupy the entry region, so there is no visible selection for
     // the notch to move — scrolling here would change a cursor nobody can see.

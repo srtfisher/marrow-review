@@ -60,8 +60,6 @@ export const glyph = {
   gaugeFull: '▇',
   gaugeEmpty: '▁',
   fold: '┄',
-  /** The single vertical rule between the two panes. */
-  rule: '│',
   /** Horizontal rules exist at exactly two hard boundaries; this is one. */
   hrule: '─',
   staged: '●',
