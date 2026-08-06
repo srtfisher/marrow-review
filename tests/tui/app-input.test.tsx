@@ -1531,6 +1531,18 @@ describe('the mouse', () => {
     expect(opened).toEqual([]);
   });
 
+  test('a wheel notch while a pull request is loading moves nothing', async () => {
+    const app = mount({ progress: { prNumber: 41, steps: loadSteps() } });
+    await delay(60);
+    app.frame();
+
+    // The steps occupy the entry region, so there is no visible selection for
+    // the notch to move — scrolling here would change a cursor nobody can see.
+    // Nothing repainted is the strongest available form of "nothing happened".
+    await app.press(wheelDown(5, 10));
+    expect(app.frame()).toBe('');
+  });
+
   test('a right click and a release are ignored, not treated as a left click', async () => {
     const opened: number[] = [];
     const app = mount({ onOpenPr: (n) => opened.push(n) });

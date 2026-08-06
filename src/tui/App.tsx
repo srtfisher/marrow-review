@@ -345,11 +345,6 @@ export function App(props: AppProps) {
       : []),
     [props.meat, revealed, foldedFiles, shownFindings],
   );
-  /**
-   * Every terminal row of the detail pane, in order. One array is what the pane
-   * renders, what the viewport windows on, and what the cursor indexes — so a
-   * height calculation can no longer disagree with what was drawn.
-   */
   // Keyed on the mode, not merely on a pull request being loaded: `esc` sets the
   // mode back to `picker` without unloading it, so the hint bar has to follow
   // the screen the reviewer is looking at rather than what is still in memory.
@@ -379,6 +374,11 @@ export function App(props: AppProps) {
     }
     return [...byId.values()];
   }, [draft.comments, findings]);
+  /**
+   * Every terminal row of the detail pane, in order. One array is what the pane
+   * renders, what the viewport windows on, and what the cursor indexes — so a
+   * height calculation can no longer disagree with what was drawn.
+   */
   const detailRowList = useMemo(() => {
     // The comment being rewritten is hidden while its composer is open —
     // otherwise the old wording sits directly above the box you are changing it
@@ -610,7 +610,6 @@ export function App(props: AppProps) {
     if (mode === 'help') {
       return moveHelp(dir * Math.max(1, Math.floor(helpBodyRows(overlayHeight) / 2)));
     }
-    if (mode === 'picker') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
     return moveRows(cursor + dir * Math.max(1, Math.floor(detailRows / 2)));
   }
 
@@ -622,11 +621,6 @@ export function App(props: AppProps) {
       Math.max(0, prev + delta),
       Math.max(0, layout.rows.length - body),
     ));
-  }
-
-  function move(next: number) {
-    if (mode === 'picker') moveList(next);
-    else moveRows(next);
   }
 
   function applyQuery(next: string) {
@@ -897,6 +891,12 @@ export function App(props: AppProps) {
     const wheel = report.action === 'wheel-up' ? -1 : 1;
 
     if (mode === 'picker') {
+      // While the loading steps own the entry region there are no entries drawn
+      // there to aim at, and a wheel or press resolved against them would move
+      // a selection nobody can see, or fetch a pull request the reviewer
+      // cannot see and abandon the one they asked for.
+      if (props.progress) return true;
+
       // One entry per notch, not three rows: an entry is three or four rows
       // tall, and a list of a dozen pull requests is chosen from rather than
       // scrolled through.
@@ -905,10 +905,6 @@ export function App(props: AppProps) {
         return true;
       }
       if (report.action !== 'press' || report.button !== 'left') return true;
-      // While the loading steps own the entry region there are no entries drawn
-      // there to aim at, and a press resolved against them would fetch a pull
-      // request the reviewer cannot see and abandon the one they asked for.
-      if (props.progress) return true;
 
       // The row alone decides: the picker is the full width of the terminal, so
       // there is no neighbouring pane for a click to miss into.
@@ -1129,10 +1125,7 @@ export function App(props: AppProps) {
     switch (action.type) {
       case 'move':
         if (mode === 'help') return moveHelp(action.delta);
-        // `browsing`, not `mode === 'picker'`: the picker handler returns before
-        // the keymap is consulted, so the compiler knows the mode is `detail`
-        // here and rejects the comparison outright.
-        return move((browsing ? prCursor : cursor) + action.delta);
+        return moveRows(cursor + action.delta);
       case 'half-page':
         return halfPage(action.dir);
       case 'file':

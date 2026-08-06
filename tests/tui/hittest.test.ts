@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { fileIndexTop, hitDetail, hitList, type DetailGeometry } from '../../src/tui/hittest.js';
+import { fileIndexTop, hitDetail, type DetailGeometry } from '../../src/tui/hittest.js';
 
 /**
  * A pane with a six-row header — title, meta, gauge, two rows of file index, and
@@ -84,49 +84,5 @@ describe('hitDetail', () => {
     const flat = { ...geometry, indexRows: 0, indexCells: 0, headerRows: 4 };
     expect(hitDetail(flat, 10, 3)).toBeNull();
     expect(hitDetail(flat, 10, 4)).toEqual({ kind: 'diff-row', index: 0 });
-  });
-});
-
-describe('hitList', () => {
-  const list = {
-    top: 2,
-    rowsPerEntry: 3,
-    visibleEntries: 6,
-    scrollTop: 0,
-    total: 20,
-    left: 1,
-    right: 31,
-  };
-
-  test('turns a click anywhere in a three-row entry into that entry', () => {
-    expect(hitList(list, 5, 2)).toBe(0);
-    expect(hitList(list, 5, 3)).toBe(0);
-    expect(hitList(list, 5, 4)).toBe(0);
-    expect(hitList(list, 5, 5)).toBe(1);
-  });
-
-  test('offsets by what is scrolled past', () => {
-    expect(hitList({ ...list, scrollTop: 4 }, 5, 2)).toBe(4);
-  });
-
-  test('the filter line and the query line are chrome, not entries', () => {
-    expect(hitList(list, 5, 0)).toBeNull();
-    expect(hitList(list, 5, 1)).toBeNull();
-    expect(hitList({ ...list, top: 3 }, 5, 2)).toBeNull();
-  });
-
-  test('a click outside the pane is not an entry, so the diff keeps its own', () => {
-    expect(hitList(list, 0, 2)).toBeNull();
-    expect(hitList(list, 31, 2)).toBeNull();
-    expect(hitList(list, 40, 2)).toBeNull();
-  });
-
-  test('a click past the last entry of a short list is nothing', () => {
-    expect(hitList({ ...list, total: 2 }, 5, 8)).toBeNull();
-  });
-
-  test('a click past the bottom of the window is nothing', () => {
-    expect(hitList(list, 5, 19)).toBe(5);
-    expect(hitList(list, 5, 20)).toBeNull();
   });
 });

@@ -44,8 +44,6 @@ export const tier = {
 
 /** Layout constants, named so they are decisions rather than magic numbers. */
 export const layout = {
-  /** 32 says "navigation serves content" — the diff is the product. */
-  sidebarWidth: 32,
   /** Two right-aligned line-number columns; this medium's tabular numbers. */
   gutterWidth: 6,
   /** Cells in the meat gauge. */

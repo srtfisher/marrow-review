@@ -75,29 +75,3 @@ export function hitDetail(
 
   return null;
 }
-
-export interface ListGeometry {
-  /** Rows the pane spends on itself before the first entry. */
-  top: number;
-  rowsPerEntry: number;
-  visibleEntries: number;
-  scrollTop: number;
-  total: number;
-  /** Cells [left, right) the pane occupies, the vertical rule excluded. */
-  left: number;
-  right: number;
-}
-
-/** The entry a click landed on, or null for the pane's own chrome. */
-export function hitList(geometry: ListGeometry, column: number, row: number): number | null {
-  const { top, rowsPerEntry, visibleEntries, scrollTop, total, left, right } = geometry;
-  if (column < left || column >= right) return null;
-  if (row < top || rowsPerEntry <= 0) return null;
-
-  const offset = Math.floor((row - top) / rowsPerEntry);
-  if (offset >= visibleEntries) return null;
-
-  const { start } = computeWindow(total, visibleEntries, 0, scrollTop);
-  const index = start + offset;
-  return index < total ? index : null;
-}
