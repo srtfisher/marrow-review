@@ -77,6 +77,19 @@ export function scrollBy(
   };
 }
 
+/**
+ * The offset that puts `row` on the pane's first line.
+ *
+ * The counterpart to `nextScrollTop`, which moves the view as little as it can.
+ * Arriving at a file is the case where least movement is the wrong answer: a
+ * header parked three rows off the bottom edge is a file you have been taken to
+ * and cannot read. Clamped, so the last file in the diff stops where the diff
+ * stops rather than scrolling its tail up into blank rows.
+ */
+export function scrollToRow(total: number, height: number, row: number): number {
+  return clamp(row, 0, maxScrollTop(total, Math.max(0, height)));
+}
+
 export function nextScrollTop(
   total: number,
   height: number,

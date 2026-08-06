@@ -380,6 +380,31 @@ because `esc` is reflexive and what it swaps away is somebody's place in a diff.
 keeps its own separate confirm: leaving and quitting are different verbs and deserve
 different questions.
 
+## Revision: arriving at a file shows the file
+
+Scrolling was one rule everywhere — move the view as little as the cursor requires, keeping
+it three rows off either edge. That rule is right while reading and wrong on arrival. `]`
+put the next file's header three rows above the bottom, so the answer to "take me to that
+file" was the previous file still filling the pane and the new one's name at the very bottom
+with its contents below the fold. Every jump cost a second keystroke to actually see
+anything.
+
+So there are two rules now, and the predicate between them is worth stating precisely:
+
+- **The cursor coming to rest on a file header puts that header on the pane's first line.**
+- Everything else keeps the minimal adjustment.
+
+Not "the cursor changed file". `n` can cross into another file, and a rule keyed on the file
+changing would anchor that file's header and leave the finding the reviewer jumped to two
+hundred rows below the fold. Landing on a *header* is what `]`, `[`, stepping off the end of
+a file with `↓`, and clicking a name in the index all do, and it is the only thing that
+means "go to that file". Walking back up onto a file is not that — `↑` off a header reaches
+the previous file's last line, and the view follows the cursor rather than yanking backwards
+to a header the reviewer did not ask for.
+
+The scroll is clamped at the end of the diff, so the last file stops where the diff stops
+instead of scrolling its tail into blank rows. The wheel keeps its own rule, unchanged: the
+view leads and the cursor follows.
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme
@@ -393,3 +418,6 @@ different questions.
 - Mouse motion/drag reporting → wheel and click only
 - A sidebar for a list that is the only thing on screen → one full-screen picker; the
   split needs a second occupant to be worth its rule
+- One scroll rule for every cursor move → minimal while reading, header-to-top on arrival
+- Scrolling only far enough to fit a short file → the header goes to the top either way; a
+  file pinned to the bottom edge is a file you have been taken to and have to scroll to read

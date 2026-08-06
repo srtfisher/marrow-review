@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { computeWindow, nextScrollTop, scrollBy } from '../../src/tui/viewport.js';
+import { computeWindow, nextScrollTop, scrollBy, scrollToRow } from '../../src/tui/viewport.js';
 
 describe('computeWindow', () => {
   test('shows everything when content fits', () => {
@@ -59,6 +59,31 @@ describe('nextScrollTop', () => {
 
   test('a jump to the top pulls scrollTop back to 0', () => {
     expect(nextScrollTop(100, 20, 0, 80, 3)).toBe(0);
+  });
+});
+
+describe('scrollToRow', () => {
+  test('puts the row on the first line of the pane', () => {
+    expect(scrollToRow(100, 20, 40)).toBe(40);
+  });
+
+  test('stops at the end of the content rather than scrolling into blank', () => {
+    // Row 95 cannot reach the top of a 20-row pane over 100 rows; 80 is as far
+    // as the diff goes, and the row is still on screen.
+    expect(scrollToRow(100, 20, 95)).toBe(80);
+  });
+
+  test('does not scroll at all when the content fits', () => {
+    expect(scrollToRow(5, 20, 4)).toBe(0);
+  });
+
+  test('never returns a negative offset', () => {
+    expect(scrollToRow(100, 20, -5)).toBe(0);
+  });
+
+  test('survives a pane with no height', () => {
+    expect(scrollToRow(100, 0, 40)).toBe(40);
+    expect(scrollToRow(100, -5, 40)).toBe(40);
   });
 });
 

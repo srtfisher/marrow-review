@@ -32,7 +32,7 @@ import {
   backspace, fromText, insert, newline, toText, move as moveCaret, type Buffer,
 } from './textarea.js';
 import { editInEditor } from './editor.js';
-import { nextScrollTop, scrollBy } from './viewport.js';
+import { nextScrollTop, scrollBy, scrollToRow } from './viewport.js';
 import { hitDetail } from './hittest.js';
 import {
   MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_ROWS, isDoubleClick, parseMouse, type Click,
@@ -582,8 +582,26 @@ export function App(props: AppProps) {
     // reaches the next one and stepping off the top reaches the previous one.
     const rested = landing(next, next >= cursor ? 1 : -1);
     setRowCursor(rested);
-    setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, rested, prev));
+    setRowScroll((prev) => rowScrollFor(rested, prev));
     markSeen(rested);
+  }
+
+  /**
+   * Where the view goes when the cursor comes to rest on `row`.
+   *
+   * Landing on a file header puts that header on the pane's first line; every
+   * other row keeps the minimal adjustment. The predicate is the header, not
+   * "the file changed": `n` can cross into another file, and anchoring that
+   * file's header to the top would push the finding you jumped to off the
+   * bottom of a long one.
+   *
+   * `]` used to leave a header three rows above the bottom edge with the whole
+   * file below the fold — taken to a file and unable to read it.
+   */
+  function rowScrollFor(row: number, previous: number): number {
+    return detailRowList[row]?.kind === 'file-header'
+      ? scrollToRow(detailRowList.length, detailRows, row)
+      : nextScrollTop(detailRowList.length, detailRows, row, previous);
   }
 
   /**

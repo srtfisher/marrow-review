@@ -1273,6 +1273,132 @@ describe('reviewing a large diff', () => {
   });
 });
 
+/** A file of `lines` numbered paragraphs, each naming the file it belongs to. */
+function proseFile(path: string, tag: string, lines: number): MeatFile {
+  return {
+    file: {
+      path, oldPath: null, status: 'modified', similarity: null,
+      hunks: [], additions: lines, deletions: 0,
+    },
+    dropped: null,
+    hunks: [{
+      hunk: {
+        header: `@@ -1,${lines} +1,${lines} @@`, section: '',
+        oldStart: 1, oldLines: lines, newStart: 1, newLines: lines,
+        lines: Array.from({ length: lines }, (_, i) => ({
+          kind: 'add' as const, text: `${tag} ${i}`,
+          oldLine: null, newLine: i + 1, noNewlineAtEof: false,
+        })),
+      },
+      keep: true, reason: 'prose', source: 'model' as const,
+    }],
+  };
+}
+
+function meatOf(files: MeatFile[]): MeatResult {
+  const lines = files.reduce((sum, f) => sum + f.file.additions, 0);
+  return {
+    summary: 'Three long files.', files,
+    keptLines: lines, totalLines: lines, keptFiles: files.length, totalFiles: files.length,
+    keptAdditions: lines, keptDeletions: 0, totalAdditions: lines, totalDeletions: 0,
+    unclassified: 0,
+  };
+}
+
+describe('arriving at a file shows the file', () => {
+  // A short first file, so `j` can walk off the end of it in a handful of
+  // presses, then two long ones — long enough that the end of the diff is not
+  // what stops the scroll, which is the only case where a header cannot reach
+  // the top of the pane.
+  const three = meatOf([
+    proseFile('src/alpha.ts', 'alpha', 3),
+    proseFile('src/bravo.ts', 'bravo', 200),
+    proseFile('src/charlie.ts', 'charlie', 200),
+  ]);
+
+  test('] puts the next file at the top rather than at the bottom edge', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+    await app.press(']');
+    const frame = app.frame();
+
+    expect(frame).toContain('bravo 0');
+    // The whole point: `]` used to leave the header three rows above the
+    // bottom edge with the file below the fold and the previous file still
+    // filling the pane.
+    expect(frame).not.toContain('alpha 0');
+  });
+
+  test('[ does the same going back', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+    await app.press(']');
+    await app.press(']');
+    expect(app.frame()).toContain('charlie 0');
+
+    await app.press('[');
+    const frame = app.frame();
+    expect(frame).toContain('bravo 0');
+    // Going back was never as bad as going forward — the minimal adjustment
+    // pulls the cursor to within the margin of the top on its own — but it
+    // left the three rows of the margin showing the tail of alpha.ts above the
+    // header, which is not what "take me to bravo.ts" means.
+    expect(frame).not.toContain('alpha 2');
+  });
+
+  // `j` and the down arrow resolve to the same action, so this covers both.
+  test('stepping off the end of a file with j lands at the top of the next', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+
+    // alpha.ts is header, hunk header, three lines: four presses reach its
+    // last line and the fifth crosses the gap into bravo.ts.
+    for (let i = 0; i < 5; i += 1) await app.press('j');
+    const frame = app.frame();
+
+    expect(frame).toContain('bravo 0');
+    expect(frame).not.toContain('alpha 0');
+  });
+
+  test('walking back up onto a file does not yank the view to that file', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+    await app.press(']');
+
+    // Up from bravo.ts's header reaches alpha.ts's last line. Anchoring
+    // alpha.ts's header to the top here would scroll the view backwards past
+    // the row the cursor is actually on.
+    await app.press('k');
+    expect(app.frame()).toContain('alpha 2');
+  });
+
+  test('n keeps the finding on screen instead of anchoring its file', async () => {
+    // The finding sits after two hundred lines of bravo.ts. A rule that
+    // anchored a file whenever the cursor changed file — rather than only when
+    // it lands on a header — would put bravo.ts's header at the top and the
+    // finding the reviewer jumped to two hundred rows below the fold.
+    const transport = new FakeTransport();
+    transport.queue({
+      structured: {
+        findings: [{
+          path: 'src/bravo.ts', line: 150, side: 'RIGHT', startLine: null,
+          severity: 'important', title: 'Unbounded growth',
+          body: 'Nothing ever evicts.', confidence: 'high', suggestion: null,
+        } satisfies RawFinding],
+      },
+    });
+    transport.queue({ structured: { refuted: false, reasoning: 'reachable' } });
+    transport.queue({ structured: { refuted: false, reasoning: 'reproduces' } });
+
+    const app = mount({ pr: detail, meat: three, transport, cwd: '/tmp/worktree' });
+    await delay(120);
+
+    await app.press('n');
+    expect(app.frame()).toContain('Unbounded growth');
+  });
+});
+
+
 describe('checking a file off', () => {
   test('m marks the file under the cursor, and again unmarks it', async () => {
     const app = mount({ pr: detail, meat });
