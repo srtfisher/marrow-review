@@ -324,6 +324,34 @@ export function unitStartRows(rows: DetailRow[]): Map<number, number> {
   return starts;
 }
 
+/**
+ * The nearest row the cursor may come to rest on, searching `prefer` first.
+ *
+ * Blank separators are scenery. They draw no cursor mark, so a cursor parked on
+ * one is a cursor the reviewer cannot see — and the file index reads its current
+ * file from the row under the cursor, so stepping onto the blank between two
+ * files moved the marker at the top of the pane to a file the body was not
+ * showing while the marker in the body vanished. One keystroke, spent on a row
+ * that is not a place, twice: once to leave the file and once to arrive.
+ *
+ * The direction of travel is searched first because the two ends are not
+ * symmetric under a fixed direction: going down off a file's last line has to
+ * reach the *next* header, and coming back up off that header has to reach the
+ * previous file's last line. It falls back to the opposite direction, and then
+ * to `index` itself, so no caller can be handed a row that does not exist.
+ */
+export function nearestStop(rows: DetailRow[], index: number, prefer: 1 | -1): number {
+  const isPlace = (at: number) => rows[at] !== undefined && rows[at]!.kind !== 'blank';
+  if (isPlace(index)) return index;
+
+  for (const dir of [prefer, -prefer] as const) {
+    for (let i = index + dir; i >= 0 && i < rows.length; i += dir) {
+      if (isPlace(i)) return i;
+    }
+  }
+  return index;
+}
+
 function seek(
   rows: DetailRow[],
   from: number,

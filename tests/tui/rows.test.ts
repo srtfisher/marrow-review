@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'bun:test';
 import {
-  buildRows, findingAtRow, hunkAtRow, nextFileRow, nextFindingRow, pathAtRow,
+  buildRows, findingAtRow, hunkAtRow, nearestStop, nextFileRow, nextFindingRow, pathAtRow,
   prevFileRow, prevFindingRow, rangeAnchor, unitAtRow, unitStartRows, withComposer,
   type DetailRow,
 } from '../../src/tui/rows.js';
@@ -172,6 +172,39 @@ describe('navigation', () => {
     expect(unitAtRow(rows, 0)).toBe(0);
     expect(findingAtRow(rows, nextFindingRow(rows, 0))?.id).toBe('f1');
     expect(findingAtRow(rows, 0)).toBeNull();
+  });
+});
+
+describe('nearestStop', () => {
+  // a.ts: 0 header, 1 hunk-header, 2-4 lines. 5 blank. b.ts: 6 header, 7 hunk-header, 8-10 lines.
+  const rows = rowsOf([file('a.ts', 1, 3), file('b.ts', 1, 3)]);
+
+  test('leaves a row that is already a place alone', () => {
+    expect(nearestStop(rows, 4, 1)).toBe(4);
+    expect(nearestStop(rows, 4, -1)).toBe(4);
+  });
+
+  test('going down off a file lands on the next file, not the gap', () => {
+    expect(rows[5]!.kind).toBe('blank');
+    expect(nearestStop(rows, 5, 1)).toBe(6);
+    expect(rows[6]!.kind).toBe('file-header');
+  });
+
+  test('coming back up lands on the previous file last line, not the gap', () => {
+    expect(nearestStop(rows, 5, -1)).toBe(4);
+    expect(rows[4]!.kind).toBe('diff-line');
+  });
+
+  test('falls back the other way when the preferred direction runs out', () => {
+    // A list that ends on the blank: there is nothing below it to land on.
+    const truncated = rows.slice(0, 6);
+    expect(nearestStop(truncated, 5, 1)).toBe(4);
+  });
+
+  test('gives back the index it was handed when nothing is a place', () => {
+    const allBlank: DetailRow[] = [{ kind: 'blank', unit: 0, path: 'a.ts' }];
+    expect(nearestStop(allBlank, 0, 1)).toBe(0);
+    expect(nearestStop([], 3, 1)).toBe(3);
   });
 });
 
