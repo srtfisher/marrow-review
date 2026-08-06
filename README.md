@@ -132,8 +132,7 @@ marrow --dry-run 42         # print the abridged diff, submit nothing
 marrow draws before it fetches: the screen is up with the wordmark, the repository, and a
 spinner while GitHub answers, and a failed fetch lands in that same frame with
 `r retry · q quit` rather than as an error under your prompt. Given a pull request up
-front, that same frame shows the loading steps instead, and the picker does not appear
-until you leave the review.
+front, that same frame shows the loading steps instead.
 
 Run it from inside a clone. marrow fetches the pull request's head commit into a detached
 git worktree so the agent can read whole files and find call sites, not just the diff. No

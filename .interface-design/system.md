@@ -305,6 +305,16 @@ and proportion* is retired, the detail pane is always the full width, and the si
 kept as a line down an empty column. The two horizontal rules stay, and the top one is now
 the chrome row's.
 
+One consequence is edited rather than annotated, and says so here so the method holds:
+*history is annotated, not silently replaced.* The **drawn wordmark** note under *Tokens*
+described the glyph's home as the welcome panel and its drop rule as "the first thing
+dropped when the pane is short", and named the three questions that panel answered. There
+is no panel and no pane, so a reader following that note lands nowhere — a pointer, unlike
+a decision, is worth less annotated than corrected. It now names the launch frame and the
+top of the picker, and the same reasoning survives verbatim: the wordmark takes `primary`
+rather than the cyan `structure` token, and it is still the first thing dropped when the
+screen is short. The paragraph it replaced is in the history of this file.
+
 **The picker is search-first: typing is the interface.** There is no non-searching state
 to open a search from, so `/` goes, and the bindings that remain are the ones a live input
 leaves free — `↑`/`↓` (with `ctrl-p`/`ctrl-n`), `⏎`, `⇥` to cycle open / needs my review /
@@ -346,10 +356,15 @@ what broke where they are looking. The frame carries no chrome row, because it i
 brand moment and a header reading `marrow` above a banner reading `marrow` is the same
 word twice.
 
-**One `primary` per screen, even when the primary is the wordmark.** `marrow 42` skips the
-list and hosts the loading steps in the launch frame, and there the `Loading #42` line is
-what the reviewer is watching — so the wordmark steps down to `secondary` rather than
-competing with it. The banner is subject to the same discipline in the picker: it docks at
+**One `primary` per screen, even when the primary is the wordmark.** Given a pull request
+up front, the launch frame's body is the loading steps rather than a spinner, and there the
+`Loading #42` line is what the reviewer is watching — so the wordmark steps down to
+`secondary` rather than competing with it. The steps have two homes: opening a pull request
+from the list keeps them in the entry region, where the reviewer already is, and a direct
+open moves there too the moment the list lands behind it. Whichever frame hosts them, they
+are what the eye should go to.
+
+The banner is subject to the same discipline in the picker: it docks at
 the top, and drops as a whole block — never clipped mid-glyph — as soon as fewer than
 three entries would fit beside it. Three rows of decoration are affordable exactly while
 the list is still the point.
