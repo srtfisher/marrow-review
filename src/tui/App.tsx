@@ -995,6 +995,11 @@ export function App(props: AppProps) {
                 stagedCount={staged.length}
                 model={props.model}
                 worktreeOk={props.worktreeOk}
+                findingsStatus={findingsStatus}
+                // The shown findings, not every one held: `v` hides refuted
+                // ones, and a count that outran what `n` walks through is a
+                // count the reviewer cannot reconcile with the diff.
+                findingCount={shownFindings.length}
               />
               {notes}
             </>
@@ -1034,7 +1039,9 @@ export function App(props: AppProps) {
           // sit in the header; what was missing was any way to learn the keys
           // without going looking for them.
           <HintBar
-            hints={reviewing ? detailHints(detailRowList[cursor], fullDiff) : listHints()}
+            hints={reviewing
+              ? detailHints(detailRowList[cursor], fullDiff, shownFindings.length)
+              : listHints()}
             width={Math.max(1, columns - 2)}
             stagedCount={staged.length}
           />

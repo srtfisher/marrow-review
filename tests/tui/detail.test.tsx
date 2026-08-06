@@ -32,6 +32,7 @@ const meatFile: MeatFile = {
 const meat: MeatResult = {
   summary: 'Adds a constant.', files: [meatFile],
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 2,
+  keptAdditions: 1, keptDeletions: 0, totalAdditions: 2, totalDeletions: 0,
   unclassified: 0,
 };
 
@@ -66,6 +67,36 @@ describe('Detail', () => {
     const out = render();
     expect(out).toContain('Adds a constant.');
     expect(out).toContain('kept 1/2');
+  });
+
+  test('states the size of the view you are in, and changes it when d toggles', () => {
+    const sized: MeatResult = {
+      ...meat,
+      keptLines: 4, keptAdditions: 3, keptDeletions: 1,
+      totalLines: 14, totalAdditions: 9, totalDeletions: 5,
+    };
+
+    // The point of showing these at all: on a diff nothing was cut from, the
+    // label was the only thing `d` changed, which reads as a broken key.
+    expect(render({ meat: sized })).toContain('+3 −1');
+    expect(render({ meat: sized, fullDiff: true })).toContain('+9 −5');
+  });
+
+  // Three of these used to render identically — a pass that returned nothing
+  // looked exactly like a pass that never ran, which is how a reviewer decides
+  // the model is broken on a pull request that simply has no bugs.
+  test('tells the four findings states apart', () => {
+    expect(render({ findingsStatus: 'running' })).toContain('findings…');
+    expect(render({ findingsStatus: 'ok', findingCount: 3 })).toContain('3 findings');
+    expect(render({ findingsStatus: 'ok', findingCount: 1 })).toContain('1 finding');
+    expect(render({ findingsStatus: 'ok', findingCount: 0 })).toContain('no findings');
+    expect(render({ findingsStatus: 'idle' })).not.toContain('finding');
+  });
+
+  // The red banner above the pane already says this one, and saying it twice
+  // reads as two different problems.
+  test('says nothing about findings when the pass failed', () => {
+    expect(render({ findingsStatus: 'failed' })).not.toContain('findings');
   });
 
   test('surfaces a failing check', () => {

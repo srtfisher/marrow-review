@@ -226,6 +226,7 @@ const meatFile: MeatFile = {
 const meat: MeatResult = {
   summary: 'Caches the lookup.', files: [meatFile],
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 1,
+  keptAdditions: 1, keptDeletions: 0, totalAdditions: 2, totalDeletions: 0,
   unclassified: 0,
 };
 
@@ -255,6 +256,31 @@ describe('App findings', () => {
 
     await app.press('n');
     expect(app.frame()).toContain('Unbounded cache');
+  });
+
+  test('the header counts the findings the pass produced', async () => {
+    const app = mount({ pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree' });
+    await delay(80);
+    expect(app.frame()).toContain('1 finding');
+  });
+
+  test('the header says so when the pass produced none', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [] } });
+    const app = mount({ pr: detail, meat, transport, cwd: '/tmp/worktree' });
+    await delay(80);
+
+    // The state that used to be silent, and so was indistinguishable from the
+    // pass never having run at all.
+    expect(app.frame()).toContain('no findings');
+  });
+
+  test('the hint bar offers the way to a finding once one exists', async () => {
+    const app = mount({ pr: detail, meat, transport: findingTransport(), cwd: '/tmp/worktree' });
+    expect(app.frame()).not.toMatch(/n\s+(next )?finding/);
+
+    await delay(80);
+    expect(app.frame()).toMatch(/n\s+(next )?finding/);
   });
 
   test('the agent reads the worktree, not the reviewer own checkout', async () => {
@@ -467,6 +493,7 @@ const secondFile: MeatFile = {
 const twoFileMeat: MeatResult = {
   summary: 'Caches the lookup.', files: [meatFile, secondFile],
   keptLines: 2, totalLines: 4, keptFiles: 2, totalFiles: 2,
+  keptAdditions: 2, keptDeletions: 0, totalAdditions: 4, totalDeletions: 0,
   unclassified: 0,
 };
 
@@ -629,6 +656,7 @@ describe('the app fits the terminal it was given', () => {
       })),
     }],
     keptLines: 144, totalLines: 144, keptFiles: 1, totalFiles: 1,
+    keptAdditions: 144, keptDeletions: 0, totalAdditions: 144, totalDeletions: 0,
     unclassified: 0,
   };
 
@@ -884,6 +912,7 @@ describe('reviewing a large diff', () => {
       },
     ],
     keptLines: 202, totalLines: 204, keptFiles: 3, totalFiles: 3,
+    keptAdditions: 202, keptDeletions: 0, totalAdditions: 204, totalDeletions: 0,
     unclassified: 0,
   };
 
@@ -1069,6 +1098,7 @@ describe('the mouse', () => {
       }],
     }],
     keptLines: 40, totalLines: 40, keptFiles: 1, totalFiles: 1,
+    keptAdditions: 40, keptDeletions: 0, totalAdditions: 40, totalDeletions: 0,
     unclassified: 0,
   };
 

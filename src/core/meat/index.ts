@@ -29,6 +29,14 @@ export interface MeatResult {
   files: MeatFile[];
   keptLines: number;
   totalLines: number;
+  /**
+   * The same two totals split by direction, so the header can say `+98 −26`
+   * beside them. Each pair sums to its total — see `changedLineCounts`.
+   */
+  keptAdditions: number;
+  keptDeletions: number;
+  totalAdditions: number;
+  totalDeletions: number;
   keptFiles: number;
   totalFiles: number;
   /**
@@ -53,8 +61,26 @@ export interface ComputeMeatOptions {
   prBody: string;
 }
 
+/**
+ * Additions and deletions in a hunk, counted separately.
+ *
+ * The single place that decides what "a changed line" is. `changedLineCount` is
+ * the sum of these rather than its own filter, so the split shown in the header
+ * can never disagree with the total shown beside it.
+ */
+export function changedLineCounts(hunk: Hunk): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of hunk.lines) {
+    if (line.kind === 'add') additions += 1;
+    else if (line.kind === 'del') deletions += 1;
+  }
+  return { additions, deletions };
+}
+
 function changedLineCount(hunk: Hunk): number {
-  return hunk.lines.filter((l) => l.kind !== 'context').length;
+  const { additions, deletions } = changedLineCounts(hunk);
+  return additions + deletions;
 }
 
 export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult> {
@@ -150,17 +176,26 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
 
   let keptLines = 0;
   let totalLines = 0;
+  let keptAdditions = 0;
+  let keptDeletions = 0;
+  let totalAdditions = 0;
+  let totalDeletions = 0;
   let keptFiles = 0;
   let unclassified = 0;
 
   for (const meatFile of staged) {
     let fileKept = 0;
     for (const h of meatFile.hunks) {
-      const count = changedLineCount(h.hunk);
+      const { additions, deletions } = changedLineCounts(h.hunk);
+      const count = additions + deletions;
       totalLines += count;
+      totalAdditions += additions;
+      totalDeletions += deletions;
       if (h.source === 'fallback') unclassified += 1;
       if (h.keep) {
         keptLines += count;
+        keptAdditions += additions;
+        keptDeletions += deletions;
         fileKept += count;
       }
     }
@@ -172,6 +207,10 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
     files: staged,
     keptLines,
     totalLines,
+    keptAdditions,
+    keptDeletions,
+    totalAdditions,
+    totalDeletions,
     keptFiles,
     totalFiles: staged.length,
     unclassified,

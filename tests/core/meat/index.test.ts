@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { computeMeat } from '../../../src/core/meat/index.js';
+import { changedLineCounts, computeMeat } from '../../../src/core/meat/index.js';
 import { MemoryVerdictCache, hunkKey } from '../../../src/core/meat/cache.js';
 import { FakeTransport } from '../../../src/core/agent/fake.js';
 import type { AgentRun, AgentTransport } from '../../../src/core/agent/types.js';
@@ -194,4 +194,48 @@ test('a transport failure leaves the cache untouched', async () => {
   });
 
   expect(await cache.get(hunkKey('src/app.ts', app.hunks[0]!))).toBeNull();
+});
+
+test('changedLineCounts splits a hunk into additions and deletions', () => {
+  const [file] = parseUnifiedDiff(`diff --git a/a.ts b/a.ts
+index 1..2 100644
+--- a/a.ts
++++ b/a.ts
+@@ -1,3 +1,4 @@
+ unchanged
+-gone
++new
++also new
+`);
+
+  // Context lines are neither, which is the same rule the kept/total line
+  // counters have always used.
+  expect(changedLineCounts(file!.hunks[0]!)).toEqual({ additions: 2, deletions: 1 });
+});
+
+test('splits the kept and total counters into additions and deletions', async () => {
+  const files = parseUnifiedDiff(DIFF);
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 's', verdicts: [] } });
+
+  const result = await computeMeat({
+    files,
+    ruleContext: { generatedPaths: new Set() },
+    transport,
+    cache: new MemoryVerdictCache(),
+    model: 'sonnet',
+    prTitle: 'T',
+    prBody: '',
+  });
+
+  // Three hunks of one replacement each; one of them survives.
+  expect(result.totalAdditions).toBe(3);
+  expect(result.totalDeletions).toBe(3);
+  expect(result.keptAdditions).toBe(1);
+  expect(result.keptDeletions).toBe(1);
+
+  // The invariant the header depends on: the split beside a total must add up
+  // to it, or the gauge row states two different sizes for the same diff.
+  expect(result.totalAdditions + result.totalDeletions).toBe(result.totalLines);
+  expect(result.keptAdditions + result.keptDeletions).toBe(result.keptLines);
 });

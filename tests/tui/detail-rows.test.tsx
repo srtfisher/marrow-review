@@ -43,6 +43,7 @@ function bigMeat(files = 5, hunks = 4, lines = 12): MeatResult {
   return {
     summary: 'A large change.', files: meatFiles,
     keptLines: files * hunks * lines, totalLines: files * hunks * lines,
+    keptAdditions: files * hunks * lines, keptDeletions: 0, totalAdditions: files * hunks * lines, totalDeletions: 0,
     keptFiles: files, totalFiles: files,
     unclassified: 0,
   };

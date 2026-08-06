@@ -9,6 +9,13 @@ import { theme } from '../theme.js';
 import { meatGauge } from '../gauge.js';
 import { layoutFileIndex, fileIndexRows, type FileIndexEntry } from '../fileindex.js';
 
+/**
+ * Where the model pass got to. `ok` and `failed` are distinct on purpose: the
+ * pass returns nothing both when it found nothing and when it never ran, and
+ * those are not the same news.
+ */
+export type FindingsStatus = 'idle' | 'running' | 'ok' | 'failed';
+
 export interface DetailProps {
   pr: PullRequestDetail;
   meat: MeatResult;
@@ -25,6 +32,9 @@ export interface DetailProps {
   reviewed: ReadonlySet<string>;
   /** Unsubmitted comments, shown here as well as in the hint bar. */
   stagedCount?: number;
+  findingsStatus?: FindingsStatus;
+  /** Findings actually on screen, so the number matches what `n` walks. */
+  findingCount?: number;
   model: string;
   /**
    * False means no worktree, so the model reasoned from the diff alone. Stated,
@@ -149,6 +159,31 @@ function renderFindingRow(row: Extract<DetailRow, { kind: 'finding' }>, selected
   );
 }
 
+/**
+ * The findings segment of the meta row.
+ *
+ * `failed` renders nothing because the red banner under the pane already says
+ * it, and the same problem stated twice reads as two problems. `idle` renders
+ * nothing because there is not yet anything to report. Everything else is
+ * stated out loud — including zero, which is the case that used to be silent.
+ */
+function findingsNote(status: FindingsStatus, count: number): ReactNode {
+  if (status === 'running') return <Text {...theme.tier.muted}>{' · findings…'}</Text>;
+  if (status !== 'ok') return null;
+  if (count === 0) return <Text {...theme.tier.muted}>{' · no findings'}</Text>;
+
+  return (
+    <>
+      <Text {...theme.tier.muted}>{' · '}</Text>
+      {/* `agent` magenta and not dim: a count of what the model produced is
+          model-authored content, not chrome. */}
+      <Text color={theme.color.agent} dimColor={false}>
+        {`${count} finding${count === 1 ? '' : 's'}`}
+      </Text>
+    </>
+  );
+}
+
 function indexEntries(meat: MeatResult, currentPath: string | null, reviewed: ReadonlySet<string>): FileIndexEntry[] {
   return meat.files.map((f) => ({
     path: f.file.path,
@@ -176,7 +211,7 @@ export function detailHeaderRows(
 
 export function Detail({
   pr, meat, rows, cursor, scrollTop, height, width, checks, fullDiff, reviewed,
-  stagedCount = 0, model, worktreeOk,
+  stagedCount = 0, model, worktreeOk, findingsStatus = 'idle', findingCount = 0,
 }: DetailProps) {
   const failing = checks.filter((c) => c.conclusion === 'failure');
   const currentPath = rows[cursor]?.path ?? null;
@@ -192,6 +227,7 @@ export function Detail({
       <Text {...theme.tier.muted} wrap="truncate">
         {`#${pr.number} · ${pr.author} · ${pr.baseRef} ← ${pr.headRef} · ${model}`}
         {!worktreeOk && ' · diff-only'}
+        {findingsNote(findingsStatus, findingCount)}
         {/* Unsubmitted work nags in both places it can be seen from. */}
         {stagedCount > 0 && (
           <Text color={theme.color.pending}>{`  ${theme.glyph.staged} ${stagedCount} staged`}</Text>
@@ -215,6 +251,15 @@ export function Detail({
         <Text {...theme.tier.muted}>{'  kept '}</Text>
         {meat.keptLines}
         <Text {...theme.tier.muted}>{`/${meat.totalLines} lines · `}</Text>
+        {/* The size of the view you are actually in, so `d` visibly does
+            something on a diff nothing was cut from — where the label used to
+            be the only thing that changed. Same two tokens as every diff line
+            below, carrying the same meaning. */}
+        <Text color={theme.color.add}>{`+${fullDiff ? meat.totalAdditions : meat.keptAdditions}`}</Text>
+        {' '}
+        {/* U+2212, not a hyphen: it matches the `+` in width and weight. */}
+        <Text color={theme.color.del}>{`−${fullDiff ? meat.totalDeletions : meat.keptDeletions}`}</Text>
+        <Text {...theme.tier.muted}>{' · '}</Text>
         {meat.keptFiles}
         <Text {...theme.tier.muted}>{`/${meat.totalFiles} files · `}</Text>
         {/* Which view you are in, always stated. `d` toggling between two views

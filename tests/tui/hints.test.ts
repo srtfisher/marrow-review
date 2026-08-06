@@ -23,6 +23,7 @@ const meat: MeatResult = {
     }],
   }],
   keptLines: 1, totalLines: 1, keptFiles: 1, totalFiles: 1,
+  keptAdditions: 1, keptDeletions: 0, totalAdditions: 1, totalDeletions: 0,
   unclassified: 0,
 };
 
@@ -68,6 +69,22 @@ describe('detailHints', () => {
     }
   });
 
+  test('offers the way to a finding once there is one to go to', () => {
+    const diffRow = rows.find((r) => r.kind === 'diff-line');
+    expect(detailHints(diffRow, false, 3).map((h) => h.keys)).toContain('n');
+  });
+
+  test('says nothing about findings when there are none', () => {
+    const diffRow = rows.find((r) => r.kind === 'diff-line');
+    expect(detailHints(diffRow, false, 0).map((h) => h.keys)).not.toContain('n');
+  });
+
+  test('drops `n` when the cursor is already on a finding', () => {
+    // The decision in front of you outranks getting to the next one.
+    const findingRow = rows.find((r) => r.kind === 'finding');
+    expect(detailHints(findingRow, false, 3).map((h) => h.keys)).not.toContain('n');
+  });
+
   test('names the view it would switch to, not the one you are in', () => {
     expect(detailHints(rows[0], false).find((h) => h.keys === 'd')?.label).toBe('full diff');
     expect(detailHints(rows[0], true).find((h) => h.keys === 'd')?.label).toBe('meat only');
@@ -103,10 +120,13 @@ describe('fitHints', () => {
     expect(fitted.find((h) => h.keys === ']')?.label).toBe('file');
   });
 
-  test('drops `d` before `!`, because losing approve costs more', () => {
+  // Reversed from what this used to assert. `d` is how a reviewer learns the
+  // diff in front of them is abridged at all; `!` is documented in help and on
+  // the submit screen, so losing it costs a keystroke, not the knowledge.
+  test('keeps `d` longer than the keys that are discoverable elsewhere', () => {
     const fitted = fitHints(hints, 80).map((h) => h.keys);
-    expect(fitted).toContain('!');
-    expect(fitted).not.toContain('d');
+    expect(fitted).toContain('d');
+    expect(fitted).not.toContain('m');
   });
 
   test('an empty bar stays empty', () => {

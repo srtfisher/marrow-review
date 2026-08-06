@@ -65,7 +65,11 @@ export function listHints(): Hint[] {
   ];
 }
 
-export function detailHints(row: DetailRow | undefined, fullDiff: boolean): Hint[] {
+export function detailHints(
+  row: DetailRow | undefined,
+  fullDiff: boolean,
+  findingCount = 0,
+): Hint[] {
   const hints: Hint[] = [{ keys: '↑↓', label: 'move' }];
 
   if (row?.kind === 'finding') {
@@ -83,16 +87,24 @@ export function detailHints(row: DetailRow | undefined, fullDiff: boolean): Hint
       { keys: 'C', label: 'comment on this line', short: 'comment' },
       { keys: 'S', label: 'suggest' },
     );
+
+    // Only worth offering when there is somewhere to go, and only away from a
+    // finding — with the cursor already on one, the decision in front of the
+    // reviewer outranks getting to the next one. `p` is not given its own hint:
+    // it is `n` inverted, help documents it, and this bar earns its keep by
+    // being short enough to read.
+    if (findingCount > 0) hints.push({ keys: 'n', label: 'next finding', short: 'finding' });
   }
 
   // Ordered so that what degrades away first matters least: `fitHints` drops
-  // from the back, and losing `d` costs a view toggle while losing `!` would
-  // cost the reviewer the only visible way to approve.
+  // from the back. `d` sits ahead of the rest because it is how a reviewer
+  // learns the diff in front of them is abridged at all — losing that is worse
+  // than losing `!`, which help and the submit screen both still name.
   hints.push(
-    { keys: ']', label: 'next file', short: 'file' },
-    { keys: '!', label: 'approve / request changes', short: 'approve' },
-    { keys: 'm', label: 'mark reviewed', short: 'reviewed' },
     { keys: 'd', label: fullDiff ? 'meat only' : 'full diff', short: fullDiff ? 'meat' : 'full' },
+    { keys: '!', label: 'approve / request changes', short: 'approve' },
+    { keys: ']', label: 'next file', short: 'file' },
+    { keys: 'm', label: 'mark reviewed', short: 'reviewed' },
     { keys: '?', label: 'all keys', short: 'keys' },
   );
 
