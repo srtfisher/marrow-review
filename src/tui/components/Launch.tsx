@@ -19,7 +19,11 @@ export interface LaunchProps {
   now?: number;
 }
 
-/** Wordmark + tagline + blank + repo + blank + at least four body rows. */
+/**
+ * Three wordmark rows, tagline, two blanks, repo line, and enough left over
+ * for the tallest body (the steps list, which runs to several rows) to sit
+ * without the frame overflowing its own height.
+ */
 const FULL_ROWS = 14;
 
 /**
@@ -30,6 +34,11 @@ const FULL_ROWS = 14;
  */
 export function Launch({ repoLabel, width, height, body, now }: LaunchProps) {
   const art = height >= FULL_ROWS;
+  // Exactly one `tier.primary` per screen (.interface-design/system.md). Once
+  // steps are hosted, LoadingSteps' own "Loading #N" line is the focal
+  // element, so the wordmark steps down to secondary rather than competing
+  // with it for the reviewer's eye.
+  const wordmarkTier = body.kind === 'steps' ? theme.tier.secondary : theme.tier.primary;
 
   return (
     <Box
@@ -41,10 +50,10 @@ export function Launch({ repoLabel, width, height, body, now }: LaunchProps) {
     >
       {art ? (
         WORDMARK.map((line, i) => (
-          <Text key={i} {...theme.tier.primary} wrap="truncate">{line}</Text>
+          <Text key={i} {...wordmarkTier} wrap="truncate">{line}</Text>
         ))
       ) : (
-        <Text {...theme.tier.primary}>marrow</Text>
+        <Text {...wordmarkTier}>marrow</Text>
       )}
       {art && <Text {...theme.tier.tertiary} wrap="truncate">{TAGLINE}</Text>}
       <Text> </Text>

@@ -39,6 +39,24 @@ describe('Launch', () => {
     expect(out).toContain('Loading #42');
   });
 
+  // Covers the branch that steps down the wordmark's tier once the steps body
+  // is hosted, so the loading progress stays the one bold element on screen.
+  // renderToString runs without a TTY in this harness and emits no ANSI at
+  // all (checked directly: no `bold`/`dim` escape codes appear for any tier),
+  // so boldness itself isn't assertable here — this only proves the branch
+  // still renders both the wordmark and the steps body together.
+  test('hosting steps still draws the wordmark alongside the loading progress', () => {
+    const progress = { prNumber: 42, steps: startStep(loadSteps(), STEP.pull, 0) };
+    const out = renderToString(
+      <Launch
+        repoLabel="octocat/webapp" width={80} height={24}
+        body={{ kind: 'steps', progress }} now={0}
+      />,
+    );
+    expect(out).toContain('█▄ ▄█');
+    expect(out).toContain('Loading #42');
+  });
+
   test('a short terminal types the wordmark instead of drawing it', () => {
     const out = renderToString(
       <Launch
