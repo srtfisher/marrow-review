@@ -128,7 +128,7 @@ describe('Help', () => {
     ).replaceAll(/\x1b\[[0-9;]*m/g, '');
     // The window stops with the last row at the bottom, never on empty space.
     expect(out).toContain('close this overlay');
-    expect(out).toMatch(/(\d+)–41 of 41/);
+    expect(out).toMatch(/(\d+)–44 of 44/);
   });
 
   // Roomy columns beat cramped ones whenever the roomy ones already fit. A
@@ -298,8 +298,11 @@ describe('App', () => {
     expect(out).toContain('Fix rendering');
     expect(out).toContain('marrow');
     expect(out).toContain('2 open');
-    expect(out).toContain('review');
-    expect(out).toContain('all keys');
+    // The picker's bar, which is its complete key list — `?` is absent because
+    // in a mode where typing filters there is no key spare to ask for help.
+    expect(out).toContain('review this one');
+    expect(out).toContain('ctrl-r refresh');
+    expect(out).toContain('esc quit');
   });
 
   // A status note is something the app has to say right now; the welcome

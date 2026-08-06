@@ -39,6 +39,7 @@ import {
 } from './mouse.js';
 import { planFileIndex } from './fileindex.js';
 import { resolveAction, type Mode } from './keymap.js';
+import { nextFilter } from './picker.js';
 import type { LoadProgress } from './progress.js';
 import { filterPrs } from './search.js';
 import { ChatPane } from './components/ChatPane.js';
@@ -50,7 +51,7 @@ import {
   PrList, ROWS_PER_ENTRY, headerRows as listHeaderRows, visibleEntryCount,
 } from './components/PrList.js';
 import { HintBar } from './components/HintBar.js';
-import { detailHints, listHints } from './hints.js';
+import { detailHints, pickerHints } from './hints.js';
 import { SubmitScreen } from './components/SubmitScreen.js';
 import { Welcome } from './components/Welcome.js';
 import { theme } from './theme.js';
@@ -240,9 +241,9 @@ export function App(props: AppProps) {
   const { stdout } = useStdout();
   const { columns, rows } = useWindowSize();
 
-  const [mode, setMode] = useState<Mode>(props.pr ? 'detail' : 'list');
+  const [mode, setMode] = useState<Mode>(props.pr ? 'detail' : 'picker');
   /** Where esc returns to from an overlay, so help never strands you. */
-  const [underlay, setUnderlay] = useState<Mode>('list');
+  const [underlay, setUnderlay] = useState<Mode>('picker');
   const [listCursor, setListCursor] = useState(0);
   const [listScroll, setListScroll] = useState(0);
   /** A ROW index. The cursor addresses the line the reviewer is looking at,
@@ -335,13 +336,21 @@ export function App(props: AppProps) {
   // truncated every one of them to `#546 feat(packages): resolv…`.
   //
   // Keyed on the mode, not merely on a pull request being loaded. `esc` from
-  // the diff sets the mode back to `list` without unloading it, so keying on
+  // the diff sets the mode back to `picker` without unloading it, so keying on
   // the pull request alone left the sidebar hidden and `esc` looking dead.
   //
   // These sit above the row list because the pane's width decides where a
   // comment body wraps, and wrapping happens when the rows are built.
-  const browsing = mode === 'list' || mode === 'search';
+  const browsing = mode === 'picker';
   const reviewing = props.pr !== null && props.meat !== null && !browsing;
+  /**
+   * The review still loaded behind the picker, by number, or null.
+   *
+   * That a diff is warm changes what two keys mean — esc goes back to it rather
+   * than quitting, and enter on it switches modes rather than refetching — and
+   * the hint bar names it. One derived value, so the three cannot disagree.
+   */
+  const warmPr = props.pr !== null && props.meat !== null ? props.pr.number : null;
   const detailWidth = Math.max(
     1,
     columns - (reviewing ? 2 : theme.layout.sidebarWidth + 3),
@@ -381,14 +390,10 @@ export function App(props: AppProps) {
 
   // One row for the horizontal rule, one for the status line.
   const bodyHeight = Math.max(1, rows - 2);
-  // While reviewing, the sidebar goes away and the diff owns the terminal: on a
-  // 17-file monorepo change the paths are the content, and a 32-column column
-  // truncated every one of them to `#546 feat(packages): resolv…`.
-  //
-  // Keyed on the mode, not merely on a pull request being loaded. `esc` from
-  // the diff sets the mode back to `list` without unloading it, so keying on
-  // the pull request alone left the sidebar hidden and `esc` looking dead.
-  const listRows = visibleEntryCount(bodyHeight, mode === 'search');
+  // Keyed on there being a query rather than on a mode: the query line is what
+  // costs the row, and scrolling has to spend the same budget the pane renders
+  // with or the cursor leaves the window.
+  const listRows = visibleEntryCount(bodyHeight, query.length > 0);
   // Notes render under the detail pane, so the pane's budget pays for them —
   // otherwise adding one pushes the status bar off the bottom again. Scrolling
   // and rendering must agree on this number or the cursor leaves the window.
@@ -578,7 +583,7 @@ export function App(props: AppProps) {
   /** Half a page of rows — the cursor and the budget are the same unit now. */
   function halfPage(dir: -1 | 1) {
     if (mode === 'help') return moveHelp(dir * Math.max(1, Math.floor(helpBodyRows(rows) / 2)));
-    if (mode === 'list') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
+    if (mode === 'picker') return moveList(prCursor + dir * Math.floor(bodyHeight / 2));
     return moveRows(cursor + dir * Math.max(1, Math.floor(detailRows / 2)));
   }
 
@@ -593,7 +598,7 @@ export function App(props: AppProps) {
   }
 
   function move(next: number) {
-    if (mode === 'list') moveList(next);
+    if (mode === 'picker') moveList(next);
     else moveRows(next);
   }
 
@@ -857,7 +862,7 @@ export function App(props: AppProps) {
   function handleMouse(report: NonNullable<ReturnType<typeof parseMouse>>): boolean {
     const wheel = report.action === 'wheel-up' ? -1 : 1;
 
-    if (mode === 'list' || mode === 'search') {
+    if (mode === 'picker') {
       // One entry per notch, not three rows: entries are three rows tall, and a
       // list of a dozen pull requests is chosen from, not scrolled through.
       if (report.action === 'wheel-up' || report.action === 'wheel-down') {
@@ -867,7 +872,7 @@ export function App(props: AppProps) {
       if (report.action !== 'press' || report.button !== 'left') return true;
 
       const hit = hitList({
-        top: listHeaderRows(mode === 'search'),
+        top: listHeaderRows(query.length > 0),
         rowsPerEntry: ROWS_PER_ENTRY,
         visibleEntries: listRows,
         scrollTop: listScroll,
@@ -1009,13 +1014,29 @@ export function App(props: AppProps) {
       return;
     }
 
-    if (mode === 'search') {
+    // The picker is search-first: it owns every printable key, so its bindings
+    // are resolved here rather than in the keymap, which would have to be told
+    // that `q` is a letter in this one mode. Escape unwinds one layer at a time
+    // — the query, then the review behind it, then the program.
+    if (mode === 'picker') {
       if (key.escape) {
-        applyQuery('');
-        setMode('list');
-        return;
+        if (query.length > 0) return applyQuery('');
+        if (warmPr !== null) return setMode('detail');
+        if (hasUnsubmittedWork) return setConfirmQuit(true);
+        return exit();
       }
-      if (key.return) return setMode('list');
+      if (key.return) {
+        const selected = visiblePrs[prCursor];
+        if (!selected) return;
+        // Returning to the warm review is a mode switch, not a reload: openPr
+        // would refetch, re-run the meat pass, and lose the reviewer's place.
+        if (selected.number === warmPr) return setMode('detail');
+        return props.onOpenPr(selected.number);
+      }
+      if (key.upArrow || (key.ctrl && input === 'p')) return moveList(prCursor - 1);
+      if (key.downArrow || (key.ctrl && input === 'n')) return moveList(prCursor + 1);
+      if (key.tab) return props.onFilter?.(nextFilter(props.filter));
+      if (key.ctrl && input === 'r') return props.onRefresh?.();
       if (key.backspace || key.delete) return applyQuery(query.slice(0, -1));
       if (key.ctrl || key.meta || input.length === 0) return;
       return applyQuery(query + input);
@@ -1041,7 +1062,10 @@ export function App(props: AppProps) {
     switch (action.type) {
       case 'move':
         if (mode === 'help') return moveHelp(action.delta);
-        return move((mode === 'list' ? prCursor : cursor) + action.delta);
+        // `browsing`, not `mode === 'picker'`: the picker handler returns before
+        // the keymap is consulted, so the compiler knows the mode is `detail`
+        // here and rejects the comparison outright.
+        return move((browsing ? prCursor : cursor) + action.delta);
       case 'half-page':
         return halfPage(action.dir);
       case 'file':
@@ -1069,11 +1093,6 @@ export function App(props: AppProps) {
         return setShowRefuted((v) => !v);
       case 'chat':
         return openChat();
-      case 'open': {
-        const selected = visiblePrs[prCursor];
-        if (selected) props.onOpenPr(selected.number);
-        return;
-      }
       case 'toggle-fold': {
         const path = currentPath();
         if (path) setFolded((s) => toggleIn(s, path));
@@ -1133,15 +1152,11 @@ export function App(props: AppProps) {
         if (anchor && props.pr) props.onOpenUrl?.(hunkUrl(props.repoLabel, props.pr.number, anchor));
         return;
       }
-      case 'filter':
-        return props.onFilter?.(action.filter);
       case 'refresh':
         // In the detail pane `R` is also how a failed model pass is retried;
         // the reviewer should not have to close and reopen the pull request.
         if (mode === 'detail') setFindingsAttempt((n) => n + 1);
         return props.onRefresh?.();
-      case 'search':
-        return enterOverlay('search');
       case 'submit-screen':
         if (props.pr && props.meat) enterOverlay('submit');
         return;
@@ -1153,8 +1168,7 @@ export function App(props: AppProps) {
         // first: esc that left the diff while lines were still highlighted read
         // as the key having skipped a step.
         if (selectAnchor !== null) return setSelectAnchor(null);
-        if (mode === 'detail') return setMode('list');
-        if (query.length > 0) return applyQuery('');
+        if (mode === 'detail') return setMode('picker');
         return;
       case 'quit':
         if (hasUnsubmittedWork) return setConfirmQuit(true);
@@ -1222,13 +1236,13 @@ export function App(props: AppProps) {
           <>
             <PrList
               prs={props.prs}
-              cursor={mode === 'list' || mode === 'search' ? prCursor : -1}
+              cursor={mode === 'picker' ? prCursor : -1}
               scrollTop={listScroll}
               height={bodyHeight}
               filter={props.filter}
               width={theme.layout.sidebarWidth}
               query={query}
-              searching={mode === 'search'}
+              searching={query.length > 0}
             />
             {/* The one vertical rule in the product: two panes, no boxes. Each
                 pane's own paddingX supplies the gap on either side of it. */}
@@ -1303,7 +1317,7 @@ export function App(props: AppProps) {
           <HintBar
             hints={reviewing
               ? detailHints(detailRowList[cursor], fullDiff, shownFindings.length)
-              : listHints()}
+              : pickerHints(warmPr)}
             width={Math.max(1, columns - 2)}
             stagedCount={staged.length}
           />

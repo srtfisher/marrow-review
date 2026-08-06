@@ -1,6 +1,4 @@
-import type { PullFilter } from '../core/github/types.js';
-
-export type Mode = 'list' | 'detail' | 'comment' | 'submit' | 'help' | 'search' | 'chat';
+export type Mode = 'picker' | 'detail' | 'comment' | 'submit' | 'help' | 'chat';
 
 export type Action =
   | { type: 'move'; delta: number }
@@ -13,7 +11,6 @@ export type Action =
   | { type: 'toggle-finding-suggestion' }
   | { type: 'toggle-refuted' }
   | { type: 'chat' }
-  | { type: 'open' }
   | { type: 'back' }
   | { type: 'toggle-dropped' }
   | { type: 'toggle-dropped-all' }
@@ -28,8 +25,6 @@ export type Action =
   | { type: 'edit-comment' }
   | { type: 'delete-comment' }
   | { type: 'submit-screen' }
-  | { type: 'filter'; filter: PullFilter }
-  | { type: 'search' }
   | { type: 'help' }
   | { type: 'quit' }
   | { type: 'refresh' }
@@ -73,13 +68,13 @@ export interface KeyHelpEntry {
 }
 
 export const KEY_HELP: readonly KeyHelpEntry[] = [
-  { keys: 'j / k', description: 'move down / up', modes: ['list', 'detail'], group: 'move' },
+  { keys: 'j / k', description: 'move down / up', modes: ['detail'], group: 'move' },
   { keys: 'ctrl-d / ctrl-u', description: 'half page down / up', modes: ['detail'], group: 'move' },
   { keys: '] / [', description: 'next / previous file', modes: ['detail'], group: 'move' },
   { keys: 'n / p', description: 'next / previous finding', modes: ['detail'], group: 'move' },
   // The mouse is documented here for the same reason the keys are: a reviewer
   // who does not know the wheel works will not try it twice.
-  { keys: 'wheel', description: 'scroll the diff', modes: ['list', 'detail'], group: 'move' },
+  { keys: 'wheel', description: 'scroll the diff', modes: ['detail'], group: 'move' },
   { keys: 'click', description: 'put the cursor on that line, or jump to that file', modes: ['detail'], group: 'move' },
   { keys: 'drag / shift-click', description: 'select a range of lines', modes: ['detail'], group: 'move' },
   { keys: 'double-click', description: 'comment on that line', modes: ['detail'], group: 'move' },
@@ -98,20 +93,20 @@ export const KEY_HELP: readonly KeyHelpEntry[] = [
   { keys: 's', description: 'suggest a change to the line or selection', modes: ['detail'], group: 'record' },
   { keys: 'enter / x', description: 'edit / delete the comment under the cursor', modes: ['detail'], group: 'record' },
   { keys: '!', description: 'approve, request changes, or comment', modes: ['detail'], group: 'record' },
-  { keys: 'enter', description: 'open the selected pull request', modes: ['list'], group: 'list' },
-  { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'], group: 'list' },
-  { keys: '/', description: 'search by title, author, or number', modes: ['list'], group: 'list' },
-  { keys: 'R', description: 'refetch from GitHub; retry the model pass', modes: ['list', 'detail'], group: 'anywhere' },
-  { keys: '?', description: 'this help', modes: ['list', 'detail'], group: 'anywhere' },
-  { keys: 'q', description: 'quit', modes: ['list', 'detail'], group: 'anywhere' },
-  { keys: 'esc / q', description: 'close this overlay', modes: ['comment', 'submit', 'help', 'search', 'chat'], group: 'anywhere' },
+  // The picker is a filter box with a list under it, so its bindings read as
+  // one: type to narrow, then move and choose. `?` and `q` are absent on
+  // purpose — in a mode where every printable key is data, they are query text.
+  { keys: 'type', description: 'filter by title, author, or number', modes: ['picker'], group: 'list' },
+  { keys: '↑ / ↓', description: 'move · also ctrl-p / ctrl-n', modes: ['picker'], group: 'list' },
+  { keys: 'enter', description: 'review the selected pull request', modes: ['picker'], group: 'list' },
+  { keys: 'tab', description: 'filter: open / needs my review / all', modes: ['picker'], group: 'list' },
+  { keys: 'ctrl-r', description: 'refetch from GitHub', modes: ['picker'], group: 'list' },
+  { keys: 'esc', description: 'clear the query, else back to the review', modes: ['picker'], group: 'list' },
+  { keys: 'R', description: 'refetch from GitHub; retry the model pass', modes: ['detail'], group: 'anywhere' },
+  { keys: '?', description: 'this help', modes: ['detail'], group: 'anywhere' },
+  { keys: 'q', description: 'quit', modes: ['detail'], group: 'anywhere' },
+  { keys: 'esc / q', description: 'close this overlay', modes: ['comment', 'submit', 'help', 'chat'], group: 'anywhere' },
 ];
-
-const FILTERS: Record<string, PullFilter> = {
-  '1': 'open',
-  '2': 'review-requested',
-  '3': 'all',
-};
 
 /**
  * What the cursor is sitting on.
@@ -135,9 +130,10 @@ export function resolveAction(
   context: RowContext = {},
 ): Action {
   // Text-entry modes swallow everything except an explicit escape, so a stray
-  // '!' or 'q' while typing a comment — or a question for the model — can never
-  // trigger a command.
-  if (mode === 'comment' || mode === 'search' || mode === 'chat') {
+  // '!' or 'q' while typing a comment — or a question for the model, or a
+  // picker query — can never trigger a command. The picker belongs here for the
+  // same reason the composer does: every printable key it sees is data.
+  if (mode === 'comment' || mode === 'picker' || mode === 'chat') {
     return key.escape ? { type: 'back' } : null;
   }
 
@@ -174,14 +170,6 @@ export function resolveAction(
   if (input === '?') return { type: 'help' };
   if (input === 'q') return { type: 'quit' };
   if (input === 'R') return { type: 'refresh' };
-
-  if (mode === 'list') {
-    if (key.return) return { type: 'open' };
-    if (input === '/') return { type: 'search' };
-    const filter = FILTERS[input];
-    if (filter) return { type: 'filter', filter };
-    return null;
-  }
 
   // mode === 'detail'
   if (input === ']') return { type: 'file', dir: 1 };

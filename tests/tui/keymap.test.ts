@@ -76,12 +76,6 @@ describe('findings triage', () => {
     expect(resolveAction('i', noKey, 'detail')).toEqual({ type: 'chat' });
   });
 
-  test('the triage letters stay inert in list mode', () => {
-    for (const ch of 'aexsvinp') {
-      expect(resolveAction(ch, noKey, 'list')).toBeNull();
-    }
-  });
-
   // Every key in this app acts on whatever the cursor is on. `s` is that rule,
   // not an exception to it: on a finding it sends that finding as a suggestion,
   // and on a line of the diff it opens one of your own.
@@ -119,33 +113,19 @@ describe('chat mode', () => {
   });
 });
 
-describe('list mode', () => {
-  test('enter opens the selected PR', () => {
-    expect(resolveAction('', { return: true }, 'list')).toEqual({ type: 'open' });
-  });
-
-  test('digits pick a filter', () => {
-    expect(resolveAction('1', noKey, 'list')).toEqual({ type: 'filter', filter: 'open' });
-    expect(resolveAction('2', noKey, 'list')).toEqual({ type: 'filter', filter: 'review-requested' });
-    expect(resolveAction('3', noKey, 'list')).toEqual({ type: 'filter', filter: 'all' });
-  });
-
-  test('slash starts a search', () => {
-    expect(resolveAction('/', noKey, 'list')).toEqual({ type: 'search' });
-  });
-
-  test('detail-only keys do nothing in list mode', () => {
-    expect(resolveAction('z', noKey, 'list')).toBeNull();
-    expect(resolveAction('!', noKey, 'list')).toBeNull();
-  });
-});
-
-describe('search mode', () => {
+describe('picker mode', () => {
+  // The picker is a filter box: enter, the arrows, tab, and ctrl-r are resolved
+  // by the app itself, because everything else that arrives is query text. The
+  // keymap's job here is to hand back nothing at all.
   test('swallows every key except escape, so typing a query is never a command', () => {
-    expect(resolveAction('', { escape: true }, 'search')).toEqual({ type: 'back' });
-    for (const ch of 'jkq?!123/') {
-      expect(resolveAction(ch, noKey, 'search')).toBeNull();
+    expect(resolveAction('', { escape: true }, 'picker')).toEqual({ type: 'back' });
+    // Every letter that means something in the diff, the two globals that used
+    // to work from the list, and the digits and slash the old list spent on
+    // filters and search.
+    for (const ch of 'jkqR?!123/aexsvinpzZdmtoVc') {
+      expect(resolveAction(ch, noKey, 'picker')).toBeNull();
     }
+    expect(resolveAction('', { return: true }, 'picker')).toBeNull();
   });
 });
 
@@ -187,6 +167,17 @@ describe('KEY_HELP', () => {
     for (const entry of documented) {
       expect(entry.description.length).toBeGreaterThan(0);
     }
+  });
+
+  test('documents the picker as the filter box it is, not the old list', () => {
+    const keys = KEY_HELP.filter((e) => e.modes.includes('picker')).map((e) => e.keys);
+    expect(keys).toContain('type');
+    expect(keys).toContain('tab');
+    expect(keys).toContain('ctrl-r');
+    // Both are query text in the picker, so the overlay must not promise them.
+    expect(keys).not.toContain('?');
+    expect(keys).not.toContain('q');
+    expect(keys).not.toContain('1 / 2 / 3');
   });
 
   test('documents each new triage key, since the overlay is generated from it', () => {

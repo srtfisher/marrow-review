@@ -120,21 +120,18 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
   };
 }
 
+/** Arrow down. The picker has no `j` — every letter it sees is query text. */
+const DOWN = '\x1b[B';
+
 describe('App key handling', () => {
-  test('/ narrows the list live and shows the query', async () => {
+  test('typing narrows the list live and says how much of it is left', async () => {
     const app = mount();
-    await app.press('/');
     await app.press('caching');
     expect(app.frame()).toContain('Beta caching');
     expect(app.frame()).not.toContain('Alpha rendering');
-  });
-
-  test('esc during a search restores the full list', async () => {
-    const app = mount();
-    await app.press('/');
-    await app.press('caching');
-    await app.press('');
-    expect(app.frame()).toContain('Alpha rendering');
+    // The header counts what survived out of what there was, so a narrowed list
+    // cannot be mistaken for a repository with one pull request in it.
+    expect(app.frame()).toContain('1 of 3');
   });
 
   test('enter opens the pull request the filtered list is pointing at', async () => {
@@ -144,51 +141,48 @@ describe('App key handling', () => {
     // Move to the third entry, then narrow so only the second survives. The
     // cursor must follow the filtered array, not the index it held before.
     // One key per press: Ink delivers a multi-character write as one event, so
-    // `press('jj')` moved nothing and this test passed without testing.
-    await app.press('j');
-    await app.press('j');
-    await app.press('/');
+    // two arrows in one write moved nothing and this test passed without testing.
+    await app.press(DOWN);
+    await app.press(DOWN);
     await app.press('caching');
-    await app.press('\r');
     await app.press('\r');
 
     expect(opened).toEqual([42]);
   });
 
-  test('a search that matches nothing says so and opens nothing', async () => {
+  test('a query that matches nothing says so and opens nothing', async () => {
     const opened: number[] = [];
     const app = mount({ onOpenPr: (n) => opened.push(n) });
-    await app.press('/');
     await app.press('zzzz');
     expect(app.frame().toLowerCase()).toContain('no match');
 
-    // Leaving the search and pressing enter must not fall back to some stale
-    // index; with nothing matched there is nothing to open.
-    await app.press('\r');
+    // Enter must not fall back to some stale index; with nothing matched there
+    // is nothing to open.
     await app.press('\r');
     expect(opened).toEqual([]);
   });
 
-  test('? opens help listing the bindings, and esc returns to the list', async () => {
+  test('? is query text rather than the way into help', async () => {
     const app = mount();
     await app.press('?');
-    // A binding from the first group. On a thirty-row terminal the later groups
-    // sit below the fold, which is what the overlay's scrolling and its
-    // `n–m of t` counter exist for.
-    expect(app.frame()).toContain('next / previous file');
-    await app.press('');
-    expect(app.frame()).toContain('Alpha rendering');
+    // A help binding would be a key the reviewer cannot type here, so the hint
+    // bar carries the whole key list instead and `?` narrows like any letter.
+    expect(app.frame()).not.toContain('next / previous file');
+    expect(app.frame().toLowerCase()).toContain('no match');
   });
 
-  test('1/2/3 ask for a different filter', async () => {
-    const chosen: string[] = [];
-    const app = mount({ onFilter: (f) => chosen.push(f) });
-    await app.press('2');
-    await app.press('3');
-    expect(chosen).toEqual(['review-requested', 'all']);
+  test('esc exits when there is nothing behind the picker to go back to', async () => {
+    const app = mount();
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+    await app.press('\x1b');
+    await delay(40);
+    expect(exited).toBe(true);
   });
 
-  test('q exits so the terminal comes back', async () => {
+  test('q types rather than quitting, since the picker owns the letters', async () => {
     const app = mount();
     let exited = false;
     void app.instance.waitUntilExit().then(() => {
@@ -196,7 +190,88 @@ describe('App key handling', () => {
     });
     await app.press('q');
     await delay(40);
-    expect(exited).toBe(true);
+    expect(exited).toBe(false);
+    expect(app.frame().toLowerCase()).toContain('no match');
+  });
+});
+
+describe('the picker is search-first', () => {
+  test('typing narrows the list and backspace restores it', async () => {
+    const app = mount();
+    await app.press('beta');
+    expect(app.frame()).toContain('#42');
+    expect(app.frame()).not.toContain('#41');
+
+    // One backspace per press: four in a single write is a chunk Ink hands over
+    // as literal text, not four keystrokes.
+    for (let i = 0; i < 4; i += 1) await app.press('\x7f');
+    expect(app.frame()).toContain('#41');
+  });
+
+  test('digits are query text, not filter switches', async () => {
+    const chosen: string[] = [];
+    const app = mount({ onFilter: (f) => chosen.push(f) });
+    await app.press('42');
+    expect(chosen).toEqual([]);
+    expect(app.frame()).toContain('#42');
+    expect(app.frame()).not.toContain('#41');
+  });
+
+  test('tab cycles the server-side filter', async () => {
+    const chosen: string[] = [];
+    const app = mount({ onFilter: (f) => chosen.push(f) });
+    await app.press('\t');
+    expect(chosen).toEqual(['review-requested']);
+  });
+
+  test('and comes back round to open from the last of them', async () => {
+    const chosen: string[] = [];
+    const app = mount({ filter: 'all', onFilter: (f) => chosen.push(f) });
+    await app.press('\t');
+    expect(chosen).toEqual(['open']);
+  });
+
+  test('ctrl-r refetches while r merely types', async () => {
+    let refreshed = 0;
+    const app = mount({ onRefresh: () => { refreshed += 1; } });
+    await app.press('r');
+    expect(refreshed).toBe(0);
+
+    await app.press('\x12');
+    expect(refreshed).toBe(1);
+  });
+
+  test('esc clears the query before it means anything else', async () => {
+    const app = mount();
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+
+    await app.press('beta');
+    await app.press('\x1b');
+    expect(app.frame()).toContain('#41');
+    // The first esc spent itself on the query, not on the program.
+    expect(exited).toBe(false);
+  });
+
+  test('the space bar types a space, so a two-word query is possible', async () => {
+    const app = mount();
+    await app.press('beta');
+    await app.press(' ');
+    await app.press('cach');
+    expect(app.frame()).toContain('#42');
+    expect(app.frame()).not.toContain('#43');
+  });
+
+  test('ctrl-n and ctrl-p move the selection, since the arrows are a reach', async () => {
+    const opened: number[] = [];
+    const app = mount({ onOpenPr: (n) => opened.push(n) });
+    await app.press('\x0e');
+    await app.press('\x0e');
+    await app.press('\x10');
+    await app.press('\r');
+    expect(opened).toEqual([42]);
   });
 });
 
@@ -1075,13 +1150,16 @@ describe('esc comes back out of the diff', () => {
     expect(app.frame()).toContain('Gamma parsing');
   });
 
-  test('and the hint bar goes back to the list verbs', async () => {
+  test('and the hint bar goes back to the picker verbs, naming the way back in', async () => {
     const app = mount({ pr: detail, meat });
     await delay(60);
     expect(app.frame()).toContain('comment on this line');
 
     await app.press(ESC);
-    expect(app.frame()).toContain('search');
+    expect(app.frame()).toContain('filter');
+    // The review is still loaded, and esc is how you get back to it. Nothing
+    // else on screen says that, so the bar has to.
+    expect(app.frame()).toContain('back to #42');
     expect(app.frame()).not.toContain('comment on this line');
   });
 });
@@ -1304,9 +1382,15 @@ describe('the mouse', () => {
   });
 });
 
+/**
+ * Opened from the diff, which is the only place `?` is a key: in the picker
+ * every printable character is query text, so the overlay is reached from a
+ * review rather than from the list of them.
+ */
 describe('the help overlay', () => {
   test('opens grouped, and j scrolls to what did not fit', async () => {
-    const app = mount();
+    const app = mount({ pr: detail, meat });
+    await delay(60);
     await app.press('?');
     const first = app.frame();
     expect(first).toContain('move');
@@ -1321,13 +1405,15 @@ describe('the help overlay', () => {
   });
 
   test('documents the mouse, which nobody would otherwise try', async () => {
-    const app = mount();
+    const app = mount({ pr: detail, meat });
+    await delay(60);
     await app.press('?');
     expect(app.frame()).toContain('scroll the diff');
   });
 
   test('reopens at the top rather than where it was left', async () => {
-    const app = mount();
+    const app = mount({ pr: detail, meat });
+    await delay(60);
     await app.press('?');
     await app.press('j');
     await app.press('j');
@@ -1339,7 +1425,8 @@ describe('the help overlay', () => {
   });
 
   test('q closes it rather than quitting the program', async () => {
-    const app = mount();
+    const app = mount({ pr: detail, meat });
+    await delay(60);
     let exited = false;
     void app.instance.waitUntilExit().then(() => {
       exited = true;
@@ -1348,7 +1435,8 @@ describe('the help overlay', () => {
     await app.press('q');
     await delay(40);
     expect(exited).toBe(false);
-    expect(app.frame()).toContain('Alpha rendering');
+    // Back onto the diff it was opened from, not out of the program.
+    expect(app.frame()).toContain('cache.set(key, value);');
   });
 });
 

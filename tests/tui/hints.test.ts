@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { detailHints, fitHints, listHints } from '../../src/tui/hints.js';
+import { detailHints, fitHints, pickerHints } from '../../src/tui/hints.js';
 import { buildRows } from '../../src/tui/rows.js';
 import { buildUnits } from '../../src/tui/units.js';
 import { initTriage } from '../../src/core/findings/triage.js';
@@ -158,12 +158,30 @@ describe('fitHints', () => {
   });
 });
 
-describe('listHints', () => {
-  test('covers choosing, searching, filtering, and leaving', () => {
-    const keys = listHints().map((h) => h.keys);
-    expect(keys).toContain('⏎');
-    expect(keys).toContain('/');
-    expect(keys).toContain('q');
-    expect(keys.at(-1)).toBe('?');
+describe('pickerHints', () => {
+  test('covers moving, choosing, filtering, refetching, and leaving', () => {
+    const keys = pickerHints(null).map((h) => h.keys);
+    expect(keys).toEqual(['↑↓', '⏎', '⇥', 'ctrl-r', 'esc']);
+  });
+
+  // It is the whole key list rather than a shortlist, so there is nothing left
+  // for a `?` to reveal — and in a mode where typing filters, `?` is query text.
+  test('offers no way to ask for the keys, because these are all of them', () => {
+    expect(pickerHints(null).map((h) => h.keys)).not.toContain('?');
+    expect(pickerHints(7).map((h) => h.keys)).not.toContain('?');
+  });
+
+  test('esc quits when there is no review to go back to', () => {
+    expect(pickerHints(null).at(-1)).toEqual({ keys: 'esc', label: 'quit' });
+  });
+
+  test('esc names the review still loaded behind the picker', () => {
+    expect(pickerHints(42).at(-1)?.label).toBe('back to #42');
+  });
+
+  test('the way out is what survives the narrowest bar', () => {
+    for (let w = 1; w <= 80; w += 1) {
+      expect(fitHints(pickerHints(42), w).at(-1)!.keys).toBe('esc');
+    }
   });
 });

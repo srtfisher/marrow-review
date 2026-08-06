@@ -25,9 +25,10 @@ function widthOf(hints: readonly Hint[]): number {
  * that told a reviewer line-level comments exist at all, so it keeps its full
  * wording until every hint behind it has already given up its own.
  *
- * The last hint always survives: it is `?`, the way out of not knowing any of
- * the others, and plain truncation ate it first. Nothing is ever cut mid-word —
- * a bar ending in `! appro…` is worse than a bar with one hint fewer.
+ * The last hint always survives, because the bars are built to put the way out
+ * there: `?` in the diff, `esc` in the picker. Plain truncation ate it first.
+ * Nothing is ever cut mid-word — a bar ending in `! appro…` is worse than a bar
+ * with one hint fewer.
  */
 export function fitHints(hints: readonly Hint[], width: number): Hint[] {
   if (hints.length === 0) return [];
@@ -38,7 +39,7 @@ export function fitHints(hints: readonly Hint[], width: number): Hint[] {
     fitted[i]!.label = hints[i]!.short ?? hints[i]!.label;
   }
 
-  // Still over: drop whole hints from the back, keeping `?`.
+  // Still over: drop whole hints from the back, keeping the last one.
   const last = fitted[fitted.length - 1]!;
   while (fitted.length > 1 && widthOf(fitted) > width) {
     fitted.splice(fitted.length - 2, 1);
@@ -47,22 +48,30 @@ export function fitHints(hints: readonly Hint[], width: number): Hint[] {
 }
 
 /**
- * What the reviewer can do right now, in the order they are likely to want it.
+ * Every key the picker has, which is why there is no `?` on the end of it.
  *
- * Deliberately short. A bar listing twenty keys is a help screen pinned to the
- * bottom of the window, and gets read exactly as often as one — which is never.
- * Six or so verbs, changing with the cursor, is a bar people actually read.
- * `?` is always last because it is the way out of not knowing.
+ * Elsewhere this bar is a short list of the verbs that matter and `?` is the way
+ * out of not knowing the rest. Here there is no rest and no `?` to spend on one:
+ * typing filters, so a help binding would be query text. Five entries is the
+ * complete list, and `esc` is last on purpose — `fitHints` keeps the final hint
+ * under pressure, and the way out is the right survivor.
  */
-export function listHints(): Hint[] {
-  return [
+export function pickerHints(warmPrNumber: number | null): Hint[] {
+  const hints: Hint[] = [
     { keys: '↑↓', label: 'move' },
     { keys: '⏎', label: 'review this one', short: 'review' },
-    { keys: '/', label: 'search' },
-    { keys: '1 2 3', label: 'filter' },
-    { keys: 'q', label: 'quit' },
-    { keys: '?', label: 'all keys', short: 'keys' },
+    { keys: '⇥', label: 'filter' },
+    { keys: 'ctrl-r', label: 'refresh' },
   ];
+  // Naming the number is the point: with a review still loaded behind the
+  // picker, esc goes back to it rather than quitting, and nothing else on
+  // screen says so.
+  hints.push(
+    warmPrNumber === null
+      ? { keys: 'esc', label: 'quit' }
+      : { keys: 'esc', label: `back to #${warmPrNumber}`, short: 'back' },
+  );
+  return hints;
 }
 
 export function detailHints(
