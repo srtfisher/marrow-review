@@ -374,14 +374,21 @@ function seek(
 const isFileHeader = (row: DetailRow) => row.kind === 'file-header';
 const isFindingTitle = (row: DetailRow) => row.kind === 'finding' && row.part === 'title';
 
-/** Next/previous file header. Falls back to this file's own header at the end,
- *  matching how `]` has always behaved. */
+/**
+ * Next/previous file header, holding still at the ends of the diff.
+ *
+ * `nextFileRow` used to fall back to the *previous* header when there was no
+ * next one, so `]` at the end of the diff walked backwards and the press after
+ * it walked forwards, ping-ponging between the last two files. That is the same
+ * rule `nextFindingRow` argues for below, and for the same reason: a key that
+ * teleports the cursor somewhere the reviewer did not ask for reads as broken.
+ */
 export function nextFileRow(rows: DetailRow[], from: number): number {
-  return seek(rows, from, 1, isFileHeader) ?? prevFileRow(rows, from);
+  return seek(rows, from, 1, isFileHeader) ?? from;
 }
 
 export function prevFileRow(rows: DetailRow[], from: number): number {
-  return seek(rows, from, -1, isFileHeader) ?? 0;
+  return seek(rows, from, -1, isFileHeader) ?? from;
 }
 
 /**

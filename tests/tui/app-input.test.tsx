@@ -1658,4 +1658,23 @@ describe('the arrows cross a file boundary in one press', () => {
     expect(app.frame()).toMatch(/▸\s+2 \+cache\.set\(key, value\);/);
     expect(app.frame()).not.toContain('▸ ▍ src/store.ts');
   });
+
+  test('] on the last file leaves the cursor where it is', async () => {
+    const app = mount({ pr: detail, meat: twoFileMeat });
+    await delay(60);
+
+    for (let i = 0; i < 4; i += 1) await app.press(DOWN);
+    expect(app.frame()).toContain('▸ ▍ src/store.ts');
+
+    // Nothing moved, so Ink has nothing to repaint and the frame is empty.
+    await app.press(']');
+    expect(app.frame()).toBe('');
+
+    // Which is also what a swallowed key looks like, so prove where the cursor
+    // actually is: one step up from the last file's header is the previous
+    // file's last line. Back when `]` fell through to the previous header this
+    // landed on `src/cache.ts` instead.
+    await app.press(UP);
+    expect(app.frame()).toMatch(/▸\s+2 \+cache\.set\(key, value\);/);
+  });
 });

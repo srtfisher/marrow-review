@@ -77,37 +77,3 @@ export function buildUnits(result: MeatResult, options: UnitOptions): ReviewUnit
 
   return units;
 }
-
-export function nextFileIndex(units: ReviewUnit[], from: number): number {
-  for (let i = from + 1; i < units.length; i += 1) {
-    if (units[i]!.kind === 'file-header') return i;
-  }
-  // Already in the last file: fall back to that file's own header.
-  return prevFileIndex(units, from);
-}
-
-export function prevFileIndex(units: ReviewUnit[], from: number): number {
-  for (let i = from - 1; i >= 0; i -= 1) {
-    if (units[i]!.kind === 'file-header') return i;
-  }
-  return 0;
-}
-
-/**
- * Findings do not wrap and do not fall back to a neighbour the way file
- * navigation does: with none in the diff, or none left in this direction, the
- * cursor stays exactly where the reviewer left it rather than teleporting.
- */
-export function nextFindingIndex(units: ReviewUnit[], from: number): number {
-  for (let i = from + 1; i < units.length; i += 1) {
-    if (units[i]!.kind === 'finding') return i;
-  }
-  return from;
-}
-
-export function prevFindingIndex(units: ReviewUnit[], from: number): number {
-  for (let i = from - 1; i >= 0; i -= 1) {
-    if (units[i]!.kind === 'finding') return i;
-  }
-  return from;
-}

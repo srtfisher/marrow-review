@@ -166,9 +166,34 @@ describe('navigation', () => {
     expect(prevFileRow(rows, second)).toBe(first);
   });
 
-  test('] on the last file stays in it rather than wrapping to the top', () => {
+  test('] on the last file stays put rather than walking backwards', () => {
+    // It used to fall back to the previous header, so ] at the end of the diff
+    // went backwards and the next press went forwards — ping-ponging between
+    // the last two files. `n` and `p` already hold still; so does this.
     const last = rows.map((r) => r.kind).lastIndexOf('file-header');
-    expect(rows[nextFileRow(rows, last)]!.path).toBe('b.ts');
+    expect(nextFileRow(rows, last)).toBe(last);
+  });
+
+  test('[ on the first file stays put rather than snapping to row zero', () => {
+    const first = rows.findIndex((r) => r.kind === 'file-header');
+    expect(prevFileRow(rows, first)).toBe(first);
+    // From inside the first file it still reaches that file's own header.
+    expect(prevFileRow(rows, first + 2)).toBe(first);
+  });
+
+  test('p walks back through the findings', () => {
+    // Inherited from units.test.ts, which owned the only two-finding backward
+    // walk until its copy of this navigation was deleted. The `describe`'s
+    // shared `rows` carries one finding, which cannot show a walk.
+    const two = rowsOf(
+      [file('a.ts', 1, 5), file('b.ts', 1, 5)],
+      [finding, { ...finding, id: 'f2', path: 'b.ts' }],
+    );
+    const first = nextFindingRow(two, 0);
+    const second = nextFindingRow(two, first);
+    expect(findingAtRow(two, first)?.id).toBe('f1');
+    expect(findingAtRow(two, second)?.id).toBe('f2');
+    expect(prevFindingRow(two, second)).toBe(first);
   });
 
   test('n and p land on a finding title, never on its body', () => {
