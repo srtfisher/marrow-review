@@ -51,6 +51,7 @@ Options:
   --filter <f>          open | review-requested | all (default: open)
   --use-api-key         allow ANTHROPIC_API_KEY; otherwise the Claude Code
                         subscription is used and the key is stripped
+  --no-highlight        no syntax colouring in the diff (NO_COLOR also honoured)
   -h, --help            show this help
 `;
 
@@ -227,6 +228,7 @@ async function runTui(session: Session): Promise<number> {
         checks={checks}
         threads={threads}
         model={args.model}
+        highlight={args.highlight}
         worktreeOk={worktree !== null}
         filter={filter}
         status={status}

@@ -18,17 +18,41 @@ function marker(line: DiffLine): string {
   return ' ';
 }
 
-/** Green means addition and nothing else, red means deletion and nothing else.
- *  Context lines get no color — they read at the default (secondary) tier. */
+/**
+ * Green means addition and nothing else, red means deletion and nothing else.
+ *
+ * With syntax highlighting on, this no longer colors the code — the code column
+ * belongs to the grammar now. It colors the marker and the gutter instead,
+ * which is the column the eye already runs down when skimming a diff, so the
+ * add/del signal survives in the place it was actually being read.
+ */
 function colorFor(line: DiffLine): string | undefined {
   if (line.kind === 'add') return theme.color.add;
   if (line.kind === 'del') return theme.color.del;
   return undefined;
 }
 
+/** Exported as a decision rather than asserted through a render: Ink emits no
+ *  escapes at all when the terminal reports no color support. */
+export function markerStyle(line: DiffLine): { color?: string; dimColor?: boolean } {
+  const color = colorFor(line);
+  return color === undefined ? { dimColor: true } : { color };
+}
+
+/** A context line has no add/del signal to carry, so it stays dim — which is
+ *  what keeps the changed lines' gutters standing out from it. */
+export const gutterStyle = markerStyle;
+
 export interface DiffLineRowProps {
   line: DiffLine;
   gutterWidth: number;
+  /**
+   * The code, already syntax-colored. Computed once per hunk when the rows are
+   * built, because highlighting a line at a time gets block comments and
+   * template literals wrong — and never here, where it would run on every
+   * repaint of every visible row.
+   */
+  highlighted?: string;
 }
 
 /**
@@ -36,14 +60,12 @@ export interface DiffLineRowProps {
  * detail pane windows on rows, so it has to be able to render the middle of a
  * thousand-line hunk without rendering its ends.
  */
-export function DiffLineRow({ line, gutterWidth }: DiffLineRowProps) {
+export function DiffLineRow({ line, gutterWidth, highlighted }: DiffLineRowProps) {
   return (
     <Text wrap="truncate">
-      <Text dimColor>{formatGutter(line, gutterWidth)}</Text>{' '}
-      <Text color={colorFor(line)}>
-        {marker(line)}
-        {line.text}
-      </Text>
+      <Text {...gutterStyle(line)}>{formatGutter(line, gutterWidth)}</Text>{' '}
+      <Text {...markerStyle(line)}>{marker(line)}</Text>
+      {highlighted ?? line.text}
     </Text>
   );
 }

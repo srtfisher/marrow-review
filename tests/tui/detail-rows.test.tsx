@@ -58,11 +58,14 @@ function rowsFor(meat: MeatResult) {
 }
 
 function draw(meat: MeatResult, cursor: number, scrollTop: number, height: number) {
-  return renderToString(
+  const out = renderToString(
     <Detail pr={pr} meat={meat} rows={rowsFor(meat)} cursor={cursor} scrollTop={scrollTop}
       height={height} width={WIDTH} checks={[]} fullDiff={false} reviewed={new Set()}
       model="opus" worktreeOk />,
   );
+  // These are about which rows land in the window, not what colour they are,
+  // and syntax highlighting now puts escapes in the middle of the code.
+  return out.replaceAll(/\u001b\[[0-9;]*m/g, '');
 }
 
 function rowsOf(out: string): number {

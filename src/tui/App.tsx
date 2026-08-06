@@ -104,6 +104,11 @@ export interface AppProps {
   /** The reviewer chose to throw the draft away rather than keep it. */
   onDiscard?: () => void;
   /**
+   * Syntax colouring in the code column. Off via `--no-highlight`, for a
+   * terminal or a colour scheme it fights with. Defaults on.
+   */
+  highlight?: boolean;
+  /**
    * Opens `initial` in the reviewer's editor. Injected only by tests — the
    * default really does spawn `$EDITOR`, which no test may do.
    */
@@ -361,7 +366,11 @@ export function App(props: AppProps) {
     const shown = composer?.editing
       ? staged.filter((c) => c.id !== composer.editing)
       : staged;
-    const base = buildRows(units, props.threads, showThreads, shown, detailWidth - 8);
+    const base = buildRows(units, props.threads, showThreads, {
+      staged: shown,
+      commentWidth: detailWidth - 8,
+      highlight: props.highlight !== false,
+    });
     if (!composer) return base;
 
     const at = rowForAnchor(base, composer.anchor);

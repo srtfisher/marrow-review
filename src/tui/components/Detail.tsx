@@ -103,7 +103,11 @@ export function renderRow(
       return (
         <Box>
           {cursorMark(selected, inSelection)}
-          <DiffLineRow line={row.line} gutterWidth={gutterWidth} />
+          <DiffLineRow
+            line={row.line}
+            gutterWidth={gutterWidth}
+            highlighted={row.highlighted}
+          />
         </Box>
       );
 

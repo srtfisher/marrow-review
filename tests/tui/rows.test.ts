@@ -57,8 +57,7 @@ function rowsOf(
     }),
     [],
     false,
-    staged,
-    width,
+    { staged, commentWidth: width },
   );
 }
 
@@ -379,6 +378,34 @@ describe('staged comments in the diff', () => {
 
   test('no staged comments means no comment rows at all', () => {
     expect(commentRows(rowsOf([file()]))).toHaveLength(0);
+  });
+});
+
+describe('syntax colouring reaches the rows', () => {
+  const units = () => buildUnits(meatOf([fileOf('a.ts', [add(1)])]), {
+    expandedFiles: new Set(), foldedFiles: new Set(),
+  });
+
+  test('a diff line carries the coloured text', () => {
+    const row = buildRows(units(), [], false).find((r) => r.kind === 'diff-line');
+    expect(row?.kind === 'diff-line' && row.highlighted).toBeDefined();
+  });
+
+  test('and carries none of it when highlighting is off', () => {
+    const rows = buildRows(units(), [], false, { highlight: false });
+    const row = rows.find((r) => r.kind === 'diff-line');
+    expect(row?.kind === 'diff-line' && row.highlighted).toBeUndefined();
+  });
+
+  test('nor for a file no grammar knows', () => {
+    const rows = buildRows(
+      buildUnits(meatOf([fileOf('LICENSE', [add(1)])]), {
+        expandedFiles: new Set(), foldedFiles: new Set(),
+      }),
+      [], false,
+    );
+    const row = rows.find((r) => r.kind === 'diff-line');
+    expect(row?.kind === 'diff-line' && row.highlighted).toBeUndefined();
   });
 });
 

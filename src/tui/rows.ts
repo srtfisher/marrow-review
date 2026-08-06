@@ -4,6 +4,7 @@ import type { Refutation } from '../core/findings/verify.js';
 import type { ReviewThread } from '../core/github/types.js';
 import type { MeatFile } from '../core/meat/index.js';
 import type { CommentAnchor, StagedComment } from '../core/review/types.js';
+import { highlightCached, languageFor } from './highlight.js';
 import { theme } from './theme.js';
 import type { ReviewUnit } from './units.js';
 
@@ -25,7 +26,15 @@ export type DetailRow =
   | { kind: 'blank'; unit: number; path: string }
   | { kind: 'file-header'; unit: number; path: string; file: MeatFile }
   | { kind: 'hunk-header'; unit: number; path: string; hunk: Hunk; reason: string }
-  | { kind: 'diff-line'; unit: number; path: string; hunk: Hunk; line: DiffLine }
+  | {
+      kind: 'diff-line';
+      unit: number;
+      path: string;
+      hunk: Hunk;
+      line: DiffLine;
+      /** The code, syntax-coloured. Absent when this file has no grammar. */
+      highlighted?: string;
+    }
   | { kind: 'thread'; unit: number; path: string; author: string; body: string }
   | {
       kind: 'dropped-summary';
@@ -159,12 +168,20 @@ function leadsWithBlank(units: ReviewUnit[], index: number): boolean {
   return units[index - 1]!.kind !== 'file-header';
 }
 
+export interface BuildRowsOptions {
+  /** Unsubmitted comments, rendered under the lines they are about. */
+  staged?: StagedComment[];
+  /** Where a comment body wraps. A row may never wrap itself. */
+  commentWidth?: number;
+  /** Off when the reviewer passed `--no-highlight`. */
+  highlight?: boolean;
+}
+
 export function buildRows(
   units: ReviewUnit[],
   threads: ReviewThread[],
   showThreads: boolean,
-  staged: StagedComment[] = [],
-  commentWidth = 80,
+  { staged = [], commentWidth = 80, highlight = true }: BuildRowsOptions = {},
 ): DetailRow[] {
   const rows: DetailRow[] = [];
 
@@ -202,8 +219,22 @@ export function buildRows(
 
     const hunk = unit.hunk.hunk;
     rows.push({ kind: 'hunk-header', unit: index, path, hunk, reason: unit.hunk.reason });
-    for (const line of hunk.lines) {
-      rows.push({ kind: 'diff-line', unit: index, path, hunk, line });
+    // Once per hunk, and memoized across rebuilds: the row list is rebuilt on
+    // every keystroke while a comment is open, and re-tokenizing every visible
+    // hunk that often is what separates a responsive pane from a laggy one.
+    const language = highlight ? languageFor(path) : null;
+    const coloured = language === null
+      ? null
+      : highlightCached(
+        `${path}\u0000${hunk.header}\u0000${hunk.lines.length}`,
+        hunk.lines.map((l) => l.text),
+        language,
+      );
+
+    for (const [at, line] of hunk.lines.entries()) {
+      rows.push({
+        kind: 'diff-line', unit: index, path, hunk, line, highlighted: coloured?.[at],
+      });
       // Your own staged comments live in the diff, under the lines they are
       // about — the same place GitHub keeps them, and the only place a reviewer
       // can weigh a comment against the code it is criticising.

@@ -8,6 +8,8 @@ export interface CliArgs {
   useApiKey: boolean;
   showHelp: boolean;
   filter: PullFilter;
+  /** Syntax colouring in the diff's code column. */
+  highlight: boolean;
 }
 
 const TIERS = ['opus', 'sonnet', 'haiku'] as const;
@@ -20,7 +22,10 @@ export function tierBelow(model: string): string {
 
 const PR_URL_RE = /github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/;
 
-export function parseArgs(argv: string[]): CliArgs {
+export function parseArgs(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+): CliArgs {
   let prNumber: number | null = null;
   let model = 'opus';
   let meatModel: string | null = null;
@@ -28,6 +33,9 @@ export function parseArgs(argv: string[]): CliArgs {
   let useApiKey = false;
   let showHelp = false;
   let filter: PullFilter = 'open';
+  // NO_COLOR is a convention marrow has no business arguing with, and a
+  // terminal that cannot show colour cannot show syntax colouring either.
+  let highlight = (env.NO_COLOR ?? '') === '';
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]!;
@@ -35,6 +43,7 @@ export function parseArgs(argv: string[]): CliArgs {
     if (arg === '--dry-run') { dryRun = true; continue; }
     if (arg === '--use-api-key') { useApiKey = true; continue; }
     if (arg === '--help' || arg === '-h') { showHelp = true; continue; }
+    if (arg === '--no-highlight') { highlight = false; continue; }
 
     if (arg === '--model') { model = argv[++i] ?? model; continue; }
     if (arg === '--meat-model') { meatModel = argv[++i] ?? null; continue; }
@@ -61,5 +70,6 @@ export function parseArgs(argv: string[]): CliArgs {
     useApiKey,
     showHelp,
     filter,
+    highlight,
   };
 }

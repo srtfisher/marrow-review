@@ -40,6 +40,18 @@ test('haiku stays at haiku', () => {
   expect(tierBelow('haiku')).toBe('haiku');
 });
 
+test('highlights by default, and --no-highlight turns it off', () => {
+  // On by default because reading code is what the tool is for; off because
+  // some terminals and colour schemes it cannot see will fight it.
+  expect(parseArgs([]).highlight).toBe(true);
+  expect(parseArgs(['--no-highlight']).highlight).toBe(false);
+});
+
+test('honours NO_COLOR, which is not marrow to argue with', () => {
+  expect(parseArgs([], { NO_COLOR: '1' }).highlight).toBe(false);
+  expect(parseArgs([], { NO_COLOR: '' }).highlight).toBe(true);
+});
+
 test('rejects an unknown flag with a clear message', () => {
   expect(() => parseArgs(['--nope'])).toThrow(/Unknown option: --nope/);
 });

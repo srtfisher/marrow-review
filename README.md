@@ -158,6 +158,7 @@ through to disk as you go — closing the laptop is not the same as abandoning t
 --filter <f>          open | review-requested | all
 --use-api-key         allow ANTHROPIC_API_KEY instead of the subscription
 --dry-run             print, submit nothing
+--no-highlight        no syntax colouring in the diff (NO_COLOR also honoured)
 ```
 
 ## How the abridgement works

@@ -45,11 +45,13 @@ const commentRows = buildRows(
   buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set() }),
   [],
   false,
-  [{
-    id: 'c1', path: 'a.ts', line: 1, side: 'RIGHT', startLine: null,
-    body: 'is this right?', suggestion: null,
-  }],
-  60,
+  {
+    staged: [{
+      id: 'c1', path: 'a.ts', line: 1, side: 'RIGHT', startLine: null,
+      body: 'is this right?', suggestion: null,
+    }],
+    commentWidth: 60,
+  },
 );
 
 const width = (hints: readonly { keys: string; label: string }[]) =>

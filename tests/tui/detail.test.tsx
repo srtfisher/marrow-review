@@ -105,7 +105,7 @@ describe('Detail', () => {
       id: 'c1', path: 'src/app.ts', line: 1, side: 'RIGHT', startLine: null,
       body: 'this rotates the JWT on every keystroke', suggestion: null,
     };
-    const out = render({ rows: buildRows(units, [], false, [staged], 60) });
+    const out = render({ rows: buildRows(units, [], false, { staged: [staged], commentWidth: 60 }) });
 
     expect(out).toContain('R1');
     expect(out).toContain('this rotates the JWT on every keystroke');
