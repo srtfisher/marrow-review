@@ -1078,7 +1078,11 @@ export function App(props: AppProps) {
       // keys it names. Everything else waits for the list rather than editing a
       // query that is not on screen.
       if (props.prs === null) {
-        if (input === 'q') return exit();
+        if (key.escape && warmPr !== null) return setMode('detail');
+        if (input === 'q') {
+          if (hasUnsubmittedWork) return setConfirmQuit(true);
+          return exit();
+        }
         if (input === 'r' && props.listError) return props.onRefresh?.();
         return;
       }
@@ -1305,8 +1309,10 @@ export function App(props: AppProps) {
 
   // Before there is a list there is nothing to frame: no chrome row, because the
   // launch frame is the brand moment and a header saying "marrow" above a banner
-  // saying "marrow" is the same word twice.
-  if (mode === 'picker' && props.prs === null) {
+  // saying "marrow" is the same word twice. Except mid quit-confirm: that
+  // question has to land on screen somewhere, and the ordinary frame below is
+  // the only place that has a row for it.
+  if (mode === 'picker' && props.prs === null && !confirmQuit) {
     return (
       <Launch
         repoLabel={props.repoLabel}

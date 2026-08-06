@@ -197,7 +197,8 @@ async function runTui(session: Session): Promise<number> {
   const repoLabel = `${repo.owner}/${repo.repo}`;
 
   let filter = args.filter;
-  let prs: PullRequestSummary[] = await client.listPulls(repo.owner, repo.repo, filter);
+  let prs: PullRequestSummary[] | null = null;
+  let listError: string | null = null;
   let pr: PullRequestDetail | null = null;
   let meat: MeatResult | null = null;
   let checks: CheckRun[] = [];
@@ -223,6 +224,7 @@ async function runTui(session: Session): Promise<number> {
       <App
         repoLabel={repoLabel}
         prs={prs}
+        listError={listError}
         pr={pr}
         meat={meat}
         checks={checks}
@@ -257,6 +259,8 @@ async function runTui(session: Session): Promise<number> {
   restoreOnExit(screen);
 
   const instance = render(view());
+  // The screen is up before GitHub answers, which is the entire point.
+  void loadList();
 
   function draw(): void {
     instance.rerender(view());
@@ -391,14 +395,26 @@ async function runTui(session: Session): Promise<number> {
     await refresh();
   }
 
-  async function refresh(): Promise<void> {
+  /** Startup and every refresh share this: the launch frame's error state
+   *  before the first list ever lands, a status note once one has. */
+  async function loadList(): Promise<void> {
+    listError = null;
     try {
       prs = await client.listPulls(repo.owner, repo.repo, filter);
     } catch (error) {
-      status = `Could not refresh: ${message(error)}`;
-      statusTone = 'danger';
+      // With a list already on screen this is a status note; with none it is
+      // the launch frame's error state — the reviewer keeps whichever they had.
+      if (prs === null) listError = `Could not list pull requests: ${message(error)}`;
+      else {
+        status = `Could not refresh: ${message(error)}`;
+        statusTone = 'danger';
+      }
     }
     draw();
+  }
+
+  async function refresh(): Promise<void> {
+    return loadList();
   }
 
   async function submit(draft: ReviewDraft, verdict: Verdict): Promise<void> {

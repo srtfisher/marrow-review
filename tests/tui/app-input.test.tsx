@@ -347,6 +347,53 @@ describe('the app frames every screen', () => {
     expect(exited).toBe(true);
   });
 
+  /**
+   * The route in: open a pull request (mode starts `detail`), then leave to
+   * the picker while the list is still null — a refetch still out, or one
+   * that failed. Task 8 puts a leave-confirm between `esc` and the picker
+   * even here, so it has to be answered before the launch frame is reached.
+   */
+  async function mountWarmOnLaunchFrame(
+    props: Partial<Parameters<typeof App>[0]> = {},
+  ): Promise<Harness> {
+    const app = mount({ prs: null, pr: detail, meat, ...props });
+    await app.press(ESC); // leave to the picker
+    await app.press('\r'); // confirm the leave
+    return app;
+  }
+
+  test('esc on the launch frame returns to the warm review behind it, not the terminal', async () => {
+    const app = await mountWarmOnLaunchFrame();
+    expect(app.frame()).toContain('fetching open pull requests…');
+
+    await app.press(ESC);
+    // Back in the detail pane: the gauge line only the review header prints.
+    expect(app.frame()).toContain('kept 1/2');
+  });
+
+  test('q on the launch frame with unsubmitted work asks before quitting', async () => {
+    const app = await mountWarmOnLaunchFrame({
+      initialDraft: { verdict: null, body: 'looks fine but', comments: [] },
+    });
+    let exited = false;
+    void app.instance.waitUntilExit().then(() => {
+      exited = true;
+    });
+
+    await app.press('q');
+    expect(exited).toBe(false);
+    // The confirm text, not just the absence of exit: a state change with
+    // nothing on screen is indistinguishable from a swallowed key.
+    expect(app.frame()).toContain('unsubmitted comment(s)');
+
+    // The same confirm the picker's esc reaches, not a bare exit: x still
+    // discards and quits, proving the key landed in the quit-confirm state
+    // rather than being swallowed by the launch frame's own guard.
+    await app.press('x');
+    await delay(40);
+    expect(exited).toBe(true);
+  });
+
   test('the chrome names the warm review once the picker is back on top', async () => {
     const app = mount({ pr: detail, meat });
     await delay(60);
