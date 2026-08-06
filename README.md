@@ -164,9 +164,14 @@ through to disk as you go — closing the laptop is not the same as abandoning t
 ## How the abridgement works
 
 1. **Deterministic rules**, instantly and free — lockfiles, generated output, snapshots,
-   minified files, pure renames, whitespace-only hunks, import-only hunks. Every drop is
-   attributed to a named rule. The highest-signal rule reads your `.gitattributes` for
-   `linguist-generated`, which is the maintainers' own statement about what is noise.
+   minified files, deleted files, pure moves, whitespace-only hunks, import-only hunks. Every
+   drop is attributed to a named rule. The highest-signal rule reads your `.gitattributes`
+   for `linguist-generated`, which is the maintainers' own statement about what is noise.
+
+   Deleting a file and moving one are the two largest things a diff can contain and the two
+   least worth reading: the whole former body arrives marked `-`, to say something the path
+   already says. Both fold to one line. A move that also *edits* the file keeps its edits —
+   the move is free, the change inside it is not.
 2. **A model pass** over what survives, classifying keep/drop with a one-line reason and
    writing the "what this PR actually does" summary.
 3. **A cache**, keyed by hunk content, so the same hunk is never judged twice and a verdict
@@ -207,7 +212,7 @@ quietly. marrow removes both variables from the agent subprocess unless you pass
 ## Development
 
 ```bash
-bun test              # 545 tests
+bun test              # 655 tests
 bun run typecheck
 bun run lint:boundary # src/core must never import UI
 bun run build

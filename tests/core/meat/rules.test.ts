@@ -77,13 +77,48 @@ describe('evaluateFile', () => {
     expect(evaluateFile(file('logo.png', { status: 'binary' }), noCtx)?.rule).toBe('binary');
   });
 
+  test('drops deleted files whole', () => {
+    const deleted = file('src/old.ts', {
+      status: 'deleted',
+      hunks: [hunk([line('del', 'export const a = 1;'), line('del', 'export const b = 2;')])],
+    });
+    expect(evaluateFile(deleted, noCtx)?.rule).toBe('file-deleted');
+  });
+
+  test('keeps a file that merely lost lines', () => {
+    const shrunk = file('src/app.ts', {
+      hunks: [hunk([line('del', 'validate(input);')])],
+    });
+    expect(evaluateFile(shrunk, noCtx)).toBeNull();
+  });
+
   test('drops 100%-similarity renames', () => {
     const renamed = file('b.ts', { status: 'renamed', similarity: 100, oldPath: 'a.ts' });
     expect(evaluateFile(renamed, noCtx)?.rule).toBe('pure-rename');
   });
 
+  test('drops a move git reported without a similarity line', () => {
+    const renamed = file('b.ts', { status: 'renamed', similarity: null, oldPath: 'a.ts' });
+    expect(evaluateFile(renamed, noCtx)?.rule).toBe('pure-rename');
+  });
+
   test('keeps a rename that also changed content', () => {
-    const renamed = file('b.ts', { status: 'renamed', similarity: 87, oldPath: 'a.ts' });
+    const renamed = file('b.ts', {
+      status: 'renamed',
+      similarity: 87,
+      oldPath: 'a.ts',
+      hunks: [hunk([line('del', 'return a + b;'), line('add', 'return a - b;')])],
+    });
+    expect(evaluateFile(renamed, noCtx)).toBeNull();
+  });
+
+  test('keeps a rename git rounded up to 100% that still edits a line', () => {
+    const renamed = file('b.ts', {
+      status: 'renamed',
+      similarity: 100,
+      oldPath: 'a.ts',
+      hunks: [hunk([line('del', 'const timeout = 30;'), line('add', 'const timeout = 300;')])],
+    });
     expect(evaluateFile(renamed, noCtx)).toBeNull();
   });
 

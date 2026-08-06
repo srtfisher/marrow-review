@@ -59,6 +59,41 @@ test('rules drop the lockfile before the model ever sees it', async () => {
   expect(transport.requests[0]!.prompt).not.toContain("from './y.js'");
 });
 
+test('a deleted file is dropped whole and never reaches the model', async () => {
+  const files = parseUnifiedDiff(`diff --git a/src/legacy.ts b/src/legacy.ts
+deleted file mode 100644
+index 111..000
+--- a/src/legacy.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export function legacy(): number {
+-  return compute();
+-}
+${DIFF}`);
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 's', verdicts: [] } });
+
+  const result = await computeMeat({
+    files,
+    ruleContext: { generatedPaths: new Set() },
+    transport,
+    cache: new MemoryVerdictCache(),
+    model: 'sonnet',
+    prTitle: 'T',
+    prBody: '',
+  });
+
+  const gone = result.files.find((f) => f.file.path === 'src/legacy.ts')!;
+  expect(gone.dropped?.rule).toBe('file-deleted');
+  expect(gone.hunks.every((h) => !h.keep)).toBe(true);
+  expect(transport.requests[0]!.prompt).not.toContain('legacy(');
+
+  // The removed body still counts toward the total: the gauge says how much of
+  // the diff was set aside, so a large deletion has to be visible there.
+  expect(result.totalLines).toBe(9);
+  expect(result.keptLines).toBe(2);
+});
+
 test('reports kept and total counters', async () => {
   const files = parseUnifiedDiff(DIFF);
   const transport = new FakeTransport();
