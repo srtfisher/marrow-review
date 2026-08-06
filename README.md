@@ -230,4 +230,6 @@ Early. The submit path is thoroughly unit-tested and validates every anchor loca
 sending — GitHub rejects a review atomically if one comment is badly anchored — but it has
 not yet been exercised against a wide range of live pull requests.
 
-No license yet; all rights reserved until one is chosen.
+## License
+
+[MIT](LICENSE) © Sean Fisher
