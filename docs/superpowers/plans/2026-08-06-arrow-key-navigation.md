@@ -629,7 +629,7 @@ import { buildUnits } from '../../src/tui/units.js';
 - [ ] **Step 6: Run the suite**
 
 Run: `bun test tests/tui`
-Expected: PASS, 0 fail, 456 tests — the 450 baseline, plus the 13 added across Tasks 1-4, minus the 7 deleted here.
+Expected: PASS, 0 fail, 455 tests — the 450 baseline, plus the 13 added across Tasks 1-4, minus the 8 deleted here (four in each describe).
 
 Run: `bun test`
 Expected: no failures outside `tests/core/meat/`, which belongs to the other session.
