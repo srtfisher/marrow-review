@@ -76,6 +76,11 @@ afterEach(() => {
 
 interface Harness {
   press: (keys: string) => Promise<void>;
+  /** Swaps in new props on the live instance, the way the real container
+   *  updates `pr`/`meat` once a fetch resolves — state that lives in `App`
+   *  itself (the picker's cursor, the query) carries over, unlike a fresh
+   *  `mount()`. */
+  rerender: (props?: Partial<Parameters<typeof App>[0]>) => Promise<void>;
   frame: () => string;
   /** Everything written since the last key, escapes and all. */
   raw: () => string;
@@ -86,7 +91,7 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
   const stdin = fakeStdin();
   const stdout = fakeStdout();
 
-  const instance = render(
+  const build = (p: Partial<Parameters<typeof App>[0]>) => (
     <App
       repoLabel="octocat/marrow"
       prs={prs}
@@ -99,8 +104,12 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
       filter="open"
       onOpenPr={() => {}}
       onSubmit={() => {}}
-      {...props}
-    />,
+      {...p}
+    />
+  );
+
+  const instance = render(
+    build(props),
     { stdin: stdin as never, stdout: stdout as never, patchConsole: false, exitOnCtrlC: false },
   );
   live = instance;
@@ -118,6 +127,11 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
     },
     frame: () => stdout.frames.slice(mark).join('').replaceAll(/\[[\d;?]*[a-zA-Z]/g, ''),
     raw: () => stdout.frames.join(''),
+    async rerender(nextProps: Partial<Parameters<typeof App>[0]> = {}) {
+      mark = stdout.frames.length;
+      instance.rerender(build(nextProps));
+      await delay(40);
+    },
   };
 }
 
@@ -1862,5 +1876,69 @@ describe('the arrows cross a file boundary in one press', () => {
     // landed on `src/cache.ts` instead.
     await app.press(UP);
     expect(app.frame()).toMatch(/▸\s+2 \+cache\.set\(key, value\);/);
+  });
+});
+
+/**
+ * The realistic route into a warm review: the picker's cursor moves onto an
+ * entry, then `pr`/`meat` arrive the way they would once `onOpenPr` resolves
+ * and the container re-renders — not as initial props. Mounting `pr`/`meat`
+ * directly, the way the rest of this file does for tests that only care about
+ * the diff, would leave the picker's cursor on whichever entry sits at index
+ * 0 (`listCursor` starts at 0 regardless of which pull request is already
+ * open), which is not what "the still-selected warm pull request" means
+ * below.
+ */
+async function mountWithOpenPr(
+  props: Partial<Parameters<typeof App>[0]> = {},
+): Promise<Harness> {
+  const app = mount();
+  await app.press(DOWN); // #41 -> #42, the entry `detail` and `meat` describe
+  await app.rerender({ pr: detail, meat, ...props });
+  return app;
+}
+
+describe('the warm review', () => {
+  test('enter on the warm pull request returns to it without re-opening', async () => {
+    const opened: number[] = [];
+    const app = await mountWithOpenPr({ onOpenPr: (n) => opened.push(n) });
+
+    await app.press(ESC); // leave to the picker
+    await app.press('\r'); // enter on the (still-selected) warm PR
+
+    expect(opened).toEqual([]); // no refetch, no meat re-run
+    expect(app.frame()).toContain('kept 1/2'); // the detail header's gauge line
+  });
+
+  test('a round trip to the picker keeps the cursor, scroll, and reviewed marks', async () => {
+    const app = await mountWithOpenPr();
+
+    // One key per press: a multi-character write arrives as one `input`
+    // string, and `resolveAction` matches a move key exactly — a batched
+    // "jjjj" matches no binding and moves nothing. Three presses walk this
+    // fixture's four rows (file header, hunk header, context, added line) to
+    // its last, which also earns the file its reviewed checkmark — state
+    // worth proving the round trip keeps.
+    await app.press('j');
+    await app.press('j');
+    await app.press('j');
+    const before = app.frame();
+
+    await app.press(ESC); // out to the picker
+    expect(app.frame()).toContain('filter ›');
+
+    await app.press(ESC); // straight back in — no confirm exists yet (Task 8)
+    expect(app.frame()).toBe(before);
+  });
+
+  test('enter on a different pull request replaces the warm one', async () => {
+    const opened: number[] = [];
+    const app = await mountWithOpenPr({ onOpenPr: (n) => opened.push(n) });
+
+    await app.press(ESC);
+    await app.press(DOWN); // #42 -> #43, a different entry
+    await app.press('\r');
+
+    expect(opened.length).toBe(1);
   });
 });
