@@ -549,7 +549,12 @@ export function App(props: AppProps) {
   function markSeen(row: number) {
     const path = pathAtRow(detailRowList, row);
     if (path === null) return;
-    const lastRowOfPath = detailRowList.findLastIndex((r) => r.path === path);
+    // The last row that is a *place*. The gap after a file carries that file's
+    // path and the cursor can never land on it, so counting it would mean no
+    // file ever earned its check again.
+    const lastRowOfPath = detailRowList.findLastIndex(
+      (r) => r.path === path && r.kind !== 'blank',
+    );
     if (row < lastRowOfPath) return;
     setReviewed((s) => (s.has(path) ? s : new Set(s).add(path)));
   }

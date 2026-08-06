@@ -1262,8 +1262,9 @@ describe('the mouse', () => {
     // The index sits on terminal row 4, reported 5.
     await app.press(click(15, 5));
     const after = app.frame();
-    // The view moved off the first file and onto the second.
-    expect(after).toContain('src/cache.ts');
+    // The view moved off the first file and onto the second — and landed on its
+    // header, not on the blank above it, which draws no cursor at all.
+    expect(after).toContain('▸ ▍ src/cache.ts');
     expect(after).not.toContain('line 0');
   });
 
@@ -1604,5 +1605,21 @@ describe('sweeping a range with the mouse', () => {
     await app.press(click(20, 13));
 
     expect(app.frame()).not.toContain('Comment on line');
+  });
+});
+
+describe('reading a file through checks it off', () => {
+  const DOWN = `${ESC}[B`;
+
+  test('a file earns its check when the cursor reaches its last line', async () => {
+    // `markSeen` finds a file's last row to decide it has been read. The blank
+    // after a file now carries that file's path, and the cursor cannot land on
+    // one — so the last row has to be the last row that is a place.
+    const app = mount({ pr: detail, meat: twoFileMeat });
+    await delay(60);
+    expect(app.frame()).not.toContain('✓ cache.ts');
+
+    for (let i = 0; i < 3; i += 1) await app.press(DOWN);
+    expect(app.frame()).toContain('▸✓ cache.ts');
   });
 });

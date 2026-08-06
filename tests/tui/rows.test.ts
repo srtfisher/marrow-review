@@ -85,6 +85,23 @@ describe('buildRows', () => {
     }
   });
 
+  test('the blank between two files belongs to the file above it', () => {
+    // The file index reads its current file from the row under the cursor, and
+    // an index click resolves a path to the first row carrying it. Labelling
+    // the gap with the file it introduces made both point at a row that shows
+    // nothing.
+    const rows = rowsOf([file('a.ts', 1, 3), file('b.ts', 1, 3)]);
+    const blank = rows.findIndex((r) => r.kind === 'blank');
+    expect(rows[blank]!.path).toBe('a.ts');
+    expect(rows[blank + 1]!.kind).toBe('file-header');
+    expect(rows[blank + 1]!.path).toBe('b.ts');
+  });
+
+  test('an index click resolves a file to its header, not to the gap above it', () => {
+    const rows = rowsOf([file('a.ts', 1, 3), file('b.ts', 1, 3)]);
+    expect(rows[rows.findIndex((r) => r.path === 'b.ts')]!.kind).toBe('file-header');
+  });
+
   test('a folded-noise row lands after the hunks it stands for', () => {
     const rows = rowsOf([file('a.ts', 3, 4, true)]);
     const summary = rows.find((r) => r.kind === 'dropped-summary');

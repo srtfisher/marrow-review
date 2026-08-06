@@ -187,7 +187,14 @@ export function buildRows(
 
   units.forEach((unit, index) => {
     const path = unit.file.file.path;
-    if (leadsWithBlank(units, index)) rows.push({ kind: 'blank', unit: index, path });
+    // Attributed to the file *above* it, not the one it introduces. The gap
+    // renders after that file's content, so it is the file the reviewer sees
+    // around it — and both the file index's marker and an index click resolve
+    // through a row's path, so the other choice pointed them at a row that
+    // draws nothing.
+    if (leadsWithBlank(units, index)) {
+      rows.push({ kind: 'blank', unit: index - 1, path: units[index - 1]!.file.file.path });
+    }
 
     if (unit.kind === 'file-header') {
       rows.push({ kind: 'file-header', unit: index, path, file: unit.file });
