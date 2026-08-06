@@ -110,27 +110,79 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
 
   const instance = render(
     build(props),
-    { stdin: stdin as never, stdout: stdout as never, patchConsole: false, exitOnCtrlC: false },
+    {
+      stdin: stdin as never,
+      stdout: stdout as never,
+      patchConsole: false,
+      exitOnCtrlC: false,
+      // Ink throttles writes to thirty frames a second, so a key that renders
+      // twice — new rows, then the effects that put the cursor back where it
+      // belongs — has its second frame held for thirty-four milliseconds. A
+      // test that read the frame before then saw the intermediate state and
+      // reported it as the app's answer. Nothing here is watching an
+      // animation; take the frames as they come.
+      maxFps: 1000,
+    },
   );
   live = instance;
 
-  // Ink splits one frame across several writes (synchronized-output markers
-  // around the content), so a frame is everything written since the last key.
+  // Ink splits one frame across several writes, bracketed by the terminal's
+  // synchronized-output markers. That bracket is what tells one frame from the
+  // next, and it has to: a key can repaint twice, and joining both repaints
+  // into one string put the intermediate state — the cursor before the effects
+  // moved it — into every `not.toContain` in this file.
+  const SYNC_BEGIN = '[?2026h';
   let mark = 0;
+
+  /**
+   * Waits for the repaint an interaction causes to finish.
+   *
+   * This used to be a flat 40ms after every key, and 40ms is a bet on how busy
+   * the machine is. Ink splits one frame across several writes and renders
+   * again when effects settle, so under load the assertion read a frame that
+   * was empty or half drawn and the test failed for reasons the app had
+   * nothing to do with — whichever test happened to be unlucky that run.
+   *
+   * Three quiet polls, not one: an interaction that changes the row list
+   * repaints twice, once for the new rows and once when the effects that put
+   * the cursor back where it belongs land, and returning at the first pause
+   * handed the test the half-finished state. The ceilings stop an interaction
+   * that renders nothing from costing the suite half a second.
+   */
+  async function settle() {
+    const start = Date.now();
+    let seen = -1;
+    let quiet = 0;
+    for (;;) {
+      await delay(10);
+      const written = stdout.frames.length;
+      const elapsed = Date.now() - start;
+      quiet = written === seen ? quiet + 1 : 0;
+      seen = written;
+      if (written > mark && quiet >= 3) break;
+      if (written === mark && elapsed > 150) break;
+      if (elapsed > 800) break;
+    }
+  }
 
   return {
     instance,
     async press(keys: string) {
       mark = stdout.frames.length;
       stdin.write(keys);
-      await delay(40);
+      await settle();
     },
-    frame: () => stdout.frames.slice(mark).join('').replaceAll(/\[[\d;?]*[a-zA-Z]/g, ''),
+    frame: () => {
+      const written = stdout.frames.slice(mark).join('');
+      const at = written.lastIndexOf(SYNC_BEGIN);
+      const latest = at === -1 ? written : written.slice(at);
+      return latest.replaceAll(/\[[\d;?]*[a-zA-Z]/g, '');
+    },
     raw: () => stdout.frames.join(''),
     async rerender(nextProps: Partial<Parameters<typeof App>[0]> = {}) {
       mark = stdout.frames.length;
       instance.rerender(build(nextProps));
-      await delay(40);
+      await settle();
     },
   };
 }
