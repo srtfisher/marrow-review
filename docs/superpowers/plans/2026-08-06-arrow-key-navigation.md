@@ -12,7 +12,19 @@
 
 - Every source file is `.ts`/`.tsx` with full type coverage. No `any`.
 - Tests run with `bun test`. Typecheck with `bun run typecheck`. Module-boundary lint with `bun run lint:boundary`.
-- **Baseline before any change: 650 tests pass, 0 fail, across 50 files.** No task may reduce the pass count.
+- **Baseline before any change, measured on `main` at `df64b8a`: `bun test tests/tui` gives 450 pass, 0 fail, 25 files.** That is this plan's gate — no task may reduce it.
+- `bun test` (the whole suite) currently reports **2 failures in `tests/core/meat/rules.test.ts`**, from another session's uncommitted work in `src/core/meat/rules.ts`. They are not caused by this plan and must not be fixed by it. Judge the full-suite runs below by "no *new* failures outside `tests/core/meat/`", not by a zero.
+
+### Working alongside another session
+
+A second agent is committing to `main` in this repo, in `src/core/meat/*`. There is no
+content overlap with this plan, but its commit `3f5f6ec` already touched
+`src/tui/App.tsx` and `tests/tui/app-input.test.tsx` once and shifted every line
+number in an earlier draft of this plan by two.
+
+**Every line number below was re-verified against `main` at `df64b8a`.** If a quoted
+anchor does not match what you find, do not guess the offset — re-locate the code by the
+surrounding text quoted in the step, which is stable, and carry on.
 - `src/tui/*` may not import from `src/cli/*`. Pure logic lives in `.ts` modules; `.tsx` files render.
 - Comments in this codebase explain *why*, in prose, and frequently record the bug a rule exists to prevent. Match that. Do not add comments that restate the code.
 - Commit after every task. Do not squash tasks together.
@@ -178,8 +190,8 @@ git commit -m "tui: say which rows the cursor may come to rest on"
 The blank currently carries the *upcoming* file's path, which is why the index marker moves a keystroke early and why clicking a cell in the file index parks the cursor on an invisible row. Relabelling it forces one dependent fix to `markSeen`, in the same task because the change regresses auto-checking without it.
 
 **Files:**
-- Modify: `src/tui/rows.ts:188-190` (inside `buildRows`)
-- Modify: `src/tui/App.tsx:551-557` (`markSeen`)
+- Modify: `src/tui/rows.ts:190` (inside `buildRows`)
+- Modify: `src/tui/App.tsx:549-555` (`markSeen`)
 - Test: `tests/tui/rows.test.ts`, `tests/tui/app-input.test.tsx:1249`
 
 **Interfaces:**
@@ -219,7 +231,7 @@ Then extend the existing test at `tests/tui/app-input.test.tsx:1249` (`'a click 
     expect(after).not.toContain('line 0');
 ```
 
-Then add a new top-level describe to `tests/tui/app-input.test.tsx`, at the end of the file. It must come after `twoFileMeat` (defined around line 496), and it belongs outside `describe('the mouse', ...)` — it is a keyboard test:
+Then add a new top-level describe to `tests/tui/app-input.test.tsx`, at the end of the file. It must come after `twoFileMeat` (defined at line 515), and it belongs outside `describe('the mouse', ...)` — it is a keyboard test:
 
 ```ts
 describe('reading a file through checks it off', () => {
@@ -275,7 +287,7 @@ Expected: the three failing tests from Step 2 now PASS. `'a file earns its check
 
 - [ ] **Step 5: Teach `markSeen` to ignore blanks**
 
-In `src/tui/App.tsx`, replace the body of `markSeen` (line 551-557):
+In `src/tui/App.tsx`, replace the body of `markSeen` (line 549-555):
 
 ```ts
   function markSeen(row: number) {
@@ -292,12 +304,12 @@ In `src/tui/App.tsx`, replace the body of `markSeen` (line 551-557):
   }
 ```
 
-Leave the doc comment above `markSeen` (line 545-550) untouched.
+Leave the doc comment above `markSeen` (line 543-548) untouched.
 
-- [ ] **Step 6: Run the full suite**
+- [ ] **Step 6: Run the suite**
 
-Run: `bun test`
-Expected: PASS, no fewer than 650 + 3 tests, 0 fail.
+Run: `bun test tests/tui`
+Expected: PASS, 0 fail, 458 tests — the 450 baseline plus Task 1's 5 and this task's 3.
 
 Run: `bun run typecheck`
 Expected: no errors.
@@ -316,7 +328,7 @@ git commit -m "tui: hand the gap between two files to the file above it"
 The payoff. One wrapper, five call sites.
 
 **Files:**
-- Modify: `src/tui/App.tsx` — import line 25-26, new `landing()` beside `moveRows` (~line 538), and five call sites: 528, 539, 881, 912, 924
+- Modify: `src/tui/App.tsx` — import lines 26-27, new `landing()` beside `moveRows` (line 536), and five cursor writes: the row-count effect (524-528), `moveRows` (536-541), the wheel (875-881), the double-click (907-914), the click (920-924)
 - Test: `tests/tui/app-input.test.tsx`
 
 **Interfaces:**
@@ -372,9 +384,9 @@ Expected: FAIL. Both tests fail on the `'▸ ▍ src/store.ts'` assertion — af
 
 - [ ] **Step 3: Add `landing()` and route `moveRows` through it**
 
-In `src/tui/App.tsx`, add `nearestStop` to the import from `./rows.js` (the multi-line import at lines 25-26; keep the list alphabetised — it goes between `hunkAtRow` and `nextFileRow`).
+In `src/tui/App.tsx`, add `nearestStop` to the import from `./rows.js` (the multi-line import at lines 26-27; keep the list alphabetised — it goes between `hunkAtRow` and `nextFileRow`).
 
-Then replace `moveRows` (lines 538-543) with:
+Then replace `moveRows` (lines 536-541) with:
 
 ```ts
   /**
@@ -407,7 +419,7 @@ Expected: PASS, both new tests.
 
 `landing` is a function declaration inside the component, so it is hoisted — the effect below may call it despite appearing earlier in the file.
 
-In `src/tui/App.tsx`, the row-count effect at lines 526-530:
+In `src/tui/App.tsx`, the row-count effect at lines 524-528:
 
 ```ts
   useEffect(() => {
@@ -419,7 +431,7 @@ In `src/tui/App.tsx`, the row-count effect at lines 526-530:
   }, [detailRowList.length]);
 ```
 
-The wheel handler at lines 877-883:
+The wheel handler at lines 875-881:
 
 ```ts
       const next = scrollBy(
@@ -434,9 +446,9 @@ The wheel handler at lines 877-883:
       return true;
 ```
 
-`wheel` is already declared as `-1 | 1` at line 839, so it types as `prefer` directly.
+`wheel` is already declared as `-1 | 1` at line 837, so it types as `prefer` directly.
 
-The double-click branch at lines 909-916:
+The double-click branch at lines 907-914:
 
 ```ts
         const now = { row: hit.index, at: Date.now() };
@@ -450,7 +462,7 @@ The double-click branch at lines 909-916:
         }
 ```
 
-The single click at lines 922-926 — keep the existing comment about not recentring, it still holds:
+The single click at lines 920-924 — keep the existing comment about not recentring, it still holds:
 
 ```ts
       // Not `moveRows`: the row is already on screen, so recentring the view
@@ -461,12 +473,15 @@ The single click at lines 922-926 — keep the existing comment about not recent
       return true;
 ```
 
-Leave `setRowCursor(0)` at line 428 alone: row 0 of a non-empty diff is always a file header, and an empty diff has no row to land on.
+Leave `setRowCursor(0)` at line 426 alone: row 0 of a non-empty diff is always a file header, and an empty diff has no row to land on.
 
-- [ ] **Step 6: Run the full suite**
+- [ ] **Step 6: Run the suite**
+
+Run: `bun test tests/tui`
+Expected: PASS, 0 fail.
 
 Run: `bun test`
-Expected: PASS, 0 fail.
+Expected: no failures outside `tests/core/meat/rules.test.ts`.
 
 Run: `bun run typecheck && bun run lint:boundary`
 Expected: no errors.
@@ -484,8 +499,8 @@ git commit -m "tui: arrows walk the diff, not the gaps between files"
 
 **Files:**
 - Modify: `src/tui/rows.ts:342-350` (`nextFileRow`, `prevFileRow`)
-- Modify: `src/tui/units.ts:81-113` (delete four functions)
-- Test: `tests/tui/rows.test.ts:152` (fix a mis-named test), `tests/tui/app-input.test.tsx`, `tests/tui/units.test.ts:146-204` (delete two describe blocks)
+- Modify: `src/tui/units.ts:81-113` (delete four functions — the file ends at 113)
+- Test: `tests/tui/rows.test.ts:152` (fix a mis-named test), `tests/tui/app-input.test.tsx`, `tests/tui/units.test.ts:147-204` (delete two describe blocks)
 
 **Interfaces:**
 - Consumes: nothing from Tasks 1-3.
@@ -598,7 +613,7 @@ Nothing in `src/` calls these four; the row-based versions in `rows.ts` replaced
 
 In `src/tui/units.ts`, delete lines 81-113 — the whole run from `export function nextFileIndex` through the end of `prevFindingIndex`, including the doc comment above `nextFindingIndex`. The file ends after `buildUnits`.
 
-In `tests/tui/units.test.ts`, delete `describe('file navigation', ...)` (lines 146-171) and `describe('finding navigation', ...)` (lines 173-204). Then replace the import at lines 2-4 with:
+In `tests/tui/units.test.ts`, delete `describe('file navigation', ...)` (lines 147-171) and `describe('finding navigation', ...)` (lines 173-204, the end of the file). Then replace the import at lines 2-4 with:
 
 ```ts
 import { buildUnits } from '../../src/tui/units.js';
@@ -606,10 +621,13 @@ import { buildUnits } from '../../src/tui/units.js';
 
 `buildUnits` is the only symbol the file still takes from `units.js`. Every other import stays: the `finding()` helper and the `initTriage` / `TriagedFinding` / `VerifiedFinding` / `MeatFile` / `MeatResult` / `DiffFile` / `Hunk` types are all still used by the describes that remain.
 
-- [ ] **Step 6: Run the full suite**
+- [ ] **Step 6: Run the suite**
+
+Run: `bun test tests/tui`
+Expected: PASS, 0 fail, 456 tests — the 450 baseline, plus the 13 added across Tasks 1-4, minus the 7 deleted here.
 
 Run: `bun test`
-Expected: PASS, 0 fail. The count drops by the 7 deleted tests and rises by the ones added across Tasks 1-4.
+Expected: no failures outside `tests/core/meat/rules.test.ts`.
 
 Run: `bun run typecheck && bun run lint:boundary`
 Expected: no errors.
