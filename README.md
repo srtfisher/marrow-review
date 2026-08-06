@@ -29,37 +29,49 @@ and builds a review workflow around it.
 
 ## What it looks like
 
-Pick something to review:
+Pick something to review. The picker is the whole screen and the filter is always live —
+every key you type narrows the list by title, author, or number, so `546` and `settings`
+both get you there:
 
 ```
- Open · 3                       │
-                                │
- ❯ #546 Resolve settings pages… │
-     octocat · 3h ago           │
-                                │
-   #544 Cache the audience loo… │
-     hubot · 3h ago             │
-                                │
-   #541 Drop the legacy import… │ ╭────────────────────────────────────────────────╮
-     octocat · 3h ago           │ │ █▄ ▄█ ▄▀▀▄ █▀▀▄ █▀▀▄ ▄▀▀▄ █   █                │
-                                │ │ █ ▀ █ █▄▄█ █▄▄▀ █▄▄▀ █  █ █ ▄ █                │
-                                │ │ █   █ █  █ █ ▀▄ █ ▀▄ ▀▄▄▀ █▀ ▀█                │
-                                │ │ a large diff, abridged to what carries meaning │
-                                │ │                                                │
-                                │ │ octocat/webapp · 3 open                        │
-                                │ ╰────────────────────────────────────────────────╯
-                                │
-                                │   ↑↓  j k  move       /  search
-                                │   enter    review     ?  all keys
-                                │   1 2 3    filter     q  quit
+ marrow · octocat/webapp · open                                          reviewing #546
 ────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move   ⏎ review this one   / search   1 2 3 filter   q quit   ? all keys
+ █▄ ▄█ ▄▀▀▄ █▀▀▄ █▀▀▄ ▄▀▀▄ █   █
+ █ ▀ █ █▄▄█ █▄▄▀ █▄▄▀ █  █ █ ▄ █
+ █   █ █  █ █ ▀▄ █ ▀▄ ▀▄▄▀ █▀ ▀█
+ a large diff, abridged to what carries meaning
+
+ filter › settings▏                                                             3 of 12
+
+ ❯ #546 Resolve settings pages from packages via a namespace prefix
+     octocat · 3h ago · ● reviewing
+
+   #544 Cache the audience lookup on the settings dashboard
+     hubot · 3h ago
+
+   #521 Settings export omits toggles that were disabled after the last publish,
+       and reports success anyway
+     octocat · 2d ago
+
+────────────────────────────────────────────────────────────────────────────────────────
+ ↑↓ move   ⏎ review this one   ⇥ filter   ctrl-r refresh   esc back to #546
 ```
 
-Then read it. The sidebar gets out of the way, the header becomes a map of every file in
-the change, and the meat gauge says how much of the diff survived:
+Titles get the full width and a second row if they need one, because the title is the
+field you choose by. `⏎` opens the one under the cursor. `⇥` cycles the server-side filter
+between open, needs my review, and all.
+
+Leaving a review with `esc` asks once, and the review stays warm: its entry is marked
+`● reviewing`, the top row keeps saying so, and `esc` in the picker walks straight back
+into the same diff — same line, same scroll position, same files checked off. Only opening
+a different pull request replaces it.
+
+Then read it. The review is the whole terminal, the header is a map of every file in the
+change, and the meat gauge says how much of the diff survived:
 
 ```
+ marrow · octocat/webapp · open
+────────────────────────────────────────────────────────────────────────────────────────
  Resolve settings pages from packages via a namespace prefix
  #546 · octocat · main ← feat/settings-namespace · opus
  Packages can now register their own settings pages under a namespace prefix.
@@ -88,7 +100,7 @@ the change, and the meat gauge says how much of the diff survived:
 
 ┄┄┄ pnpm-lock.yaml · dropped: lockfile ┄┄┄
 ────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move   C comment on this line   S suggest   ] next file   ! approve   ? keys
+ ↑↓ move   c comment   s suggest   n finding   d full   ! approve   ] file   ? keys
 ```
 
 The `▍` marks a file. `✓` in the index is a file you have read — it checks itself off when
@@ -117,6 +129,12 @@ marrow <url>                # review a PR by URL
 marrow --dry-run 42         # print the abridged diff, submit nothing
 ```
 
+marrow draws before it fetches: the screen is up with the wordmark, the repository, and a
+spinner while GitHub answers, and a failed fetch lands in that same frame with
+`r retry · q quit` rather than as an error under your prompt. Given a pull request up
+front, that same frame shows the loading steps instead, and the picker does not appear
+until you leave the review.
+
 Run it from inside a clone. marrow fetches the pull request's head commit into a detached
 git worktree so the agent can read whole files and find call sites, not just the diff. No
 clone, or a worktree that fails to create? It degrades to diff-only and says so in the
@@ -129,19 +147,22 @@ header rather than letting you trust a half-evidenced review.
 | `j` `k` | move · `Ctrl-D` `Ctrl-U` half page |
 | `]` `[` | next / previous file · `n` `p` next / previous finding |
 | wheel | scroll the diff · click a line to put the cursor on it |
-| click | a file in the index to jump to it |
+| click | a file in the index to jump to it · in the picker, click aims and click again opens |
 | `space` | fold this file · `z` reveal its dropped hunks · `Z` reveal everything |
-| `/` | search by title, author, or number · `1` `2` `3` filter |
+| type | in the picker: filter by title, author, or number · `⇥` open / needs my review / all |
+| `ctrl-r` | refetch the list · `esc` clears the query, else back to the warm review, else quits |
 | `d` | full diff ↔ meat · `t` existing threads · `o` open on github.com |
 | `a` `e` `s` `x` | accept / rewrite / suggest / drop the finding under the cursor |
-| `C` `S` | write your own comment / suggestion on this line |
+| `c` `s` | write your own comment / suggestion on this line · `V` first to select a range |
 | `v` | show refuted findings and why they were refuted |
 | `i` | ask the model about this hunk · `?` help · `q` quit |
 | `!` | submit |
 
 The keyboard does everything; the mouse is there because a reviewer scrolling a diff
 reaches for the wheel without deciding to. `?` lists every binding, grouped, and scrolls if
-your terminal is too short for all of them.
+your terminal is too short for all of them — from the review, because in the picker `?` is
+filter text like every other printable key, and the row along the bottom already names all
+five keys it has.
 
 Submit is `!` rather than a letter on purpose. During triage the most-pressed keys are `a`
 and `x`; approving someone's pull request is outward-facing and awkward to undo, so it does
@@ -212,7 +233,7 @@ quietly. marrow removes both variables from the agent subprocess unless you pass
 ## Development
 
 ```bash
-bun test              # 655 tests
+bun test              # 683 tests
 bun run typecheck
 bun run lint:boundary # src/core must never import UI
 bun run build
@@ -224,7 +245,8 @@ anchoring, the meat engine, review construction — are testable without renderi
 non-terminal frontend could reuse them.
 
 Layout arithmetic lives in pure modules next to the components that draw from it
-(`fileindex.ts`, `viewport.ts`, `hittest.ts`, `help.ts`, `hints.ts`) and is unit-tested
+(`fileindex.ts`, `viewport.ts`, `picker.ts`, `chrome.ts`, `hittest.ts`, `help.ts`,
+`hints.ts`) and is unit-tested
 directly. In a terminal, "the renderer and the scroll maths disagree by one row" is a real
 class of bug, and the fix is to have exactly one of them.
 

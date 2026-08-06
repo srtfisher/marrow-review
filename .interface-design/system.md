@@ -45,11 +45,11 @@ Colors carry meaning; they are never decoration.
 
 Four text tiers, the hierarchy backbone:
 
-One glyph is drawn rather than typed: the wordmark on the welcome panel, in the same
-half-block characters the meat gauge uses, in `primary` — not the cyan `structure` token,
-which means position and navigation everywhere else, and a logo is neither. Three rows,
-and the first thing dropped when the pane is short: it is decoration, and the three
-questions that panel answers are not.
+One glyph is drawn rather than typed: the wordmark on the launch frame and at the top of
+the picker, in the same half-block characters the meat gauge uses, in `primary` — not the
+cyan `structure` token, which means position and navigation everywhere else, and a logo is
+neither. Three rows, and the first thing dropped when the screen is short: it is
+decoration, and the list under it is not.
 
 | Tier | ANSI | Use |
 |---|---|---|
@@ -200,14 +200,17 @@ Three things that could only exist in this product:
 
 | State | Treatment |
 |---|---|
-| selected (list) | `❯ ` in the accent color plus a bold title. Never reverse video — a full-width inverse bar is the heaviest thing on screen. |
+| selected (picker) | `❯ ` in the accent color plus a bold title, which may run to a second computed row. Never reverse video — a full-width inverse bar is the heaviest thing on screen. |
 | cursor (detail) | cyan `▸` in the left margin; no reverse — it would fight the diff colors |
 | folded | the folded-noise rule, dim |
 | dropped file | dim path plus `· dropped: <rule>`, never omitted |
 | staged | `● N staged` in yellow, header and status bar both |
 | failing checks | `danger`, named inline in the header — never a bare count |
-| empty list | "No pull requests." — never a blank pane |
-| no search match | `No match for "query".` — never a blank pane |
+| empty list | "No pull requests." centred in the entry region, the filter line still live above it — never a blank pane |
+| no filter match | `No match for "query".` in the same place, for the same reason. A repository with nothing open and a query that matched nothing are different facts. |
+| launch, list still fetching | centred wordmark, repository, and `ink-spinner` dots with `fetching open pull requests…` — the app has visibly started before GitHub answers |
+| launch, fetch failed | the message in `danger` inside the same frame, `r retry · q quit` under it. Never dumped under the shell prompt: the alternate screen is already up. |
+| leaving a review | the status row takes over in `pending`: `leave this review? it stays warm`. Not `danger` — the review survives and the draft is on disk. |
 | degraded (no worktree) | `diff-only` in the status bar, stated not hidden |
 | model still running (findings filling in) | no indicator — rule verdicts already rendered and nothing is blocked |
 | user is blocked (opening a PR, awaiting a chat answer) | `ink-spinner` dots plus named steps and a ticking elapsed counter. The counter is what proves it is alive. |
@@ -280,6 +283,88 @@ Reporting is turned off again on every exit path, including while `$EDITOR` owns
 terminal. A shell left in reporting mode prints `[<0;12;7M` at the prompt on every click,
 and nothing tells the user which program did that to them.
 
+## Revision, after failing to read a title and failing to get back to a review
+
+Three complaints from real use, all landing on the same seam, and the fix retires the
+oldest structural decision in this document.
+
+**The sidebar is gone.** Thirty-two columns truncated every title of consequence, and the
+title is the one field a reviewer chooses by — `Resolve settings pages…` identifies
+nothing. That alone was a case for a wider list, not for deleting the pane; two more
+things made the pane itself the problem. It offered no door back into an open review: you
+could leave a diff you were halfway through and the only way forward was to open a pull
+request again, which refetched it and lost your place. And once the review went
+full-screen, the split had no second occupant — the welcome panel existed to fill the
+half the list was not using, which is decoration whose job is to not be empty. A pane
+split earns its rule when two things are on screen. One thing wide is the right answer to
+one thing.
+
+Consequences elsewhere in this document: the **32-column sidebar** bullet under *Density
+and proportion* is retired, the detail pane is always the full width, and the single
+**vertical rule** under *Depth* has nothing left to divide — it is deleted rather than
+kept as a line down an empty column. The two horizontal rules stay, and the top one is now
+the chrome row's.
+
+**The picker is search-first: typing is the interface.** There is no non-searching state
+to open a search from, so `/` goes, and the bindings that remain are the ones a live input
+leaves free — `↑`/`↓` (with `ctrl-p`/`ctrl-n`), `⏎`, `⇥` to cycle open / needs my review /
+all, `ctrl-r` to refetch. Digits filter, because `#546` has to be typeable, which cost the
+`1 2 3` filter keys; `q` and `?` are letters here too. Losing `?` is the interesting one:
+the picker has five bindings and the hint bar names all five, so there is no rest to be
+the way out of not knowing. An overlay listing five things, reached by a key that is
+really query text, would be a joke at the reviewer's expense. `esc` unwinds exactly one
+layer per press — the query, then the review still warm behind it, then the program — so
+the most reflexive key in the app never skips a step.
+
+**Amendment to *no row may ever wrap*: a picker title may take two rows.** The rule's
+target was never wrapping as such; it was *Ink* wrapping, which pushes every row below it
+down by one and leaves the cursor pointing at something the reviewer is not looking at.
+The wrap here is computed in `picker.ts` and handed to the renderer as rows, so the
+renderer, the scroll clamp, and the hit test count the same ones — the discipline
+`planFileIndex` and `layoutHelp` already follow. Two rows, then an ellipsis: a title that
+needs three is being read, not chosen from. Entries are therefore 3 or 4 rows tall, and
+everything that walks the list adds heights rather than multiplying by a constant, which
+is exactly where the renderer and the scroll maths would otherwise come to disagree by a
+row. (The *three-row list entries* bullet becomes three or four.)
+
+**One chrome row frames every settled screen.** `marrow · owner/repo · open` on the left,
+`reviewing #546` on the right, above a dim rule. It needs no new licence: a rule below a
+header is one of the two hard boundaries this document already allows, and the chrome row
+takes that position. Fitting degrades in the order of what a reviewer can spare — the
+warm-review reminder first, the repository's name second, the app's name never. A
+full-screen program that does not say what it is is the stray text the rest of these rules
+exist to prevent. The right segment is also dropped inside the review itself, where the
+title block two rows down already names the number; twice on one screen is noise.
+
+**Launch renders first and fetches second.** `marrow` used to wait on GitHub in the raw
+terminal and then snap a full layout onto the screen, which is loading and then starting.
+It now enters the alternate screen immediately with a centered wordmark, tagline,
+repository, and a spinner — the app starts, then loads. A failed fetch lands *in that
+frame*, in `danger`, with `r retry · q quit` under it, rather than as text dumped under
+the prompt: the alternate screen is already up, and a reviewer mid-launch should be told
+what broke where they are looking. The frame carries no chrome row, because it is the
+brand moment and a header reading `marrow` above a banner reading `marrow` is the same
+word twice.
+
+**One `primary` per screen, even when the primary is the wordmark.** `marrow 42` skips the
+list and hosts the loading steps in the launch frame, and there the `Loading #42` line is
+what the reviewer is watching — so the wordmark steps down to `secondary` rather than
+competing with it. The banner is subject to the same discipline in the picker: it docks at
+the top, and drops as a whole block — never clipped mid-glyph — as soon as fewer than
+three entries would fit beside it. Three rows of decoration are affordable exactly while
+the list is still the point.
+
+**Leaving a review asks, and the question is not a warning.** `esc` from the review takes
+the status row in `pending` yellow — `leave this review? it stays warm` — never `danger`,
+because nothing is destroyed: the review stays loaded, `esc` from the picker walks back
+into it with the cursor, the scroll position, and the reviewed checks intact, and the
+draft is on disk either way. Taking the status bar's existing row rather than adding one
+means the layout does not shift under a question about the reviewer's own work, which is
+how `confirmQuit` already behaves. It asks every time and not only with staged comments,
+because `esc` is reflexive and what it swaps away is somebody's place in a diff. Quitting
+keeps its own separate confirm: leaving and quitting are different verbs and deserve
+different questions.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme
@@ -291,3 +376,5 @@ and nothing tells the user which program did that to them.
   derived from those
 - Clipping an overlay that does not fit → group, reflow into columns, then scroll
 - Mouse motion/drag reporting → wheel and click only
+- A sidebar for a list that is the only thing on screen → one full-screen picker; the
+  split needs a second occupant to be worth its rule
