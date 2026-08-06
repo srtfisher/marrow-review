@@ -23,8 +23,8 @@ import { VERDICTS, blockedForAuthor } from '../core/review/verdicts.js';
 export type { CommentAnchor };
 import { buildUnits, type ReviewUnit } from './units.js';
 import {
-  anchorAtRow, buildRows, composerTitle, findingAtRow, hunkAtRow, nearestStop, nextFileRow,
-  nextFindingRow,
+  anchorAtRow, buildRows, composerTitle, fileHeaderRow, findingAtRow, hunkAtRow, nearestStop,
+  nextFileRow, nextFindingRow,
   pathAtRow, prevFileRow, prevFindingRow, rangeAnchor, rowForAnchor, unitAtRow, unitStartRows,
   withComposer, type ComposerView, type DetailRow,
 } from './rows.js';
@@ -325,6 +325,12 @@ export function App(props: AppProps) {
   const chatToken = useRef(0);
   /** The last left press, so the next one can tell whether it is a double. */
   const lastClick = useRef<Click | null>(null);
+  /**
+   * The file to come to rest on once a fold has rebuilt the rows underneath the
+   * cursor. Only `F` sets it — `space` moves one file's worth of rows and the
+   * ordinary clamp lands close enough.
+   */
+  const landOnPath = useRef<string | null>(null);
 
   const visiblePrs = useMemo(() => filterPrs(props.prs ?? [], query), [props.prs, query]);
   const shownFindings = useMemo(
@@ -560,6 +566,19 @@ export function App(props: AppProps) {
     setRowScroll((prev) => nextScrollTop(detailRowList.length, detailRows, rested, prev));
   }, [detailRowList.length]);
 
+  // Declared after the clamp above so it runs after it and wins: this knows
+  // which file the reviewer was on, and the clamp only knows a row number that
+  // no longer means anything.
+  useEffect(() => {
+    const path = landOnPath.current;
+    if (path === null) return;
+    landOnPath.current = null;
+    const row = fileHeaderRow(detailRowList, path);
+    if (row === null) return;
+    setRowCursor(row);
+    setRowScroll(scrollToRow(detailRowList.length, detailRows, row));
+  }, [foldedFiles]);
+
   function moveList(next: number) {
     const clamped = clampCursor(next, visiblePrs.length);
     setListCursor(clamped);
@@ -672,6 +691,21 @@ export function App(props: AppProps) {
   function revealAll() {
     const all = props.meat?.files.map((f) => f.file.path) ?? [];
     setExpanded((s) => (s.size === all.length ? new Set() : new Set(all)));
+  }
+
+  /**
+   * `F`. Same shape as `revealAll`: all folded means open everything, anything
+   * else means close everything — so a half-folded diff closes on the first
+   * press and opens on the second, rather than needing a press per file.
+   */
+  function foldAll() {
+    const all = props.meat?.files.map((f) => f.file.path) ?? [];
+    // Collapsing seventeen files takes four hundred rows down to thirty-odd,
+    // and the cursor indexes rows. Clamping alone sent a reviewer reading file
+    // eight to the header of file seventeen, so the file itself is remembered
+    // and found again by path once the new rows exist.
+    landOnPath.current = currentPath();
+    setFolded((s) => (s.size === all.length ? new Set() : new Set(all)));
   }
 
   function enterOverlay(next: Mode) {
@@ -1184,6 +1218,8 @@ export function App(props: AppProps) {
         if (path) setFolded((s) => toggleIn(s, path));
         return;
       }
+      case 'toggle-fold-all':
+        return foldAll();
       case 'toggle-dropped': {
         const path = currentPath();
         if (path) setExpanded((s) => toggleIn(s, path));

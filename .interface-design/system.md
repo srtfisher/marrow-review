@@ -405,6 +405,27 @@ to a header the reviewer did not ask for.
 The scroll is clamped at the end of the diff, so the last file stops where the diff stops
 instead of scrolling its tail into blank rows. The wheel keeps its own rule, unchanged: the
 view leads and the cursor follows.
+<<<<<<< HEAD
+=======
+
+## Space folds a file, `F` folds all of them
+
+`z`/`Z` is the shape — lowercase acts on this file, uppercase on every file — and Space,
+which folds one file to its header, has no shifted form a terminal can report. Breaking the
+pair on the key rather than on the verb: `F` folds every file, and folds rather than
+unfolds whenever anything is still open, so a half-folded diff closes on one press and
+opens on the next.
+
+Collapsing seventeen files takes four hundred rows down to thirty-odd, and the cursor
+indexes rows. Clamping it into the shorter list sends a reviewer reading file eight to the
+header of file seventeen — the diff reorganised itself and took their place with it. The
+file is remembered by path across the fold and found again, then anchored to the top by the
+rule above. `F` twice is a no-op, which is what a toggle should be.
+
+`F` is not in the bottom row. That bar is six verbs and stays six verbs; help names the
+binding.
+
+>>>>>>> fc4f451 (tui: F folds every file, and remembers where you were)
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme

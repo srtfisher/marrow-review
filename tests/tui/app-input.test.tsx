@@ -1398,6 +1398,63 @@ describe('arriving at a file shows the file', () => {
   });
 });
 
+describe('F folds every file at once', () => {
+  const three = meatOf([
+    proseFile('src/alpha.ts', 'alpha', 3),
+    proseFile('src/bravo.ts', 'bravo', 200),
+    proseFile('src/charlie.ts', 'charlie', 200),
+  ]);
+
+  test('F collapses the whole diff to its file names, and F again restores it', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+    expect(app.frame()).toContain('alpha 0');
+
+    await app.press('F');
+    const folded = app.frame();
+    // Every file still named — nothing is ever hidden — and no content left.
+    expect(folded).toContain('src/alpha.ts');
+    expect(folded).toContain('src/bravo.ts');
+    expect(folded).toContain('src/charlie.ts');
+    expect(folded).not.toContain('alpha 0');
+    expect(folded).not.toContain('bravo 0');
+
+    await app.press('F');
+    expect(app.frame()).toContain('alpha 0');
+  });
+
+  test('F from a half-folded diff closes it rather than opening the rest', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+
+    // Fold one file with Space, then F.
+    await app.press(' ');
+    await app.press('F');
+    const folded = app.frame();
+    expect(folded).not.toContain('alpha 0');
+    expect(folded).not.toContain('bravo 0');
+  });
+
+  test('folding and unfolding leaves the reviewer on the file they were reading', async () => {
+    const app = mount({ pr: detail, meat: three });
+    await delay(60);
+    await app.press(']');
+    expect(app.frame()).toContain('bravo 0');
+
+    await app.press('F');
+    await app.press('F');
+    const frame = app.frame();
+
+    // Where the cursor is, not merely what is on screen: alpha.ts is three
+    // lines long, so bravo.ts stays visible even when the cursor has been
+    // dumped somewhere else entirely, and asserting on the content alone
+    // passed with the file-keeping taken out.
+    expect(frame).toMatch(/▸\s*▍\s*src\/bravo\.ts/);
+    // Clamping alone sent the cursor to charlie.ts, because the row it held no
+    // longer existed once the diff collapsed.
+    expect(frame).not.toContain('alpha 2');
+  });
+});
 
 describe('checking a file off', () => {
   test('m marks the file under the cursor, and again unmarks it', async () => {

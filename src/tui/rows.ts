@@ -408,6 +408,16 @@ export function pathAtRow(rows: DetailRow[], index: number): string | null {
   return rows[index]?.path ?? null;
 }
 
+/**
+ * Where a file's header sits, by path — how an action that rebuilt the rows
+ * finds the file the reviewer was on again. Null when the path is not in the
+ * diff at all, which is not the same as row 0.
+ */
+export function fileHeaderRow(rows: DetailRow[], path: string): number | null {
+  const at = rows.findIndex((row) => isFileHeader(row) && row.path === path);
+  return at === -1 ? null : at;
+}
+
 export function unitAtRow(rows: DetailRow[], index: number): number | null {
   return rows[index]?.unit ?? null;
 }

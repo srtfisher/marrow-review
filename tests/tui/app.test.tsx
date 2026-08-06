@@ -5,7 +5,7 @@ import {
 } from '../../src/tui/App.js';
 import { Help } from '../../src/tui/components/Help.js';
 import { HELP_GROUPS, KEY_HELP } from '../../src/tui/keymap.js';
-import { layoutHelp } from '../../src/tui/help.js';
+import { HELP_CHROME_ROWS, layoutHelp } from '../../src/tui/help.js';
 import { buildUnits } from '../../src/tui/units.js';
 import { anchorAtRow, buildRows } from '../../src/tui/rows.js';
 import { accept, initTriage, toStagedComments } from '../../src/core/findings/triage.js';
@@ -127,8 +127,12 @@ describe('Help', () => {
       <Help width={80} height={24} scrollTop={9999} />, { columns: 80 },
     ).replaceAll(/\x1b\[[0-9;]*m/g, '');
     // The window stops with the last row at the bottom, never on empty space.
+    // Counted from the layout rather than written down: the number is however
+    // many bindings there are, and hardcoding it made adding one a test
+    // failure that said nothing about the scrolling this is here to check.
+    const total = layoutHelp(80, 24).rows.length;
     expect(out).toContain('close this overlay');
-    expect(out).toMatch(/(\d+)–45 of 45/);
+    expect(out).toMatch(new RegExp(`(\\d+)–${total} of ${total}`));
   });
 
   // Roomy columns beat cramped ones whenever the roomy ones already fit. A
@@ -136,7 +140,10 @@ describe('Help', () => {
   // forces; only a short one is.
   test('uses the fewest columns the height needs, not the most the width allows', () => {
     // Tall enough for every binding in one column, on a very wide terminal.
-    expect(layoutHelp(240, 48).columns).toBe(1);
+    // Derived rather than guessed: the height that fits one column grows with
+    // the bindings, and 48 stopped being tall enough the moment one was added.
+    const oneColumn = layoutHelp(240, 1000);
+    expect(layoutHelp(240, oneColumn.rows.length + HELP_CHROME_ROWS).columns).toBe(1);
     // Short enough that one column would run off the bottom.
     expect(layoutHelp(240, 24).columns).toBe(3);
     // Narrow enough that only one column fits, however short it is.

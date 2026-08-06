@@ -1,6 +1,7 @@
 import { test, expect, describe } from 'bun:test';
 import {
-  buildRows, findingAtRow, hunkAtRow, nearestStop, nextFileRow, nextFindingRow, pathAtRow,
+  buildRows, fileHeaderRow, findingAtRow, hunkAtRow, nearestStop, nextFileRow, nextFindingRow,
+  pathAtRow,
   prevFileRow, prevFindingRow, rangeAnchor, unitAtRow, unitStartRows, withComposer,
   type DetailRow,
 } from '../../src/tui/rows.js';
@@ -214,6 +215,25 @@ describe('navigation', () => {
     expect(unitAtRow(rows, 0)).toBe(0);
     expect(findingAtRow(rows, nextFindingRow(rows, 0))?.id).toBe('f1');
     expect(findingAtRow(rows, 0)).toBeNull();
+  });
+});
+
+describe('fileHeaderRow', () => {
+  // a.ts: 0 header, 1 hunk-header, 2-4 lines. 5 blank. b.ts: 6 header.
+  const rows = rowsOf([file('a.ts', 1, 3), file('b.ts', 1, 3)]);
+
+  test('finds a file by path rather than by the row it used to be on', () => {
+    expect(fileHeaderRow(rows, 'a.ts')).toBe(0);
+    expect(fileHeaderRow(rows, 'b.ts')).toBe(6);
+  });
+
+  test('answers null for a path not in the diff, which is not row 0', () => {
+    expect(fileHeaderRow(rows, 'c.ts')).toBeNull();
+  });
+
+  test('does not answer with a body row that carries the same path', () => {
+    // Every row of a file carries its path; only the header is the file.
+    expect(rows[fileHeaderRow(rows, 'b.ts')!]!.kind).toBe('file-header');
   });
 });
 

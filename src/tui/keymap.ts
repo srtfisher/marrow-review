@@ -15,6 +15,7 @@ export type Action =
   | { type: 'toggle-dropped' }
   | { type: 'toggle-dropped-all' }
   | { type: 'toggle-fold' }
+  | { type: 'toggle-fold-all' }
   | { type: 'toggle-full-diff' }
   | { type: 'toggle-reviewed' }
   | { type: 'toggle-threads' }
@@ -79,6 +80,7 @@ export const KEY_HELP: readonly KeyHelpEntry[] = [
   { keys: 'drag / shift-click', description: 'select a range of lines', modes: ['detail'], group: 'move' },
   { keys: 'double-click', description: 'comment on that line', modes: ['detail'], group: 'move' },
   { keys: 'space', description: 'fold or unfold this file', modes: ['detail'], group: 'read' },
+  { keys: 'F', description: 'fold or unfold every file', modes: ['detail'], group: 'read' },
   { keys: 'z / Z', description: 'reveal dropped hunks in this file / everywhere', modes: ['detail'], group: 'read' },
   { keys: 'd', description: 'toggle full diff vs meat', modes: ['detail'], group: 'read' },
   { keys: 'm', description: 'check this file off as reviewed', modes: ['detail'], group: 'read' },
@@ -176,6 +178,9 @@ export function resolveAction(
   if (input === ']') return { type: 'file', dir: 1 };
   if (input === '[') return { type: 'file', dir: -1 };
   if (input === ' ') return { type: 'toggle-fold' };
+  // The shifted "all files" form of Space, which has no shifted form a terminal
+  // can report. Sited on the verb rather than the key so it pairs with `z`/`Z`.
+  if (input === 'F') return { type: 'toggle-fold-all' };
   if (input === 'z') return { type: 'toggle-dropped' };
   if (input === 'Z') return { type: 'toggle-dropped-all' };
   if (input === 'd') return { type: 'toggle-full-diff' };
