@@ -41,15 +41,37 @@ const rows = buildRows(
   false,
 );
 
+const commentRows = buildRows(
+  buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set() }),
+  [],
+  false,
+  [{
+    id: 'c1', path: 'a.ts', line: 1, side: 'RIGHT', startLine: null,
+    body: 'is this right?', suggestion: null,
+  }],
+  60,
+);
+
 const width = (hints: readonly { keys: string; label: string }[]) =>
   hints.reduce((n, h, i) => n + (i > 0 ? 3 : 0) + h.keys.length + 1 + h.label.length, 0);
 
 describe('detailHints', () => {
   test('offers commenting on the line, which is what the cursor is on', () => {
     const diffRow = rows.find((r) => r.kind === 'diff-line');
-    const labels = detailHints(diffRow, false).map((h) => h.label);
-    expect(labels).toContain('comment on this line');
-    expect(labels).toContain('suggest');
+    const hints = detailHints(diffRow, false);
+    expect(hints.map((h) => h.label)).toContain('comment on this line');
+    expect(hints.map((h) => h.keys)).toContain('c');
+    expect(hints.map((h) => h.keys)).toContain('s');
+  });
+
+  test('offers editing and deleting when the cursor is on your own comment', () => {
+    const commentRow = commentRows.find((r) => r.kind === 'comment');
+    const keys = detailHints(commentRow, false).map((h) => h.keys);
+    expect(keys).toContain('⏎');
+    expect(keys).toContain('x');
+    // Not the line verbs: a comment is not a line, and `c` here would author a
+    // second comment on the line the first one is already about.
+    expect(keys).not.toContain('c');
   });
 
   test('offers triage instead when the cursor is on a finding', () => {
@@ -58,7 +80,7 @@ describe('detailHints', () => {
     expect(keys).toContain('a');
     expect(keys).toContain('x');
     // A finding is not a line, so the line verbs step aside for the decision.
-    expect(keys).not.toContain('C');
+    expect(keys).not.toContain('c');
   });
 
   test('always offers a way to approve and a way out of not knowing', () => {
@@ -113,10 +135,10 @@ describe('fitHints', () => {
   });
 
   test('sheds from the back, so the contextual verbs keep their wording longest', () => {
-    // At this width the trailing hints have gone short while `C` has not: `C`
+    // At this width the trailing hints have gone short while `c` has not: `c`
     // is the one that tells a reviewer line-level comments exist.
     const fitted = fitHints(hints, 100);
-    expect(fitted.find((h) => h.keys === 'C')?.label).toBe('comment on this line');
+    expect(fitted.find((h) => h.keys === 'c')?.label).toBe('comment on this line');
     expect(fitted.find((h) => h.keys === ']')?.label).toBe('file');
   });
 

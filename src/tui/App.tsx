@@ -22,19 +22,24 @@ import type {
 export type { CommentAnchor };
 import { buildUnits, type ReviewUnit } from './units.js';
 import {
-  anchorAtRow, buildRows, findingAtRow, hunkAtRow, nextFileRow, nextFindingRow, pathAtRow,
-  prevFileRow, prevFindingRow, unitAtRow, unitStartRows, type DetailRow,
+  anchorAtRow, buildRows, composerTitle, findingAtRow, hunkAtRow, nextFileRow, nextFindingRow,
+  pathAtRow, prevFileRow, prevFindingRow, rangeAnchor, rowForAnchor, unitAtRow, unitStartRows,
+  withComposer, type ComposerView, type DetailRow,
 } from './rows.js';
+import {
+  backspace, fromText, insert, newline, toText, move as moveCaret, type Buffer,
+} from './textarea.js';
 import { editInEditor } from './editor.js';
 import { nextScrollTop, scrollBy } from './viewport.js';
 import { hitDetail, hitList } from './hittest.js';
-import { MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_ROWS, parseMouse } from './mouse.js';
+import {
+  MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_ROWS, isDoubleClick, parseMouse, type Click,
+} from './mouse.js';
 import { planFileIndex } from './fileindex.js';
 import { resolveAction, type Mode } from './keymap.js';
 import type { LoadProgress } from './progress.js';
 import { filterPrs } from './search.js';
 import { ChatPane } from './components/ChatPane.js';
-import { CommentEditor } from './components/CommentEditor.js';
 import { Detail, detailHeaderRows } from './components/Detail.js';
 import { Help } from './components/Help.js';
 import { helpBodyRows, layoutHelp } from './help.js';
@@ -191,6 +196,40 @@ function ChatOverlay({ session, pending, onAsk, onClose }: ChatOverlayProps) {
   );
 }
 
+/** The two keys that are not guessable. `esc` always is, and is said anyway. */
+const COMPOSER_FOOTER = '^d save · ^o editor · esc cancel';
+
+function composerView(
+  composer: { anchor: CommentAnchor; buffer: Buffer },
+  width: number,
+): ComposerView {
+  return {
+    title: composerTitle(composer.anchor),
+    lines: composer.buffer.lines,
+    row: composer.buffer.row,
+    col: composer.buffer.col,
+    footer: COMPOSER_FOOTER,
+    width,
+  };
+}
+
+/**
+ * What a suggestion starts out holding: GitHub's fence wrapped around the lines
+ * it would replace.
+ *
+ * Only lines that exist in the post-image contribute. A deleted line is not
+ * there to be replaced, and including it would make the suggestion re-add code
+ * the author had just taken out.
+ */
+function suggestionBody(rows: DetailRow[], from: number, to: number): string {
+  const replaced: string[] = [];
+  for (let i = Math.min(from, to); i <= Math.max(from, to); i += 1) {
+    const row = rows[i];
+    if (row?.kind === 'diff-line' && row.line.newLine !== null) replaced.push(row.line.text);
+  }
+  return ['```suggestion', ...replaced, '```'].join('\n');
+}
+
 export function App(props: AppProps) {
   const { exit } = useApp();
   const { setRawMode, isRawModeSupported } = useStdin();
@@ -218,7 +257,22 @@ export function App(props: AppProps) {
   const [showThreads, setShowThreads] = useState(false);
   const [draft, setDraft] = useState<ReviewDraft>({ verdict: null, body: '', comments: [] });
   const [verdict, setVerdict] = useState<Verdict>('COMMENT');
-  const [pending, setPending] = useState<{ anchor: CommentAnchor; isSuggestion: boolean } | null>(null);
+  /**
+   * The open composer: where it is anchored, what has been typed, and the id of
+   * the staged comment it is rewriting, if any.
+   *
+   * There is no `isSuggestion` flag. A suggestion is a fenced block typed into
+   * the body like any other markdown, so `c` and `s` differ only in what the
+   * buffer starts out holding.
+   */
+  const [composer, setComposer] = useState<
+    { anchor: CommentAnchor; buffer: Buffer; editing: string | null } | null
+  >(null);
+  /**
+   * Where `V` was pressed, as a row index. The selection runs from here to the
+   * cursor in whichever direction it was swept.
+   */
+  const [selectAnchor, setSelectAnchor] = useState<number | null>(null);
   /** True while `$EDITOR` owns the terminal; Ink must not repaint over it. */
   const [editorOpen, setEditorOpen] = useState(false);
   /** Set by `q` when there is work on screen that has not been submitted. */
@@ -245,6 +299,8 @@ export function App(props: AppProps) {
    * wrong code in front of the model.
    */
   const chatToken = useRef(0);
+  /** The last left press, so the next one can tell whether it is a double. */
+  const lastClick = useRef<Click | null>(null);
 
   const visiblePrs = useMemo(() => filterPrs(props.prs, query), [props.prs, query]);
   const shownFindings = useMemo(
@@ -270,9 +326,21 @@ export function App(props: AppProps) {
    * renders, what the viewport windows on, and what the cursor indexes — so a
    * height calculation can no longer disagree with what was drawn.
    */
-  const detailRowList = useMemo(
-    () => buildRows(units, props.threads, showThreads),
-    [units, props.threads, showThreads],
+  // While reviewing, the sidebar goes away and the diff owns the terminal: on a
+  // 17-file monorepo change the paths are the content, and a 32-column column
+  // truncated every one of them to `#546 feat(packages): resolv…`.
+  //
+  // Keyed on the mode, not merely on a pull request being loaded. `esc` from
+  // the diff sets the mode back to `list` without unloading it, so keying on
+  // the pull request alone left the sidebar hidden and `esc` looking dead.
+  //
+  // These sit above the row list because the pane's width decides where a
+  // comment body wraps, and wrapping happens when the rows are built.
+  const browsing = mode === 'list' || mode === 'search';
+  const reviewing = props.pr !== null && props.meat !== null && !browsing;
+  const detailWidth = Math.max(
+    1,
+    columns - (reviewing ? 2 : theme.layout.sidebarWidth + 3),
   );
   /**
    * Manual comments plus every accepted finding, in one list, once. A restored
@@ -286,6 +354,21 @@ export function App(props: AppProps) {
     }
     return [...byId.values()];
   }, [draft.comments, findings]);
+  const detailRowList = useMemo(() => {
+    // The comment being rewritten is hidden while its composer is open —
+    // otherwise the old wording sits directly above the box you are changing it
+    // in, and the two disagree on screen.
+    const shown = composer?.editing
+      ? staged.filter((c) => c.id !== composer.editing)
+      : staged;
+    const base = buildRows(units, props.threads, showThreads, shown, detailWidth - 8);
+    if (!composer) return base;
+
+    const at = rowForAnchor(base, composer.anchor);
+    // Less the two columns the box is indented by, so its right border lands
+    // inside the pane instead of being truncated off the end of it.
+    return at < 0 ? base : withComposer(base, at, composerView(composer, detailWidth - 2));
+  }, [units, props.threads, showThreads, staged, composer, detailWidth]);
   const fullDraft = useMemo(() => ({ ...draft, comments: staged }), [draft, staged]);
 
   // One row for the horizontal rule, one for the status line.
@@ -297,12 +380,6 @@ export function App(props: AppProps) {
   // Keyed on the mode, not merely on a pull request being loaded. `esc` from
   // the diff sets the mode back to `list` without unloading it, so keying on
   // the pull request alone left the sidebar hidden and `esc` looking dead.
-  const browsing = mode === 'list' || mode === 'search';
-  const reviewing = props.pr !== null && props.meat !== null && !browsing;
-  const detailWidth = Math.max(
-    1,
-    columns - (reviewing ? 2 : theme.layout.sidebarWidth + 3),
-  );
   const listRows = visibleEntryCount(bodyHeight, mode === 'search');
   // Notes render under the detail pane, so the pane's budget pays for them —
   // otherwise adding one pushes the status bar off the bottom again. Scrolling
@@ -526,11 +603,42 @@ export function App(props: AppProps) {
     setMode(next);
   }
 
-  function startComment(isSuggestion: boolean) {
-    const anchor = anchorAtRow(detailRowList, cursor);
+  /** The swept range, or the single row the cursor is on. */
+  function selectedRows(): { from: number; to: number } {
+    if (selectAnchor === null) return { from: cursor, to: cursor };
+    return { from: Math.min(selectAnchor, cursor), to: Math.max(selectAnchor, cursor) };
+  }
+
+  function startComment(isSuggestion: boolean, at?: { from: number; to: number }) {
+    const { from, to } = at ?? selectedRows();
+    // `rangeAnchor` returns null on rows that are not diff lines; `anchorAtRow`
+    // then degrades to the enclosing hunk, so a comment is never simply refused.
+    const anchor = rangeAnchor(detailRowList, from, to) ?? anchorAtRow(detailRowList, from);
     if (!anchor) return;
-    setPending({ anchor, isSuggestion });
+
+    setComposer({
+      anchor,
+      buffer: fromText(isSuggestion ? suggestionBody(detailRowList, from, to) : ''),
+      editing: null,
+    });
+    setSelectAnchor(null);
     enterOverlay('comment');
+  }
+
+  function closeComposer() {
+    setComposer(null);
+    setSelectAnchor(null);
+    setMode('detail');
+  }
+
+  function editBuffer(change: (buffer: Buffer) => Buffer) {
+    setComposer((c) => (c ? { ...c, buffer: change(c.buffer) } : c));
+  }
+
+  /** The staged comment under the cursor, if the cursor is on one. */
+  function commentAtCursor(): StagedComment | null {
+    const row = detailRowList[cursor];
+    return row?.kind === 'comment' ? row.comment : null;
   }
 
   function currentFinding(): TriagedFinding | null {
@@ -558,7 +666,7 @@ export function App(props: AppProps) {
     const initial = finding.editedBody ?? finding.body;
     const open = props.editText ?? editInEditor;
 
-    setPending(null);
+    setComposer(null);
     setEditorOpen(true);
     if (isRawModeSupported) setRawMode(false);
 
@@ -619,21 +727,95 @@ export function App(props: AppProps) {
     });
   }
 
-  function saveComment(body: string) {
-    if (pending && body.trim().length > 0) {
-      const comment: StagedComment = {
-        id: `${pending.anchor.path}:${pending.anchor.line}:${draft.comments.length}`,
-        path: pending.anchor.path,
-        line: pending.anchor.line,
-        side: pending.anchor.side,
-        startLine: null,
-        body: pending.isSuggestion ? '' : body,
-        suggestion: pending.isSuggestion ? body : null,
-      };
-      setDraft((d) => ({ ...d, comments: [...d.comments, comment] }));
+  function saveComment() {
+    if (!composer) return;
+    const { anchor, editing } = composer;
+    const body = toText(composer.buffer).trim();
+
+    if (body.length > 0) {
+      setDraft((d) => {
+        const comment: StagedComment = {
+          id: editing ?? `${anchor.path}:${anchor.line}:${d.comments.length}`,
+          path: anchor.path,
+          line: anchor.line,
+          side: anchor.side,
+          startLine: anchor.startLine ?? null,
+          body,
+          // A composed comment carries its own markdown, fence and all —
+          // `renderCommentBody` passes a null-suggestion body through verbatim.
+          // The field stays for findings, which is the only path that fills it.
+          suggestion: null,
+        };
+        return {
+          ...d,
+          comments: editing
+            ? d.comments.map((c) => (c.id === editing ? comment : c))
+            : [...d.comments, comment],
+        };
+      });
     }
-    setPending(null);
-    setMode('detail');
+
+    closeComposer();
+  }
+
+  /**
+   * Every key while the composer is up. It owns all of them, escape included —
+   * a stray `!` or `q` in the middle of a comment must never be a command.
+   */
+  function handleComposerKey(input: string, key: Parameters<typeof resolveAction>[1] & {
+    leftArrow?: boolean; rightArrow?: boolean; backspace?: boolean; delete?: boolean;
+    meta?: boolean;
+  }) {
+    // A mouse report is one input event naming no key. Left in, `[<0;42;13M`
+    // would be typed into the comment as text.
+    if (parseMouse(input)) return;
+
+    if (key.escape) return closeComposer();
+
+    if (key.ctrl) {
+      // Not ctrl-s: that is XOFF, and on a terminal that has not disabled flow
+      // control it freezes the session with no clue as to what happened.
+      if (input === 'd') return saveComment();
+      if (input === 'o') return void composeInEditor();
+      if (input === 'a') return editBuffer((b) => moveCaret(b, 'home'));
+      if (input === 'e') return editBuffer((b) => moveCaret(b, 'end'));
+      return;
+    }
+
+    if (key.return) return editBuffer(newline);
+    // macOS sends DEL for the backspace key, which Ink reports as `delete`.
+    if (key.backspace || key.delete) return editBuffer(backspace);
+    if (key.leftArrow) return editBuffer((b) => moveCaret(b, 'left'));
+    if (key.rightArrow) return editBuffer((b) => moveCaret(b, 'right'));
+    if (key.upArrow) return editBuffer((b) => moveCaret(b, 'up'));
+    if (key.downArrow) return editBuffer((b) => moveCaret(b, 'down'));
+    if (key.meta) return;
+
+    // A paste arrives as one event, so this is a chunk and not a character.
+    if (input.length > 0) editBuffer((b) => insert(b, input));
+  }
+
+  /** ctrl-o: hand the body to `$EDITOR` for anything longer than a sentence. */
+  async function composeInEditor() {
+    if (!composer) return;
+    const initial = toText(composer.buffer);
+    const open = props.editText ?? editInEditor;
+
+    setEditorOpen(true);
+    if (isRawModeSupported) setRawMode(false);
+
+    let edited = initial;
+    try {
+      edited = await open(initial);
+    } catch {
+      // No editor on this machine. The body is untouched, which is the same
+      // outcome as quitting the editor without saving.
+    } finally {
+      if (isRawModeSupported) setRawMode(true);
+      setEditorOpen(false);
+    }
+
+    editBuffer(() => fromText(edited));
   }
 
   /**
@@ -692,7 +874,8 @@ export function App(props: AppProps) {
       return true;
     }
 
-    if (report.action !== 'press' || report.button !== 'left') return true;
+    const dragging = report.action === 'drag' && report.button === 'left';
+    if (!dragging && (report.action !== 'press' || report.button !== 'left')) return true;
 
     const hit = hitDetail({
       headerRows: detailHeaderHeight,
@@ -708,6 +891,25 @@ export function App(props: AppProps) {
     if (!hit) return true;
 
     if (hit.kind === 'diff-row') {
+      // A drag extends from wherever the button went down, and shift-click from
+      // wherever the cursor already is. Both are the gesture GitHub sweeps a
+      // line range with; neither starts a new selection if one is open.
+      if (dragging || report.shift) {
+        setSelectAnchor((at) => at ?? cursor);
+      } else {
+        const now = { row: hit.index, at: Date.now() };
+        if (isDoubleClick(lastClick.current, now)) {
+          lastClick.current = null;
+          setRowCursor(hit.index);
+          markSeen(hit.index);
+          startComment(false, { from: hit.index, to: hit.index });
+          return true;
+        }
+        lastClick.current = now;
+        // A fresh click starts over rather than growing what was there.
+        setSelectAnchor(null);
+      }
+
       // Not `moveRows`: the row is already on screen, so recentring the view
       // under the reviewer's own click would be the pane moving for no reason.
       setRowCursor(hit.index);
@@ -741,7 +943,12 @@ export function App(props: AppProps) {
   useInput((input, key) => {
     // The comment editor and the chat prompt own every key while they are up,
     // including esc. `$EDITOR` owns the actual terminal.
-    if (mode === 'comment' || mode === 'chat' || editorOpen) return;
+    // `$EDITOR` owns the actual terminal. The chat prompt owns every key while
+    // it is up. The composer does too — but it renders inside the diff rather
+    // than over it, so it takes its keys here instead of returning early.
+    if (editorOpen) return;
+    if (mode === 'comment' && composer) return handleComposerKey(input, key);
+    if (mode === 'comment' || mode === 'chat') return;
 
     // Mouse reports arrive as one input event each and name no key, so they are
     // taken off the front here. Left in, `[<0;42;13M` would reach the keymap as
@@ -789,7 +996,13 @@ export function App(props: AppProps) {
       return;
     }
 
-    const action = resolveAction(input, key, mode);
+    // Several keys act on whatever the cursor is on rather than meaning one
+    // fixed command, so the keymap is told what that is.
+    const atCursor = detailRowList[cursor];
+    const action = resolveAction(input, key, mode, {
+      onFinding: atCursor?.kind === 'finding',
+      onComment: atCursor?.kind === 'comment',
+    });
     if (!action) return;
 
     switch (action.type) {
@@ -857,6 +1070,31 @@ export function App(props: AppProps) {
         return startComment(false);
       case 'suggest':
         return startComment(true);
+      case 'select':
+        // Pressing it again clears, which is the only way out that does not
+        // also mean something else.
+        return setSelectAnchor((at) => (at === null ? cursor : null));
+      case 'edit-comment': {
+        const comment = commentAtCursor();
+        if (!comment) return;
+        setComposer({
+          anchor: {
+            path: comment.path,
+            line: comment.line,
+            side: comment.side,
+            startLine: comment.startLine,
+          },
+          buffer: fromText(comment.body),
+          editing: comment.id,
+        });
+        return enterOverlay('comment');
+      }
+      case 'delete-comment': {
+        const comment = commentAtCursor();
+        if (!comment) return;
+        setDraft((d) => ({ ...d, comments: d.comments.filter((c) => c.id !== comment.id) }));
+        return;
+      }
       case 'open-browser': {
         const anchor = anchorAtRow(detailRowList, cursor);
         if (anchor && props.pr) props.onOpenUrl?.(hunkUrl(props.repoLabel, props.pr.number, anchor));
@@ -878,6 +1116,10 @@ export function App(props: AppProps) {
         return enterOverlay('help');
       case 'back':
         if (mode === 'help') return setMode(underlay);
+        // A selection is the innermost thing esc can be about, so it goes
+        // first: esc that left the diff while lines were still highlighted read
+        // as the key having skipped a step.
+        if (selectAnchor !== null) return setSelectAnchor(null);
         if (mode === 'detail') return setMode('list');
         if (query.length > 0) return applyQuery('');
         return;
@@ -903,20 +1145,6 @@ export function App(props: AppProps) {
         files={props.meat.files.map((f) => f.file)}
         viewerIsAuthor={props.pr.viewerIsAuthor}
         selected={verdict}
-      />
-    );
-  }
-
-  if (mode === 'comment' && pending) {
-    return (
-      <CommentEditor
-        initial=""
-        isSuggestion={pending.isSuggestion}
-        onSubmit={saveComment}
-        onCancel={() => {
-          setPending(null);
-          setMode('detail');
-        }}
       />
     );
   }
@@ -995,6 +1223,7 @@ export function App(props: AppProps) {
                 stagedCount={staged.length}
                 model={props.model}
                 worktreeOk={props.worktreeOk}
+                selection={selectAnchor === null ? null : selectedRows()}
                 findingsStatus={findingsStatus}
                 // The shown findings, not every one held: `v` hides refuted
                 // ones, and a count that outran what `n` walks through is a

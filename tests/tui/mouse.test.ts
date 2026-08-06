@@ -1,5 +1,7 @@
 import { test, expect, describe } from 'bun:test';
-import { MOUSE_DISABLE, MOUSE_ENABLE, parseMouse } from '../../src/tui/mouse.js';
+import {
+  DOUBLE_CLICK_MS, MOUSE_DISABLE, MOUSE_ENABLE, isDoubleClick, parseMouse,
+} from '../../src/tui/mouse.js';
 
 const ESC = '';
 
@@ -78,5 +80,59 @@ describe('the enable and disable sequences', () => {
 
   test('asks for SGR reporting, without which wide terminals cannot be addressed', () => {
     expect(MOUSE_ENABLE).toContain('?1006h');
+  });
+});
+
+describe('drag', () => {
+  // Motion while a button is held. This is the gesture GitHub sweeps a line
+  // range with, and it is why reporting moved from 1000 to 1002.
+  test('reads motion with the left button down as a drag', () => {
+    expect(parseMouse(`${ESC}[<32;10;4M`)).toMatchObject({
+      action: 'drag', button: 'left', column: 9, row: 3,
+    });
+  });
+
+  test('keeps the modifiers on a drag', () => {
+    expect(parseMouse(`${ESC}[<36;1;1M`)).toMatchObject({ action: 'drag', shift: true });
+  });
+
+  // 64 is the wheel bit and 32 is the motion bit. Reading one as the other
+  // would turn every notch of the wheel into a selection sweep.
+  test('does not mistake a wheel notch for motion', () => {
+    expect(parseMouse(`${ESC}[<64;5;5M`)?.action).toBe('wheel-up');
+    expect(parseMouse(`${ESC}[<65;5;5M`)?.action).toBe('wheel-down');
+  });
+
+  test('a plain press is still a press', () => {
+    expect(parseMouse(`${ESC}[<0;5;5M`)?.action).toBe('press');
+  });
+});
+
+describe('isDoubleClick', () => {
+  test('two presses on one row, close together', () => {
+    expect(isDoubleClick({ row: 7, at: 1000 }, { row: 7, at: 1000 + DOUBLE_CLICK_MS })).toBe(true);
+  });
+
+  test('too slow is two separate clicks', () => {
+    expect(isDoubleClick({ row: 7, at: 1000 }, { row: 7, at: 1001 + DOUBLE_CLICK_MS })).toBe(false);
+  });
+
+  test('a different row is two separate clicks, however fast', () => {
+    // Otherwise a quick correction of a mis-aimed click opens a composer on a
+    // line the reviewer was moving away from.
+    expect(isDoubleClick({ row: 7, at: 1000 }, { row: 8, at: 1010 })).toBe(false);
+  });
+
+  test('the first click of the session is never a double', () => {
+    expect(isDoubleClick(null, { row: 7, at: 1000 })).toBe(false);
+  });
+});
+
+describe('the reporting mode', () => {
+  test('asks for button-event tracking, which is what reports a drag', () => {
+    expect(MOUSE_ENABLE).toContain('?1002h');
+    // 1003 reports motion with no button held too, and would repaint the whole
+    // diff every time the pointer crossed an idle window.
+    expect(MOUSE_ENABLE).not.toContain('?1003h');
   });
 });

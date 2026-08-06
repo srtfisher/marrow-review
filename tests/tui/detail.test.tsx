@@ -2,9 +2,10 @@ import { test, expect, describe } from 'bun:test';
 import { renderToString } from 'ink';
 import { Detail } from '../../src/tui/components/Detail.js';
 import { buildUnits } from '../../src/tui/units.js';
-import { buildRows } from '../../src/tui/rows.js';
+import { buildRows, withComposer } from '../../src/tui/rows.js';
 import type { ReviewThread } from '../../src/core/github/types.js';
 import type { MeatFile, MeatResult } from '../../src/core/meat/index.js';
+import type { StagedComment } from '../../src/core/review/types.js';
 import type { PullRequestDetail } from '../../src/core/github/types.js';
 
 const pr: PullRequestDetail = {
@@ -97,6 +98,34 @@ describe('Detail', () => {
   // reads as two different problems.
   test('says nothing about findings when the pass failed', () => {
     expect(render({ findingsStatus: 'failed' })).not.toContain('findings');
+  });
+
+  test('draws a staged comment under the line it is about', () => {
+    const staged: StagedComment = {
+      id: 'c1', path: 'src/app.ts', line: 1, side: 'RIGHT', startLine: null,
+      body: 'this rotates the JWT on every keystroke', suggestion: null,
+    };
+    const out = render({ rows: buildRows(units, [], false, [staged], 60) });
+
+    expect(out).toContain('R1');
+    expect(out).toContain('this rotates the JWT on every keystroke');
+  });
+
+  test('draws the composer as a box wedged into the diff', () => {
+    const rows = buildRows(units, [], false);
+    const at = rows.findIndex((r) => r.kind === 'diff-line');
+    const out = render({
+      rows: withComposer(rows, at, {
+        title: 'Comment on lines R40 to R41',
+        lines: ['```suggestion', 'const x = 1;', '```'],
+        row: 1, col: 12, footer: '^d save · ^o editor · esc cancel', width: 60,
+      }),
+    });
+
+    // GitHub's own wording, so the anchor is never in doubt.
+    expect(out).toContain('Comment on lines R40 to R41');
+    expect(out).toContain('const x = 1;');
+    expect(out).toContain('^d save');
   });
 
   test('surfaces a failing check', () => {

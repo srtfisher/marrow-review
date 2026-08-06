@@ -33,9 +33,18 @@ describe('detail mode', () => {
     expect(resolveAction('Z', noKey, 'detail')).toEqual({ type: 'toggle-dropped-all' });
   });
 
-  test('C authors a comment and S a suggestion', () => {
-    expect(resolveAction('C', noKey, 'detail')).toEqual({ type: 'comment' });
-    expect(resolveAction('S', noKey, 'detail')).toEqual({ type: 'suggest' });
+  test('c authors a comment and s a suggestion', () => {
+    expect(resolveAction('c', noKey, 'detail')).toEqual({ type: 'comment' });
+    expect(resolveAction('s', noKey, 'detail')).toEqual({ type: 'suggest' });
+  });
+
+  test('the shifted pair is gone, so there is one way to do each', () => {
+    expect(resolveAction('C', noKey, 'detail')).toBeNull();
+    expect(resolveAction('S', noKey, 'detail')).toBeNull();
+  });
+
+  test('V starts a line selection', () => {
+    expect(resolveAction('V', noKey, 'detail')).toEqual({ type: 'select' });
   });
 
   test('bang opens the submit screen', () => {
@@ -56,11 +65,10 @@ describe('findings triage', () => {
     expect(resolveAction('p', noKey, 'detail')).toEqual({ type: 'finding', dir: -1 });
   });
 
-  test('a accepts, x drops, e edits, s toggles the suggestion', () => {
+  test('a accepts, x drops, e edits', () => {
     expect(resolveAction('a', noKey, 'detail')).toEqual({ type: 'accept-finding' });
     expect(resolveAction('x', noKey, 'detail')).toEqual({ type: 'drop-finding' });
     expect(resolveAction('e', noKey, 'detail')).toEqual({ type: 'edit-finding' });
-    expect(resolveAction('s', noKey, 'detail')).toEqual({ type: 'toggle-finding-suggestion' });
   });
 
   test('v reveals refutations and i opens chat', () => {
@@ -74,8 +82,28 @@ describe('findings triage', () => {
     }
   });
 
-  test('lowercase s does not collide with the S that authors a suggestion', () => {
-    expect(resolveAction('S', noKey, 'detail')).toEqual({ type: 'suggest' });
+  // Every key in this app acts on whatever the cursor is on. `s` is that rule,
+  // not an exception to it: on a finding it sends that finding as a suggestion,
+  // and on a line of the diff it opens one of your own.
+  test('s sends the finding under the cursor, or authors a suggestion', () => {
+    expect(resolveAction('s', noKey, 'detail', { onFinding: true }))
+      .toEqual({ type: 'toggle-finding-suggestion' });
+    expect(resolveAction('s', noKey, 'detail', { onFinding: false }))
+      .toEqual({ type: 'suggest' });
+  });
+
+  test('x drops the finding under the cursor, or deletes your own comment', () => {
+    expect(resolveAction('x', noKey, 'detail', { onComment: true }))
+      .toEqual({ type: 'delete-comment' });
+    expect(resolveAction('x', noKey, 'detail', { onFinding: true }))
+      .toEqual({ type: 'drop-finding' });
+  });
+
+  test('enter reopens your own comment for editing', () => {
+    expect(resolveAction('', { return: true }, 'detail', { onComment: true }))
+      .toEqual({ type: 'edit-comment' });
+    // Nowhere else in the diff does enter mean anything.
+    expect(resolveAction('', { return: true }, 'detail')).toBeNull();
   });
 });
 

@@ -11,16 +11,19 @@
  * this tool is used in are wider than that. Every terminal that reports mouse
  * events at all has understood SGR for a decade.
  *
- * Button-press reporting (`1000`) and not `1002`/`1003`: motion events arrive
- * continuously, and Ink repaints on input. Tracking a mouse across an idle
- * window would redraw the whole diff for nothing.
+ * Button-event tracking (`1002`), not `1003`. The two get lumped together as
+ * "the expensive ones" and only `1003` is: it reports motion with no button
+ * held, so a pointer merely crossing an idle window would repaint the whole
+ * diff. `1002` reports motion only while a button is down — which is exactly a
+ * drag, and costs nothing the rest of the time. A drag is how a reviewer sweeps
+ * the range of lines they want to comment on.
  */
 
 /** Written to the terminal to start and stop reporting. */
-export const MOUSE_ENABLE = '\u001B[?1000h\u001B[?1006h';
-export const MOUSE_DISABLE = '\u001B[?1006l\u001B[?1000l';
+export const MOUSE_ENABLE = '\u001B[?1002h\u001B[?1006h';
+export const MOUSE_DISABLE = '\u001B[?1006l\u001B[?1002l';
 
-export type MouseAction = 'press' | 'release' | 'wheel-up' | 'wheel-down';
+export type MouseAction = 'press' | 'release' | 'drag' | 'wheel-up' | 'wheel-down';
 
 export interface MouseReport {
   action: MouseAction;
@@ -59,12 +62,18 @@ export function parseMouse(input: string): MouseReport | null {
   if (!Number.isFinite(column) || !Number.isFinite(row) || column < 1 || row < 1) return null;
 
   const wheel = (code & 64) !== 0;
+  // Motion. Checked only when the wheel bit is clear: a notch reports 64 or 65
+  // and never sets 32, but reading the two the other way round would turn every
+  // scroll of the wheel into a selection sweep.
+  const motion = !wheel && (code & 32) !== 0;
   const low = code & 3;
 
   return {
     action: wheel
       ? (low === 0 ? 'wheel-up' : 'wheel-down')
-      : (match[4] === 'M' ? 'press' : 'release'),
+      : motion
+        ? 'drag'
+        : (match[4] === 'M' ? 'press' : 'release'),
     button: wheel ? null : (BUTTON[low as 0 | 1 | 2] ?? null),
     column: column - 1,
     row: row - 1,
@@ -79,3 +88,26 @@ export function parseMouse(input: string): MouseReport | null {
  * enough that a diff still reads as scrolling rather than jumping.
  */
 export const WHEEL_ROWS = 3;
+
+/** How close two presses must be to read as one gesture. */
+export const DOUBLE_CLICK_MS = 400;
+
+export interface Click {
+  row: number;
+  /** Milliseconds, from whatever clock the caller is already holding. */
+  at: number;
+}
+
+/**
+ * Whether a press completes a double-click.
+ *
+ * The clock is passed in rather than read here so this stays a pure function
+ * over two numbers and can be tested without one.
+ *
+ * The row has to match. Without that, a quick correction of a mis-aimed click
+ * would open a composer on the line the reviewer was moving away from.
+ */
+export function isDoubleClick(previous: Click | null, next: Click): boolean {
+  if (previous === null) return false;
+  return previous.row === next.row && next.at - previous.at <= DOUBLE_CLICK_MS;
+}

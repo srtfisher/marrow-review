@@ -32,6 +32,8 @@ export interface DetailProps {
   reviewed: ReadonlySet<string>;
   /** Unsubmitted comments, shown here as well as in the hint bar. */
   stagedCount?: number;
+  /** Rows swept by `V`, a drag, or a shift-click. Inclusive at both ends. */
+  selection?: { from: number; to: number } | null;
   findingsStatus?: FindingsStatus;
   /** Findings actually on screen, so the number matches what `n` walks. */
   findingCount?: number;
@@ -46,11 +48,19 @@ export interface DetailProps {
 
 const SEVERITY_MARK: Record<string, string> = { critical: '!!', important: '!', minor: '·' };
 
-/** Cyan `▸` for the current row, two blank columns otherwise. Never reverse
- *  video here — that's reserved for the list pane's title row, and would fight
- *  the diff's own add/del colors. */
-function cursorMark(selected: boolean) {
-  return <Text color={theme.color.structure}>{selected ? `${theme.glyph.cursor} ` : '  '}</Text>;
+/**
+ * Cyan `▸` for the current row, a thin bar for the rest of a `V` selection, two
+ * blank columns otherwise.
+ *
+ * Never reverse video and never a background: reverse is reserved for the list
+ * pane's title row, and a background wash behind selected lines would fight the
+ * add/del colors those same lines are carrying.
+ */
+function cursorMark(selected: boolean, inSelection = false) {
+  const glyph = selected
+    ? theme.glyph.cursor
+    : inSelection ? theme.glyph.selected : ' ';
+  return <Text color={theme.color.structure}>{`${glyph} `}</Text>;
 }
 
 /**
@@ -59,7 +69,12 @@ function cursorMark(selected: boolean) {
  * wrapped line would push every row below it down by one and the cursor would
  * stop pointing at what the reviewer sees.
  */
-export function renderRow(row: DetailRow, selected: boolean, gutterWidth: number): ReactNode {
+export function renderRow(
+  row: DetailRow,
+  selected: boolean,
+  gutterWidth: number,
+  inSelection = false,
+): ReactNode {
   switch (row.kind) {
     case 'blank':
       return <Text> </Text>;
@@ -68,7 +83,7 @@ export function renderRow(row: DetailRow, selected: boolean, gutterWidth: number
       const dropped = row.file.dropped;
       return (
         <Text dimColor={dropped !== null} wrap="truncate">
-          {cursorMark(selected)}
+          {cursorMark(selected, inSelection)}
           <Text color={theme.color.structure}>{theme.glyph.cut}</Text>
           {` ${row.path}`}
           {dropped ? `  · dropped: ${dropped.rule}` : ''}
@@ -79,7 +94,7 @@ export function renderRow(row: DetailRow, selected: boolean, gutterWidth: number
     case 'hunk-header':
       return (
         <Text {...theme.tier.muted} wrap="truncate">
-          {cursorMark(selected)}
+          {cursorMark(selected, inSelection)}
           {`${row.hunk.header}  [${row.reason}]`}
         </Text>
       );
@@ -87,7 +102,7 @@ export function renderRow(row: DetailRow, selected: boolean, gutterWidth: number
     case 'diff-line':
       return (
         <Box>
-          {cursorMark(selected)}
+          {cursorMark(selected, inSelection)}
           <DiffLineRow line={row.line} gutterWidth={gutterWidth} />
         </Box>
       );
@@ -105,15 +120,96 @@ export function renderRow(row: DetailRow, selected: boolean, gutterWidth: number
       const label = `${row.count} hunk${row.count === 1 ? '' : 's'} folded`;
       return (
         <Text {...theme.tier.muted} wrap="truncate">
-          {cursorMark(selected)}
+          {cursorMark(selected, inSelection)}
           {`${theme.glyph.fold.repeat(3)} ${label} · ${row.reasons.join(', ')} — press z to reveal ${theme.glyph.fold.repeat(3)}`}
         </Text>
       );
     }
 
+    case 'comment':
+      return renderCommentRow(row, selected);
+
+    case 'composer':
+      return renderComposerRow(row);
+
     case 'finding':
       return renderFindingRow(row, selected);
   }
+}
+
+/**
+ * A staged comment of the reviewer's own, sitting under the lines it is about.
+ *
+ * `pending` yellow and the same `●` the header counts with: it is the same
+ * unsubmitted work, stated in the one place where it can be read against the
+ * code it is criticising.
+ */
+function renderCommentRow(row: Extract<DetailRow, { kind: 'comment' }>, selected: boolean) {
+  if (row.part === 'head') {
+    return (
+      <Text color={theme.color.pending} wrap="truncate">
+        {cursorMark(selected)}
+        {`  ${row.text}`}
+      </Text>
+    );
+  }
+
+  // Already wrapped by `buildRows`, so this is exactly one row however long the
+  // comment is.
+  return <Text wrap="truncate">{`       ${row.text}`}</Text>;
+}
+
+/**
+ * One row of the composer's box.
+ *
+ * `structure` cyan, because the box is telling you *where* in the diff you are
+ * writing — the same thing the file marker and the cursor say. The title uses
+ * GitHub's own wording so the anchor is never in doubt.
+ */
+function renderComposerRow(row: Extract<DetailRow, { kind: 'composer' }>) {
+  const { view } = row;
+  // The box is indented two columns and `view.width` is the whole of it, so the
+  // caller must pass a width the pane can actually afford. Everything below is
+  // derived from it, which is what keeps the four borders in one column.
+  const box = Math.max(8, view.width);
+  const rule = (label: string) => {
+    const text = ` ${label} `.slice(0, box - 2);
+    return `${theme.glyph.hrule}${text}`.padEnd(box - 2, theme.glyph.hrule);
+  };
+
+  if (row.part === 'top') {
+    return (
+      <Text color={theme.color.structure} wrap="truncate">{`  ╭${rule(view.title)}╮`}</Text>
+    );
+  }
+
+  if (row.part === 'bottom') {
+    return (
+      <Text color={theme.color.structure} wrap="truncate">{`  ╰${rule(view.footer)}╯`}</Text>
+    );
+  }
+
+  const width = box - 4;
+  const text = (view.lines[row.lineIndex ?? 0] ?? '').slice(0, width);
+  const caretHere = (row.lineIndex ?? 0) === view.row;
+  const col = Math.min(view.col, width - 1);
+
+  return (
+    <Text wrap="truncate">
+      <Text color={theme.color.structure}>{'  │ '}</Text>
+      {/* Reverse video on the character under the caret, or on the space past
+          the end of the line. A composer with no visible caret is one the
+          reviewer cannot tell is focused, or find their place in. */}
+      {caretHere ? (
+        <>
+          {text.slice(0, col)}
+          <Text inverse>{text[col] ?? ' '}</Text>
+          {text.slice(col + 1).padEnd(width - col - 1, ' ')}
+        </>
+      ) : text.padEnd(width, ' ')}
+      <Text color={theme.color.structure}>{' │'}</Text>
+    </Text>
+  );
 }
 
 /**
@@ -212,13 +308,19 @@ export function detailHeaderRows(
 export function Detail({
   pr, meat, rows, cursor, scrollTop, height, width, checks, fullDiff, reviewed,
   stagedCount = 0, model, worktreeOk, findingsStatus = 'idle', findingCount = 0,
+  selection = null,
 }: DetailProps) {
   const failing = checks.filter((c) => c.conclusion === 'failure');
   const currentPath = rows[cursor]?.path ?? null;
   const index = layoutFileIndex(indexEntries(meat, currentPath, reviewed), width);
   const headerRows = detailHeaderRows(meat, checks, width);
 
-  const body = rows.map((row, i) => renderRow(row, i === cursor, theme.layout.gutterWidth));
+  const body = rows.map((row, i) => renderRow(
+    row,
+    i === cursor,
+    theme.layout.gutterWidth,
+    selection !== null && i >= selection.from && i <= selection.to,
+  ));
 
   return (
     <Box flexDirection="column">

@@ -24,6 +24,9 @@ export type Action =
   | { type: 'open-browser' }
   | { type: 'comment' }
   | { type: 'suggest' }
+  | { type: 'select' }
+  | { type: 'edit-comment' }
+  | { type: 'delete-comment' }
   | { type: 'submit-screen' }
   | { type: 'filter'; filter: PullFilter }
   | { type: 'search' }
@@ -78,6 +81,8 @@ export const KEY_HELP: readonly KeyHelpEntry[] = [
   // who does not know the wheel works will not try it twice.
   { keys: 'wheel', description: 'scroll the diff', modes: ['list', 'detail'], group: 'move' },
   { keys: 'click', description: 'put the cursor on that line, or jump to that file', modes: ['detail'], group: 'move' },
+  { keys: 'drag / shift-click', description: 'select a range of lines', modes: ['detail'], group: 'move' },
+  { keys: 'double-click', description: 'comment on that line', modes: ['detail'], group: 'move' },
   { keys: 'space', description: 'fold or unfold this file', modes: ['detail'], group: 'read' },
   { keys: 'z / Z', description: 'reveal dropped hunks in this file / everywhere', modes: ['detail'], group: 'read' },
   { keys: 'd', description: 'toggle full diff vs meat', modes: ['detail'], group: 'read' },
@@ -88,8 +93,10 @@ export const KEY_HELP: readonly KeyHelpEntry[] = [
   { keys: 'e / s', description: 'rewrite this finding / send it as a suggestion', modes: ['detail'], group: 'findings' },
   { keys: 'v', description: 'show refuted findings and why they were refuted', modes: ['detail'], group: 'findings' },
   { keys: 'i', description: 'ask the model about this hunk', modes: ['detail'], group: 'findings' },
-  { keys: 'C', description: 'comment on the line under the cursor', modes: ['detail'], group: 'record' },
-  { keys: 'S', description: 'suggest a change on the line under the cursor', modes: ['detail'], group: 'record' },
+  { keys: 'V', description: 'select lines; move to grow the range, esc to clear', modes: ['detail'], group: 'record' },
+  { keys: 'c', description: 'comment on the line or selection', modes: ['detail'], group: 'record' },
+  { keys: 's', description: 'suggest a change to the line or selection', modes: ['detail'], group: 'record' },
+  { keys: 'enter / x', description: 'edit / delete the comment under the cursor', modes: ['detail'], group: 'record' },
   { keys: '!', description: 'approve, request changes, or comment', modes: ['detail'], group: 'record' },
   { keys: 'enter', description: 'open the selected pull request', modes: ['list'], group: 'list' },
   { keys: '1 / 2 / 3', description: 'filter: open / needs my review / all', modes: ['list'], group: 'list' },
@@ -106,7 +113,27 @@ const FILTERS: Record<string, PullFilter> = {
   '3': 'all',
 };
 
-export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
+/**
+ * What the cursor is sitting on.
+ *
+ * Several keys act on the thing under the cursor rather than meaning one fixed
+ * command — `s` sends a model finding but authors your own suggestion, `x`
+ * drops a finding but deletes your own comment. That rule is the app's grammar,
+ * so the keymap is told the context instead of returning an ambiguous action
+ * for `App` to disambiguate.
+ */
+export interface RowContext {
+  onFinding?: boolean;
+  /** A staged comment of the reviewer's own, rendered inline in the diff. */
+  onComment?: boolean;
+}
+
+export function resolveAction(
+  input: string,
+  key: KeyLike,
+  mode: Mode,
+  context: RowContext = {},
+): Action {
   // Text-entry modes swallow everything except an explicit escape, so a stray
   // '!' or 'q' while typing a comment — or a question for the model — can never
   // trigger a command.
@@ -166,9 +193,16 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
   if (input === 'm') return { type: 'toggle-reviewed' };
   if (input === 't') return { type: 'toggle-threads' };
   if (input === 'o') return { type: 'open-browser' };
-  if (input === 'C') return { type: 'comment' };
-  if (input === 'S') return { type: 'suggest' };
+  if (input === 'c') return { type: 'comment' };
+  if (input === 'V') return { type: 'select' };
   if (input === '!') return { type: 'submit-screen' };
+
+  // Your own staged comment, sitting in the diff under the lines it is about.
+  // Enter means nothing anywhere else in the pane, so it is free to mean this.
+  if (context.onComment) {
+    if (key.return) return { type: 'edit-comment' };
+    if (input === 'x') return { type: 'delete-comment' };
+  }
 
   // Findings triage. These act on the finding under the cursor and do nothing
   // anywhere else, so they are safe to give single unshifted letters — unlike
@@ -177,7 +211,12 @@ export function resolveAction(input: string, key: KeyLike, mode: Mode): Action {
   if (input === 'p') return { type: 'finding', dir: -1 };
   if (input === 'a') return { type: 'accept-finding' };
   if (input === 'e') return { type: 'edit-finding' };
-  if (input === 's') return { type: 'toggle-finding-suggestion' };
+  // On a finding, `s` sends that finding as a suggestion; anywhere else in the
+  // diff it opens a suggestion of your own. Same key, same verb, whatever the
+  // cursor happens to be on.
+  if (input === 's') {
+    return context.onFinding ? { type: 'toggle-finding-suggestion' } : { type: 'suggest' };
+  }
   if (input === 'x') return { type: 'drop-finding' };
   if (input === 'v') return { type: 'toggle-refuted' };
   if (input === 'i') return { type: 'chat' };

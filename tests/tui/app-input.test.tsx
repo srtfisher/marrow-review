@@ -172,7 +172,10 @@ describe('App key handling', () => {
   test('? opens help listing the bindings, and esc returns to the list', async () => {
     const app = mount();
     await app.press('?');
-    expect(app.frame()).toContain('approve, request changes, or comment');
+    // A binding from the first group. On a thirty-row terminal the later groups
+    // sit below the fold, which is what the overlay's scrolling and its
+    // `n–m of t` counter exist for.
+    expect(app.frame()).toContain('next / previous file');
     await app.press('');
     expect(app.frame()).toContain('Alpha rendering');
   });
@@ -750,9 +753,9 @@ describe('unsubmitted work survives the session', () => {
     // would bury the ones that matter.
     expect(saved).toHaveLength(0);
 
-    await app.press('C');
+    await app.press('c');
     await app.press('Needs a test.');
-    await app.press('\r');
+    await app.press(SAVE);
     await delay(40);
 
     expect(saved.length).toBeGreaterThan(0);
@@ -777,9 +780,9 @@ describe('unsubmitted work survives the session', () => {
       exited = true;
     });
 
-    await app.press('C');
+    await app.press('c');
     await app.press('Needs a test.');
-    await app.press('\r');
+    await app.press(SAVE);
     await app.press('q');
     await delay(40);
 
@@ -802,9 +805,9 @@ describe('unsubmitted work survives the session', () => {
       exited = true;
     });
 
-    await app.press('C');
+    await app.press('c');
     await app.press('Needs a test.');
-    await app.press('\r');
+    await app.press(SAVE);
     await app.press('q');
     await app.press('\r');
     await delay(40);
@@ -822,9 +825,9 @@ describe('unsubmitted work survives the session', () => {
       exited = true;
     });
 
-    await app.press('C');
+    await app.press('c');
     await app.press('Needs a test.');
-    await app.press('\r');
+    await app.press(SAVE);
     await app.press('q');
     await app.press('x');
     await delay(40);
@@ -862,9 +865,9 @@ describe('findings are additive', () => {
     expect(app.frame()).toContain('cache.set(key, value);');
 
     // A manual comment, staged and submitted.
-    await app.press('C');
+    await app.press('c');
     await app.press('This needs a test.');
-    await app.press('\r');
+    await app.press(SAVE);
     expect(app.frame()).toContain('1 staged');
 
     await app.press('!');
@@ -1003,7 +1006,7 @@ describe('d says which view you are in', () => {
 });
 
 describe('commenting on a line', () => {
-  test('C anchors to the line under the cursor, not to the hunk', async () => {
+  test('c anchors to the line under the cursor, not to the hunk', async () => {
     const saved: ReviewDraft[] = [];
     const app = mount({ pr: detail, meat, onPersist: (d) => saved.push(d) });
     await delay(60);
@@ -1012,9 +1015,9 @@ describe('commenting on a line', () => {
     // the context line — line 1, where the hunk's own anchor would be line 2.
     await app.press('j');
     await app.press('j');
-    await app.press('C');
+    await app.press('c');
     await app.press('Is the TTL right?');
-    await app.press('\r');
+    await app.press(SAVE);
     await delay(40);
 
     expect(saved.at(-1)?.comments[0]).toMatchObject({
@@ -1030,9 +1033,9 @@ describe('commenting on a line', () => {
     await app.press('j');
     await app.press('j');
     await app.press('j');
-    await app.press('C');
+    await app.press('c');
     await app.press('This is the one.');
-    await app.press('\r');
+    await app.press(SAVE);
     await delay(40);
 
     expect(saved.at(-1)?.comments[0]).toMatchObject({ line: 2, side: 'RIGHT' });
@@ -1108,7 +1111,9 @@ describe('the mouse', () => {
     // SGR specifically: the original encoding cannot address past column 223,
     // and these terminals are wider than that.
     expect(app.raw()).toContain('?1006h');
-    expect(app.raw()).toContain('?1000h');
+    // Button-event tracking, so a held button reports motion and a drag can
+    // sweep a range of lines.
+    expect(app.raw()).toContain('?1002h');
   });
 
   test('turns reporting off again on the way out', async () => {
@@ -1119,7 +1124,7 @@ describe('the mouse', () => {
     // Left on, the reviewer's shell prints `[<0;12;7M` at the prompt on every
     // click and nothing says which program did that to their terminal.
     expect(app.raw()).toContain('?1006l');
-    expect(app.raw()).toContain('?1000l');
+    expect(app.raw()).toContain('?1002l');
   });
 
   test('the wheel scrolls the diff', async () => {
@@ -1173,7 +1178,7 @@ describe('the mouse', () => {
     expect(opened).toEqual([]);
   });
 
-  test('a click puts the cursor on the line clicked, and C comments there', async () => {
+  test('a click puts the cursor on the line clicked, and c comments there', async () => {
     const saved: ReviewDraft[] = [];
     const app = mount({ pr: detail, meat: scrollable, onPersist: (d) => saved.push(d) });
     await delay(60);
@@ -1183,9 +1188,9 @@ describe('the mouse', () => {
     // 0 and 1 of the diff are the file and hunk headers, so `line 3` is diff row
     // 5 and terminal row 11, which the terminal reports as 12.
     await app.press(click(20, 12));
-    await app.press('C');
+    await app.press('c');
     await app.press('The fourth line.');
-    await app.press('\r');
+    await app.press(SAVE);
     await delay(40);
 
     expect(saved.at(-1)?.comments[0]).toMatchObject({
@@ -1214,9 +1219,9 @@ describe('the mouse', () => {
     await app.press(click(20, 12));
     await app.press(click(20, 1));
     await app.press(click(20, 4));
-    await app.press('C');
+    await app.press('c');
     await app.press('Still the fourth line.');
-    await app.press('\r');
+    await app.press(SAVE);
     await delay(40);
 
     expect(saved.at(-1)?.comments[0]).toMatchObject({ line: 4 });
@@ -1324,5 +1329,261 @@ describe('the help overlay', () => {
     await delay(40);
     expect(exited).toBe(false);
     expect(app.frame()).toContain('Alpha rendering');
+  });
+});
+
+/** ctrl-d. Not ctrl-s, which is XOFF and freezes a terminal that still has it. */
+const SAVE = '\x04';
+
+describe('selecting a range of lines', () => {
+  test('V then j comments on the range, not on the line', async () => {
+    const saved: ReviewDraft[] = [];
+    const app = mount({ pr: detail, meat, onPersist: (d) => saved.push(d) });
+    await delay(60);
+
+    // Rows: file header, hunk header, the context line (R1), the added line (R2).
+    await app.press('j');
+    await app.press('j');
+    await app.press('V');
+    await app.press('j');
+    await app.press('c');
+
+    expect(app.frame()).toContain('Comment on lines R1 to R2');
+
+    await app.press('Both of these.');
+    await app.press(SAVE);
+    await delay(40);
+
+    expect(saved.at(-1)?.comments[0]).toMatchObject({
+      line: 2, startLine: 1, side: 'RIGHT', body: 'Both of these.',
+    });
+  });
+
+  test('esc clears the selection and stays in the diff', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+
+    await app.press('j');
+    await app.press('j');
+    await app.press('V');
+    await app.press('j');
+    await app.press(ESC);
+    await app.press('c');
+
+    // One line again, so esc undid the selection rather than leaving the diff.
+    expect(app.frame()).toContain('Comment on line R2');
+    expect(app.frame()).not.toContain('Alpha rendering');
+  });
+});
+
+describe('the inline composer', () => {
+  test('names the one line it is anchored to', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    await app.press('j');
+    await app.press('j');
+    await app.press('c');
+
+    expect(app.frame()).toContain('Comment on line R1');
+  });
+
+  test('keeps the diff on screen while you write in it', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    await app.press('j');
+    await app.press('j');
+    await app.press('c');
+
+    // The whole point of moving out of a full-screen editor: the code you are
+    // commenting on is still in front of you.
+    expect(app.frame()).toContain('cache.set(key, value);');
+    expect(app.frame()).toContain('Beta caching');
+  });
+
+  test('s pre-fills a suggestion with the line it would replace', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    await app.press('j');
+    await app.press('j');
+    await app.press('j');
+    await app.press('s');
+
+    expect(app.frame()).toContain('```suggestion');
+    expect(app.frame()).toContain('cache.set(key, value);');
+  });
+
+  test('a suggestion is submitted as the fence, verbatim', async () => {
+    const submitted: ReviewDraft[] = [];
+    const app = mount({
+      pr: detail, meat, onSubmit: (draft) => submitted.push(draft),
+    });
+    await delay(60);
+
+    await app.press('j');
+    await app.press('j');
+    await app.press('j');
+    await app.press('s');
+    await app.press(SAVE);
+    await app.press('!');
+    await app.press('\r');
+    await delay(40);
+
+    expect(submitted[0]?.comments[0]?.body).toContain('```suggestion');
+    expect(submitted[0]?.comments[0]?.body).toContain('cache.set(key, value);');
+  });
+
+  test('enter inserts a newline rather than saving', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    await app.press('j');
+    await app.press('j');
+    await app.press('c');
+    await app.press('first');
+    await app.press('\r');
+    await app.press('second');
+
+    expect(app.frame()).toContain('first');
+    expect(app.frame()).toContain('second');
+    // Still composing, so nothing has been staged.
+    expect(app.frame()).not.toContain('1 staged');
+  });
+
+  test('esc throws away what was typed', async () => {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    await app.press('j');
+    await app.press('j');
+    await app.press('c');
+    await app.press('never mind');
+    await app.press(ESC);
+
+    expect(app.frame()).not.toContain('1 staged');
+    expect(app.frame()).not.toContain('never mind');
+  });
+});
+
+describe('a staged comment lives in the diff', () => {
+  async function stage() {
+    const app = mount({ pr: detail, meat });
+    await delay(60);
+    await app.press('j');
+    await app.press('j');
+    await app.press('c');
+    await app.press('Is the TTL right?');
+    await app.press(SAVE);
+    return app;
+  }
+
+  test('stays under the line it is about once saved', async () => {
+    const app = await stage();
+    expect(app.frame()).toContain('Is the TTL right?');
+    expect(app.frame()).toContain('R1');
+    expect(app.frame()).toContain('1 staged');
+  });
+
+  test('x on it takes it back', async () => {
+    const app = await stage();
+    await app.press('j');
+    await app.press('x');
+
+    expect(app.frame()).not.toContain('Is the TTL right?');
+    expect(app.frame()).not.toContain('1 staged');
+  });
+
+  test('enter on it reopens it with what you wrote', async () => {
+    const app = await stage();
+    await app.press('j');
+    await app.press('\r');
+
+    expect(app.frame()).toContain('Comment on line R1');
+    expect(app.frame()).toContain('Is the TTL right?');
+  });
+});
+
+describe('sweeping a range with the mouse', () => {
+  const click = (column: number, row: number) => `${ESC}[<0;${column};${row}M`;
+  const shiftClick = (column: number, row: number) => `${ESC}[<4;${column};${row}M`;
+  const drag = (column: number, row: number) => `${ESC}[<32;${column};${row}M`;
+
+  /** One file, one hunk, forty lines — taller than the pane, so it scrolls. */
+  const scrollable: MeatResult = {
+    summary: 'A large change.',
+    files: [{
+      file: {
+        path: 'src/big.ts', oldPath: null, status: 'modified', similarity: null,
+        hunks: [], additions: 40, deletions: 0,
+      },
+      dropped: null,
+      hunks: [{
+        hunk: {
+          header: '@@ -1,40 +1,40 @@', section: '',
+          oldStart: 1, oldLines: 40, newStart: 1, newLines: 40,
+          lines: Array.from({ length: 40 }, (_, i) => ({
+            kind: 'add' as const, text: `line ${i}`,
+            oldLine: null, newLine: i + 1, noNewlineAtEof: false,
+          })),
+        },
+        keep: true, reason: 'meaningful', source: 'model' as const,
+      }],
+    }],
+    keptLines: 40, totalLines: 40, keptFiles: 1, totalFiles: 1,
+    keptAdditions: 40, keptDeletions: 0, totalAdditions: 40, totalDeletions: 0,
+    unclassified: 0,
+  };
+
+  // Terminal row 12 is `line 3` (new line 4); row 14 is `line 5` (new line 6).
+  test('dragging down the gutter selects everything it crossed', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+
+    await app.press(click(20, 12));
+    await app.press(drag(20, 13));
+    await app.press(drag(20, 14));
+    await app.press('c');
+
+    expect(app.frame()).toContain('Comment on lines R4 to R6');
+  });
+
+  test('shift-click extends from where the cursor already is', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+
+    await app.press(click(20, 12));
+    await app.press(shiftClick(20, 14));
+    await app.press('c');
+
+    expect(app.frame()).toContain('Comment on lines R4 to R6');
+  });
+
+  test('a plain click after a selection starts over', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+
+    await app.press(click(20, 12));
+    await app.press(drag(20, 14));
+    await app.press(click(20, 13));
+    await app.press('c');
+
+    expect(app.frame()).toContain('Comment on line R5');
+  });
+
+  test('double-clicking a line opens the composer on it', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+
+    await app.press(click(20, 12));
+    await app.press(click(20, 12));
+
+    expect(app.frame()).toContain('Comment on line R4');
+  });
+
+  test('two clicks on different lines are two clicks, not a double', async () => {
+    const app = mount({ pr: detail, meat: scrollable });
+    await delay(60);
+
+    await app.press(click(20, 12));
+    await app.press(click(20, 13));
+
+    expect(app.frame()).not.toContain('Comment on line');
   });
 });

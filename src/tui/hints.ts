@@ -21,7 +21,7 @@ function widthOf(hints: readonly Hint[]): number {
  * The widest set of hints that fits, degrading from the back.
  *
  * Back-first is the whole point. The hints are in priority order, and the
- * leading ones are the contextual verbs — `C comment on this line` is the one
+ * leading ones are the contextual verbs — `c comment on this line` is the one
  * that told a reviewer line-level comments exist at all, so it keeps its full
  * wording until every hint behind it has already given up its own.
  *
@@ -72,7 +72,14 @@ export function detailHints(
 ): Hint[] {
   const hints: Hint[] = [{ keys: '↑↓', label: 'move' }];
 
-  if (row?.kind === 'finding') {
+  if (row?.kind === 'comment') {
+    // Your own comment, sitting in the diff. What you can do to it is edit it
+    // or take it back — authoring a second one on the same line is not it.
+    hints.push(
+      { keys: '⏎', label: 'edit this comment', short: 'edit' },
+      { keys: 'x', label: 'delete' },
+    );
+  } else if (row?.kind === 'finding') {
     // Triage first: a finding under the cursor is a decision waiting to be made,
     // and the reviewer came here to make it.
     hints.push(
@@ -81,11 +88,11 @@ export function detailHints(
       { keys: 'e', label: 'rewrite' },
     );
   } else {
-    // Naming the line is the point: the cursor is on one, and `C` used to
+    // Naming the line is the point: the cursor is on one, and `c` used to
     // comment on the hunk instead, which is not what the reviewer meant.
     hints.push(
-      { keys: 'C', label: 'comment on this line', short: 'comment' },
-      { keys: 'S', label: 'suggest' },
+      { keys: 'c', label: 'comment on this line', short: 'comment' },
+      { keys: 's', label: 'suggest' },
     );
 
     // Only worth offering when there is somewhere to go, and only away from a

@@ -3,7 +3,8 @@ import type { TriagedFinding } from '../core/findings/triage.js';
 import type { Refutation } from '../core/findings/verify.js';
 import type { ReviewThread } from '../core/github/types.js';
 import type { MeatFile } from '../core/meat/index.js';
-import type { CommentAnchor } from '../core/review/types.js';
+import type { CommentAnchor, StagedComment } from '../core/review/types.js';
+import { theme } from './theme.js';
 import type { ReviewUnit } from './units.js';
 
 /**
@@ -35,6 +36,24 @@ export type DetailRow =
       reasons: string[];
     }
   | {
+      kind: 'comment';
+      unit: number;
+      path: string;
+      comment: StagedComment;
+      /** The `● you · R40–R41` line, then one row per wrapped line of body. */
+      part: 'head' | 'body';
+      text: string;
+    }
+  | {
+      kind: 'composer';
+      unit: number;
+      path: string;
+      view: ComposerView;
+      part: 'top' | 'body' | 'bottom';
+      /** Which line of the buffer this row draws. Body rows only. */
+      lineIndex?: number;
+    }
+  | {
       kind: 'finding';
       unit: number;
       path: string;
@@ -42,6 +61,89 @@ export type DetailRow =
       part: 'title' | 'body' | 'suggestion' | 'refutation';
       refutation?: Refutation;
     };
+
+/**
+ * Everything the composer needs to draw itself, computed by whoever owns the
+ * text buffer. The row layer only slices it into rows.
+ */
+export interface ComposerView {
+  /** GitHub's own wording: `Comment on lines R40 to R41`. */
+  title: string;
+  lines: string[];
+  /** Caret position, so the renderer can draw the block cursor. */
+  row: number;
+  col: number;
+  footer: string;
+  /** Cells the box occupies, borders included. */
+  width: number;
+}
+
+/**
+ * Greedy wrap to a width, never breaking mid-word unless a single word is
+ * longer than the line — in which case it is cut, because the alternative is a
+ * row that wraps itself and pushes every row below it out of step with the
+ * cursor.
+ */
+export function wrapText(text: string, width: number): string[] {
+  if (width <= 0) return [text];
+
+  const out: string[] = [];
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    for (const word of paragraph.split(/\s+/).filter((w) => w.length > 0)) {
+      let candidate = word;
+      while (candidate.length > width) {
+        if (line.length > 0) {
+          out.push(line);
+          line = '';
+        }
+        out.push(candidate.slice(0, width));
+        candidate = candidate.slice(width);
+      }
+      const joined = line.length === 0 ? candidate : `${line} ${candidate}`;
+      if (joined.length > width) {
+        out.push(line);
+        line = candidate;
+      } else {
+        line = joined;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/** `R40–R41`, `R29`, `L17` — the side and the lines, in GitHub's shorthand. */
+function commentRange(comment: StagedComment): string {
+  const mark = comment.side === 'LEFT' ? 'L' : 'R';
+  return comment.startLine === null || comment.startLine === comment.line
+    ? `${mark}${comment.line}`
+    : `${mark}${comment.startLine}–${mark}${comment.line}`;
+}
+
+/**
+ * The rows a staged comment occupies under the line it is about.
+ *
+ * The body is wrapped here rather than by the renderer because a row must be
+ * exactly one terminal line: a comment that wrapped on screen would push
+ * everything below it down and the cursor would stop addressing what the
+ * reviewer sees.
+ */
+function commentRows(
+  comment: StagedComment,
+  unit: number,
+  path: string,
+  width: number,
+): DetailRow[] {
+  const head: DetailRow = {
+    kind: 'comment', unit, path, comment, part: 'head',
+    text: `${theme.glyph.staged} you · ${commentRange(comment)}`,
+  };
+  const body = wrapText(comment.body, width).map((text): DetailRow => ({
+    kind: 'comment', unit, path, comment, part: 'body', text,
+  }));
+  return [head, ...body];
+}
 
 /**
  * Reading is tight, navigating breathes: no blank rows inside a hunk, one
@@ -61,6 +163,8 @@ export function buildRows(
   units: ReviewUnit[],
   threads: ReviewThread[],
   showThreads: boolean,
+  staged: StagedComment[] = [],
+  commentWidth = 80,
 ): DetailRow[] {
   const rows: DetailRow[] = [];
 
@@ -100,6 +204,15 @@ export function buildRows(
     rows.push({ kind: 'hunk-header', unit: index, path, hunk, reason: unit.hunk.reason });
     for (const line of hunk.lines) {
       rows.push({ kind: 'diff-line', unit: index, path, hunk, line });
+      // Your own staged comments live in the diff, under the lines they are
+      // about — the same place GitHub keeps them, and the only place a reviewer
+      // can weigh a comment against the code it is criticising.
+      for (const comment of staged) {
+        if (comment.path !== path) continue;
+        const anchored = comment.side === 'LEFT' ? line.oldLine : line.newLine;
+        if (anchored !== comment.line) continue;
+        rows.push(...commentRows(comment, index, path, commentWidth));
+      }
     }
     if (showThreads) {
       for (const thread of threads.filter((t) => t.path === path)) {
@@ -113,6 +226,61 @@ export function buildRows(
   });
 
   return rows;
+}
+
+/**
+ * GitHub's own wording for what a comment is attached to. Reused verbatim
+ * because a reviewer who has seen it on the web already knows how to read it,
+ * and because `R40 to R41` is unambiguous in a way that `40-41` is not.
+ */
+export function composerTitle(anchor: CommentAnchor): string {
+  const mark = anchor.side === 'LEFT' ? 'L' : 'R';
+  const start = anchor.startLine;
+  return start === null || start === undefined || start === anchor.line
+    ? `Comment on line ${mark}${anchor.line}`
+    : `Comment on lines ${mark}${start} to ${mark}${anchor.line}`;
+}
+
+/**
+ * The row an anchor points at, or -1.
+ *
+ * Resolved from the anchor on every render rather than remembered as an index:
+ * folding a file or staging a comment shifts every row below it, and a
+ * remembered index would drift the composer away from the line it is about.
+ */
+export function rowForAnchor(rows: DetailRow[], anchor: CommentAnchor): number {
+  return rows.findIndex((row) => (
+    row.kind === 'diff-line'
+    && row.path === anchor.path
+    && (anchor.side === 'LEFT' ? row.line.oldLine : row.line.newLine) === anchor.line
+  ));
+}
+
+/**
+ * The composer, opened under the row it was anchored to.
+ *
+ * It is spliced into the row list rather than drawn over the pane because the
+ * viewport windows on rows: anything that is not a row cannot be scrolled past,
+ * and a composer holding a suggestion can easily be taller than the terminal.
+ */
+export function withComposer(
+  rows: DetailRow[],
+  afterRow: number,
+  view: ComposerView,
+): DetailRow[] {
+  const anchor = rows[afterRow];
+  if (!anchor) return rows;
+
+  const { unit, path } = anchor;
+  const composer: DetailRow[] = [
+    { kind: 'composer', unit, path, view, part: 'top' },
+    ...view.lines.map((_, lineIndex): DetailRow => (
+      { kind: 'composer', unit, path, view, part: 'body', lineIndex }
+    )),
+    { kind: 'composer', unit, path, view, part: 'bottom' },
+  ];
+
+  return [...rows.slice(0, afterRow + 1), ...composer, ...rows.slice(afterRow + 1)];
 }
 
 /** Row indices where each unit begins — how a unit-keyed action finds its row. */
@@ -226,6 +394,54 @@ function anchorInHunk(path: string, hunk: Hunk): CommentAnchor | null {
  * this hunk". Everywhere else it degrades to the enclosing hunk, and on a file
  * header to that file's first hunk, so a comment is never simply refused.
  */
+/**
+ * The comment anchor for a swept range of rows.
+ *
+ * Rows that are not diff lines — blanks, hunk headers, a finding card — are
+ * skipped rather than rejected: a selection that runs across a hunk boundary is
+ * a reasonable thing to have done, and refusing it would make `V` feel like it
+ * had rules the reviewer could not see.
+ *
+ * The range is clamped to the file it started in, because GitHub has no
+ * cross-file comment. It anchors RIGHT whenever any selected line survives into
+ * the post-image, and only falls to LEFT for a run of pure deletions — a range
+ * cannot straddle both sides, and a reviewer sweeping a replacement means the
+ * version that will exist.
+ */
+export function rangeAnchor(
+  rows: DetailRow[],
+  from: number,
+  to: number,
+): CommentAnchor | null {
+  const lo = Math.min(from, to);
+  const hi = Math.max(from, to);
+
+  const swept: DiffLine[] = [];
+  let path: string | null = null;
+  for (let i = lo; i <= hi; i += 1) {
+    const row = rows[i];
+    if (row?.kind !== 'diff-line') continue;
+    path ??= row.path;
+    if (row.path === path) swept.push(row.line);
+  }
+  if (path === null) return null;
+
+  const right = swept.map((l) => l.newLine).filter((n) => n !== null);
+  const numbers = right.length > 0 ? right : swept.map((l) => l.oldLine).filter((n) => n !== null);
+  if (numbers.length === 0) return null;
+
+  const line = Math.max(...numbers);
+  const startLine = Math.min(...numbers);
+  return {
+    path,
+    line,
+    side: right.length > 0 ? 'RIGHT' : 'LEFT',
+    // A one-line "range" is a single-line comment written the long way, and
+    // GitHub requires start_line < line. Say it the short way.
+    startLine: startLine === line ? null : startLine,
+  };
+}
+
 export function anchorAtRow(rows: DetailRow[], index: number): CommentAnchor | null {
   const row = rows[index];
   if (!row) return null;

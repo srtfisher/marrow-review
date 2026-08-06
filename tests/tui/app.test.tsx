@@ -128,13 +128,18 @@ describe('Help', () => {
     ).replaceAll(/\x1b\[[0-9;]*m/g, '');
     // The window stops with the last row at the bottom, never on empty space.
     expect(out).toContain('close this overlay');
-    expect(out).toMatch(/(\d+)–37 of 37/);
+    expect(out).toMatch(/(\d+)–41 of 41/);
   });
 
-  // Two roomy columns beat three cramped ones when two already fit.
+  // Roomy columns beat cramped ones whenever the roomy ones already fit. A
+  // wide terminal is not a reason to split the list further than the height
+  // forces; only a short one is.
   test('uses the fewest columns the height needs, not the most the width allows', () => {
-    expect(layoutHelp(240, 40).columns).toBe(1);
-    expect(layoutHelp(240, 24).columns).toBe(2);
+    // Tall enough for every binding in one column, on a very wide terminal.
+    expect(layoutHelp(240, 48).columns).toBe(1);
+    // Short enough that one column would run off the bottom.
+    expect(layoutHelp(240, 24).columns).toBe(3);
+    // Narrow enough that only one column fits, however short it is.
     expect(layoutHelp(80, 24).columns).toBe(1);
   });
 

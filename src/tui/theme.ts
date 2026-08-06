@@ -57,6 +57,8 @@ export const glyph = {
   /** Butcher's mark on the cut; also the eye's anchor when scrolling. */
   cut: '▍',
   cursor: '▸',
+  /** A row inside a `V` selection. Thinner than `cut`, which marks a file. */
+  selected: '▏',
   gaugeFull: '▇',
   gaugeEmpty: '▁',
   fold: '┄',
