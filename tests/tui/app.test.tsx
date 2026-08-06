@@ -128,7 +128,7 @@ describe('Help', () => {
     ).replaceAll(/\x1b\[[0-9;]*m/g, '');
     // The window stops with the last row at the bottom, never on empty space.
     expect(out).toContain('close this overlay');
-    expect(out).toMatch(/(\d+)–44 of 44/);
+    expect(out).toMatch(/(\d+)–45 of 45/);
   });
 
   // Roomy columns beat cramped ones whenever the roomy ones already fit. A

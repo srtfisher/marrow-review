@@ -105,6 +105,7 @@ export const KEY_HELP: readonly KeyHelpEntry[] = [
   { keys: 'R', description: 'refetch from GitHub; retry the model pass', modes: ['detail'], group: 'anywhere' },
   { keys: '?', description: 'this help', modes: ['detail'], group: 'anywhere' },
   { keys: 'q', description: 'quit', modes: ['detail'], group: 'anywhere' },
+  { keys: 'esc', description: 'back to the pull-request list', modes: ['detail'], group: 'list' },
   { keys: 'esc / q', description: 'close this overlay', modes: ['comment', 'submit', 'help', 'chat'], group: 'anywhere' },
 ];
 

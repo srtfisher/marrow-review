@@ -298,6 +298,9 @@ export function App(props: AppProps) {
   const [editorOpen, setEditorOpen] = useState(false);
   /** Set by `q` when there is work on screen that has not been submitted. */
   const [confirmQuit, setConfirmQuit] = useState(false);
+  /** Set by esc leaving the diff — the review stays warm either way, but esc
+   *  is reflexive and the screen it swaps away is the reviewer's place in it. */
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [findings, setFindings] = useState<TriagedFinding[]>([]);
   /**
    * `ok` and `failed` are the whole point: `runFindings` returns `[]` both when
@@ -455,6 +458,7 @@ export function App(props: AppProps) {
     setReviewed(new Set());
     setFullDiff(false);
     setConfirmQuit(false);
+    setConfirmLeave(false);
     setMode('detail');
   }, [openNumber]);
 
@@ -1031,9 +1035,10 @@ export function App(props: AppProps) {
     // a string starting with `[` — the binding for "previous file".
     const mouse = parseMouse(input);
     if (mouse) {
-      // A question about losing work owns the screen; scrolling behind it would
-      // move a cursor the reviewer cannot see the effect of.
-      if (!confirmQuit) handleMouse(mouse);
+      // A question about losing work, or about leaving the diff, owns the
+      // screen; scrolling behind it would move a cursor the reviewer cannot
+      // see the effect of.
+      if (!confirmQuit && !confirmLeave) handleMouse(mouse);
       return;
     }
 
@@ -1049,6 +1054,18 @@ export function App(props: AppProps) {
         props.onDiscard?.();
         return exit();
       }
+      return;
+    }
+
+    // Leaving is cheap — the review stays warm and the draft is on disk — but
+    // esc is also the most reflexive key in the app, and the screen it swaps
+    // away is the reviewer's place in a diff. One question, every time.
+    if (confirmLeave) {
+      if (key.return) {
+        setConfirmLeave(false);
+        return setMode('picker');
+      }
+      if (key.escape) return setConfirmLeave(false);
       return;
     }
 
@@ -1214,7 +1231,7 @@ export function App(props: AppProps) {
         // first: esc that left the diff while lines were still highlighted read
         // as the key having skipped a step.
         if (selectAnchor !== null) return setSelectAnchor(null);
-        if (mode === 'detail') return setMode('picker');
+        if (mode === 'detail') return setConfirmLeave(true);
         return;
       case 'quit':
         if (hasUnsubmittedWork) return setConfirmQuit(true);
@@ -1392,6 +1409,10 @@ export function App(props: AppProps) {
         {confirmQuit ? (
           <Text color={theme.color.pending} wrap="truncate">
             {`${staged.length} unsubmitted comment(s) · enter saves the draft and quits · x discards · esc stays`}
+          </Text>
+        ) : confirmLeave ? (
+          <Text color={theme.color.pending} wrap="truncate">
+            {'leave this review? it stays warm — esc returns to it · ⏎ leave · esc stay'}
           </Text>
         ) : (
           // The verbs, not the metadata. Repository, number, and gauge already

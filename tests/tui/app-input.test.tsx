@@ -354,6 +354,7 @@ describe('the app frames every screen', () => {
     expect(app.frame()).not.toContain('reviewing #42');
 
     await app.press(ESC);
+    await app.press('\r'); // confirm the leave
     expect(app.frame()).toContain('reviewing #42');
   });
 });
@@ -1228,6 +1229,7 @@ describe('esc comes back out of the diff', () => {
     expect(app.frame()).not.toContain('Alpha rendering');
 
     await app.press(ESC);
+    await app.press('\r'); // confirm the leave
     // Keying the picker on "a pull request is loaded" rather than on the mode
     // left it hidden here, and esc looked like a dead key.
     expect(app.frame()).toContain('Alpha rendering');
@@ -1240,6 +1242,7 @@ describe('esc comes back out of the diff', () => {
     expect(app.frame()).toContain('comment on this line');
 
     await app.press(ESC);
+    await app.press('\r'); // confirm the leave
     expect(app.frame()).toContain('filter');
     // The review is still loaded, and esc is how you get back to it. Nothing
     // else on screen says that, so the bar has to.
@@ -1903,7 +1906,8 @@ describe('the warm review', () => {
     const opened: number[] = [];
     const app = await mountWithOpenPr({ onOpenPr: (n) => opened.push(n) });
 
-    await app.press(ESC); // leave to the picker (Task 8: a confirm's \r goes here)
+    await app.press(ESC); // leave to the picker
+    await app.press('\r'); // confirm the leave
     await app.press('\r'); // enter on the (still-selected) warm PR
 
     expect(opened).toEqual([]); // no refetch, no meat re-run
@@ -1924,10 +1928,11 @@ describe('the warm review', () => {
     await app.press('j');
     const before = app.frame();
 
-    await app.press(ESC); // out to the picker (Task 8: a confirm's \r goes here)
+    await app.press(ESC); // out to the picker
+    await app.press('\r'); // confirm the leave
     expect(app.frame()).toContain('filter ›');
 
-    await app.press(ESC); // straight back in — no confirm exists yet
+    await app.press(ESC); // straight back in — no confirm on the way in
     expect(app.frame()).toBe(before);
   });
 
@@ -1935,10 +1940,65 @@ describe('the warm review', () => {
     const opened: number[] = [];
     const app = await mountWithOpenPr({ onOpenPr: (n) => opened.push(n) });
 
-    await app.press(ESC); // leave to the picker (Task 8: a confirm's \r goes here)
+    await app.press(ESC); // leave to the picker
+    await app.press('\r'); // confirm the leave
     await app.press(DOWN); // #42 -> #43, a different entry
     await app.press('\r');
 
     expect(opened).toEqual([43]);
+  });
+});
+
+describe('leaving the review asks', () => {
+  test('esc from the review confirms before the picker appears', async () => {
+    const app = await mountWithOpenPr();
+
+    await app.press(ESC);
+    expect(app.frame()).toContain('leave this review?');
+    expect(app.frame()).not.toContain('filter ›');
+
+    await app.press('\r');
+    expect(app.frame()).toContain('filter ›');
+  });
+
+  test('esc at the question stays in the review', async () => {
+    const app = await mountWithOpenPr();
+
+    await app.press(ESC);
+    await app.press(ESC);
+    expect(app.frame()).not.toContain('leave this review?');
+    expect(app.frame()).toContain('kept');
+  });
+
+  test('a stray key at the question does nothing', async () => {
+    const app = await mountWithOpenPr();
+
+    await app.press(ESC);
+    expect(app.frame()).toContain('leave this review?');
+
+    // Nothing repainted, which is the strongest available form of "nothing
+    // happened" — the confirm stayed exactly as it was.
+    await app.press('x');
+    expect(app.frame()).toBe('');
+  });
+
+  test('esc clears a selection before it means leave', async () => {
+    const app = await mountWithOpenPr();
+
+    await app.press('V');
+    await app.press(ESC);
+    expect(app.frame()).not.toContain('leave this review?');
+  });
+
+  test('q still routes to the quit confirm, not the leave confirm', async () => {
+    const app = await mountWithOpenPr();
+
+    await app.press('c');
+    await app.press('hello');
+    await app.press(SAVE);
+    await app.press('q');
+
+    expect(app.frame()).toContain('unsubmitted comment');
+    expect(app.frame()).not.toContain('leave this review?');
   });
 });
