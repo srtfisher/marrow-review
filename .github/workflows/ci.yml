@@ -9,7 +9,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # bun is not a preference here: tests/** import `bun:test`, so the suite
       # does not run under anything else.
