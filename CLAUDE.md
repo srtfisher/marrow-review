@@ -101,8 +101,9 @@ inherited rather than hardcoded, depth is tonal only, and the bottom row is verb
 than metadata. It is written as successive revisions after real use; append to it when a
 decision changes rather than silently diverging from it.
 
-## Plans and specs
+## Specs
 
-`docs/superpowers/specs/` holds design documents, `docs/superpowers/plans/` the
-implementation plans built from them, both dated. For a feature of any size, write the spec
-first — the existing ones are the model for the level of detail.
+`docs/design/` holds the dated design document behind each feature. For a feature of any
+size, write the spec first — the existing ones are the model for the level of detail. The
+step-by-step implementation plans built from them are not kept; the git log covers what was
+actually done.

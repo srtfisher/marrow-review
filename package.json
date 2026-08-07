@@ -1,12 +1,19 @@
 {
-  "name": "@srtfisher/marrow",
+  "name": "marrow-review",
   "version": "0.1.0",
-  "private": true,
+  "description": "Review large pull requests in the terminal: the diff abridged to what carries meaning, findings anchored to lines, one GitHub review.",
   "license": "MIT",
+  "author": "Sean Fisher",
   "type": "module",
   "bin": {
-    "marrow": "./dist/cli.js"
+    "marrow": "./dist/cli.js",
+    "marrow-review": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
   "engines": {
     "node": ">=24"
   },
@@ -14,8 +21,33 @@
     "build": "tsc -p tsconfig.json",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.test.json",
-    "lint:boundary": "depcruise src --config .dependency-cruiser.cjs"
+    "lint:boundary": "depcruise src --config .dependency-cruiser.cjs",
+    "prepublishOnly": "npm run build",
+    "release:patch": "npm version patch && git push --follow-tags",
+    "release:minor": "npm version minor && git push --follow-tags",
+    "release:major": "npm version major && git push --follow-tags"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/srtfisher/marrow-review.git"
+  },
+  "homepage": "https://github.com/srtfisher/marrow-review#readme",
+  "bugs": {
+    "url": "https://github.com/srtfisher/marrow-review/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "code-review",
+    "pull-request",
+    "diff",
+    "github",
+    "cli",
+    "tui",
+    "ink",
+    "claude"
+  ],
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.222",
     "@octokit/rest": "22.0.1",

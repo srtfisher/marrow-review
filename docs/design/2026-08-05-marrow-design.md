@@ -1,7 +1,7 @@
 # marrow — design
 
 **Date:** 2026-08-05
-**Repo:** `srtfisher/marrow` (private, possibly shared later)
+**Repo:** `srtfisher/marrow-review`
 **Status:** approved design, ready for implementation planning
 
 ## What it is
@@ -32,7 +32,7 @@ with a collapsible "meat" section above the diff).
 
 ## Architecture
 
-One npm package (`@srtfisher/marrow`, `bin: marrow`), two source trees with an
+One npm package (`marrow-review`, `bin: marrow`), two source trees with an
 enforced boundary:
 
 ```

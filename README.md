@@ -115,12 +115,26 @@ the cursor passes the end of one. Magenta is the model talking, and only ever th
 ## Install
 
 ```bash
-bun install
-bun run build
-npm link          # or add ./dist/cli.js to your PATH
+npx marrow-review
+```
+
+That is the whole install. The package is `marrow-review`; the command it gives you is
+`marrow`. If you review often enough to want it on your `PATH`:
+
+```bash
+npm i -g marrow-review
 ```
 
 ## Use
+
+```bash
+npx marrow-review           # pull requests for the repo you are standing in
+npx marrow-review 42        # review PR 42
+npx marrow-review <url>     # review a PR by URL
+npx marrow-review --dry-run 42   # print the abridged diff, submit nothing
+```
+
+Installed globally, the command is `marrow`:
 
 ```bash
 marrow                      # pull requests for the repo you are standing in
@@ -226,6 +240,18 @@ disagree with it.
 subprocess, a rate limit, or malformed output costs you the findings, not the diff,
 navigation, your own comments, or the ability to submit.
 
+## What leaves your machine
+
+Reviewing sends the pull request's diff to Anthropic, and — because the agent runs in a
+worktree with `Read`, `Grep`, and `Glob` — whatever files it reads while looking for call
+sites. That is the whole point of the tool, but it is worth stating plainly before you
+point it at a private repository: the same rules apply as for any other use of Claude Code
+on that code. `--dry-run` submits nothing to GitHub, but it is not an offline mode: it still
+runs the abridgement's model pass, so the diff is still sent.
+
+Nothing else is transmitted. The only other network calls are to GitHub, through `gh`'s
+credentials and the Octokit client, to read the pull request and to submit your review.
+
 ## Billing
 
 marrow uses your **Claude Code subscription**, not metered API billing.
@@ -238,11 +264,15 @@ quietly. marrow removes both variables from the agent subprocess unless you pass
 ## Development
 
 ```bash
-bun test              # 683 tests
-bun run typecheck
+bun install
+bun test              # the whole suite
+bun run typecheck     # tsc over src and tests both
 bun run lint:boundary # src/core must never import UI
-bun run build
+bun run build         # tsc -> dist/, the published bin
 ```
+
+The suite needs [bun](https://bun.sh): tests import `bun:test`. The package itself runs on
+plain Node 24+ — bun is a development dependency of the repository, not of the tool.
 
 `src/core/**` is a pure library with no UI imports, enforced by dependency-cruiser.
 `src/tui/**` is the Ink layer. The split is deliberate: the hard parts — diff parsing,
@@ -256,6 +286,8 @@ directly. In a terminal, "the renderer and the scroll maths disagree by one row"
 class of bug, and the fix is to have exactly one of them.
 
 Interface decisions and the reasoning behind them live in `.interface-design/system.md`.
+The design documents behind each feature are in `docs/design/`, and `RELEASING.md` covers
+cutting a release.
 
 ## Status
 
