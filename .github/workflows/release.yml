@@ -29,6 +29,20 @@ jobs:
       # Trusted publishing (OIDC) requires npm >= 11.5.1.
       - run: npm install -g npm@latest
 
+      # Before anything expensive: a tag that disagrees with package.json would
+      # otherwise publish a version nobody asked for under a tag that says
+      # something else.
+      - name: Check the tag matches package.json
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          declared="$(node -p "require('./package.json').version")"
+          if [ "$tagged" != "$declared" ]; then
+            echo "::error::tag $GITHUB_REF_NAME says $tagged, package.json says $declared"
+            exit 1
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+        id: version
+
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
@@ -37,8 +51,18 @@ jobs:
 
       # No token needed: OIDC authenticates via the trusted publisher configured
       # on npmjs.com, and provenance is generated automatically.
+      #
+      # Publishing is the one step here that cannot be repeated, so it asks first:
+      # a tag applied retroactively, or a re-run of a release whose later steps
+      # failed, must not fail the whole run on a version that is already up.
       - name: Publish to npm
-        run: npm publish
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          if npm view "marrow-review@${version}" version >/dev/null 2>&1; then
+            echo "marrow-review@${version} is already on the registry; skipping publish."
+          else
+            npm publish
+          fi
 
       - name: Extract changelog notes for this version
         id: notes
