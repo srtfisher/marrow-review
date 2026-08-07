@@ -147,7 +147,7 @@ header rather than letting you trust a half-evidenced review.
 | `]` `[` | next / previous file · `n` `p` next / previous finding |
 | wheel | scroll the diff · click a line to put the cursor on it |
 | click | a file in the index to jump to it · in the picker, click aims and click again opens |
-| `space` | fold this file · `z` reveal its dropped hunks · `Z` reveal everything |
+| `space` | fold this file · `F` fold every file · `z` reveal its dropped hunks · `Z` reveal everything |
 | type | in the picker: filter by title, author, or number · `⇥` open / needs my review / all |
 | `ctrl-r` | refetch the list · `esc` clears the query, else back to the warm review, else quits |
 | `d` | full diff ↔ meat · `t` existing threads · `o` open on github.com |
@@ -156,6 +156,12 @@ header rather than letting you trust a half-evidenced review.
 | `v` | show refuted findings and why they were refuted |
 | `i` | ask the model about this hunk · `?` help · `q` quit |
 | `!` | submit |
+
+Arriving at a file puts that file at the top of the pane, so `]` shows you the file rather
+than its name at the bottom edge with the contents below the fold. Reading is unaffected:
+`j` and `k` move the view as little as the cursor requires, right up until a keystroke
+lands you on a file header. `F` collapses the whole diff to its file names and a second
+`F` puts it back, leaving you on the file you were reading.
 
 The keyboard does everything; the mouse is there because a reviewer scrolling a diff
 reaches for the wheel without deciding to. `?` lists every binding, grouped, and scrolls if
