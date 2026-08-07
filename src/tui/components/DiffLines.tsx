@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import type { DiffLine, Hunk } from '../../core/diff/types.js';
 import { theme } from '../theme.js';
+import { padToWidth, type DiffTint } from '../tint.js';
 
 function pad(value: number | null, width: number): string {
   return value === null ? ' '.repeat(width) : String(value).padStart(width, ' ');
@@ -43,6 +44,45 @@ export function markerStyle(line: DiffLine): { color?: string; dimColor?: boolea
  *  what keeps the changed lines' gutters standing out from it. */
 export const gutterStyle = markerStyle;
 
+/**
+ * The tint behind a changed line, or undefined for a context line — which never
+ * gets one, because the tint's whole job is to separate changed from unchanged.
+ */
+export function backgroundFor(line: DiffLine, tint: DiffTint | null): string | undefined {
+  if (tint === null) return undefined;
+  if (line.kind === 'add') return tint.add;
+  if (line.kind === 'del') return tint.del;
+  return undefined;
+}
+
+/** Columns left for the code once the two gutters, their separator, the space
+ *  after them, and the `+`/`-` marker have been laid down. */
+export function codeWidth(rowWidth: number, gutterWidth: number): number {
+  return Math.max(0, rowWidth - (gutterWidth * 2 + 3));
+}
+
+/**
+ * The code column as drawn: padded to the pane edge when there is a tint behind
+ * it, left alone when there is not.
+ *
+ * A tint that stops where the code stops draws a ragged right edge tracking line
+ * length, which reads as noise rather than structure — so a washed line runs to
+ * the edge. An unwashed one must not: the padding is invisible but real, and it
+ * would make every row exactly wide enough for `wrap="truncate"` to cut.
+ *
+ * Pure, and tested as such, because Ink emits no escapes at all where the
+ * terminal reports no colour and a render would then show no padding either.
+ */
+export function codeColumn(
+  code: string,
+  background: string | undefined,
+  gutterWidth: number,
+  rowWidth?: number,
+): string {
+  if (background === undefined || rowWidth === undefined) return code;
+  return padToWidth(code, codeWidth(rowWidth, gutterWidth));
+}
+
 export interface DiffLineRowProps {
   line: DiffLine;
   gutterWidth: number;
@@ -53,6 +93,10 @@ export interface DiffLineRowProps {
    * repaint of every visible row.
    */
   highlighted?: string;
+  /** Null on a terminal that could not be asked, or cannot render it subtly. */
+  tint?: DiffTint | null;
+  /** Columns this row has. Only needed when tinting, to reach the pane edge. */
+  width?: number;
 }
 
 /**
@@ -60,12 +104,17 @@ export interface DiffLineRowProps {
  * detail pane windows on rows, so it has to be able to render the middle of a
  * thousand-line hunk without rendering its ends.
  */
-export function DiffLineRow({ line, gutterWidth, highlighted }: DiffLineRowProps) {
+export function DiffLineRow({
+  line, gutterWidth, highlighted, tint = null, width,
+}: DiffLineRowProps) {
+  const background = backgroundFor(line, tint);
+  const body = codeColumn(highlighted ?? line.text, background, gutterWidth, width);
+
   return (
-    <Text wrap="truncate">
+    <Text wrap="truncate" backgroundColor={background}>
       <Text {...gutterStyle(line)}>{formatGutter(line, gutterWidth)}</Text>{' '}
       <Text {...markerStyle(line)}>{marker(line)}</Text>
-      {highlighted ?? line.text}
+      {body}
     </Text>
   );
 }

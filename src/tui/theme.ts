@@ -5,7 +5,9 @@
  * A hardcoded `#3fb950` fights the background, contrast, and green/red pair
  * they already chose — and looks wrong in half of terminals.
  *
- * See .interface-design/system.md for the full rationale.
+ * See .interface-design/system.md for the full rationale. `tint.ts` holds the
+ * single exception — a wash no ANSI slot can express faintly enough — and the
+ * background probe that earns it.
  */
 export const color = {
   /** A diff addition. Nothing else is ever green. */

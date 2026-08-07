@@ -8,6 +8,7 @@ import { Viewport } from './Viewport.js';
 import { theme } from '../theme.js';
 import { meatGauge } from '../gauge.js';
 import { layoutFileIndex, fileIndexRows, type FileIndexEntry } from '../fileindex.js';
+import type { DiffTint } from '../tint.js';
 
 /**
  * Where the model pass got to. `ok` and `failed` are distinct on purpose: the
@@ -44,6 +45,13 @@ export interface DetailProps {
    * reviewer comes to trust findings that had half the evidence.
    */
   worktreeOk: boolean;
+  /**
+   * The wash behind changed lines. Null when the terminal would not say what
+   * colour it is painted in, or cannot render the tint faintly enough — the
+   * gutter and the `+`/`-` marker carry the same signal either way, so this is
+   * a nicety that is allowed to be absent.
+   */
+  tint?: DiffTint | null;
 }
 
 const SEVERITY_MARK: Record<string, string> = { critical: '!!', important: '!', minor: '·' };
@@ -74,6 +82,9 @@ export function renderRow(
   selected: boolean,
   gutterWidth: number,
   inSelection = false,
+  /** Tint and the columns a diff row has left after the cursor mark. Absent
+   *  means no wash, which is the whole of what it changes. */
+  diff?: { tint: DiffTint | null; width: number },
 ): ReactNode {
   switch (row.kind) {
     case 'blank':
@@ -107,6 +118,8 @@ export function renderRow(
             line={row.line}
             gutterWidth={gutterWidth}
             highlighted={row.highlighted}
+            tint={diff?.tint ?? null}
+            width={diff?.width}
           />
         </Box>
       );
@@ -312,18 +325,23 @@ export function detailHeaderRows(
 export function Detail({
   pr, meat, rows, cursor, scrollTop, height, width, checks, fullDiff, reviewed,
   stagedCount = 0, model, worktreeOk, findingsStatus = 'idle', findingCount = 0,
-  selection = null,
+  selection = null, tint = null,
 }: DetailProps) {
   const failing = checks.filter((c) => c.conclusion === 'failure');
   const currentPath = rows[cursor]?.path ?? null;
   const index = layoutFileIndex(indexEntries(meat, currentPath, reviewed), width);
   const headerRows = detailHeaderRows(meat, checks, width);
 
+  // Two columns go to the cursor mark, which sits outside the tint so the
+  // navigation column stays clean whatever the line under it is doing.
+  const diff = { tint, width: Math.max(0, width - 2) };
+
   const body = rows.map((row, i) => renderRow(
     row,
     i === cursor,
     theme.layout.gutterWidth,
     selection !== null && i >= selection.from && i <= selection.to,
+    diff,
   ));
 
   return (

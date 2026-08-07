@@ -38,6 +38,7 @@ import {
   MOUSE_DISABLE, MOUSE_ENABLE, WHEEL_ROWS, isDoubleClick, parseMouse, type Click,
 } from './mouse.js';
 import { planFileIndex } from './fileindex.js';
+import type { DiffTint } from './tint.js';
 import { resolveAction, type Mode } from './keymap.js';
 import { buildEntries, hitPicker, layoutPicker, nextFilter, pickerScroll } from './picker.js';
 import { chromeLine } from './chrome.js';
@@ -118,6 +119,12 @@ export interface AppProps {
    * terminal or a colour scheme it fights with. Defaults on.
    */
   highlight?: boolean;
+  /**
+   * The wash behind added and deleted lines, measured against the terminal's
+   * own background at startup. Null means no wash — the tint is additive, like
+   * the highlighter: the gutter and the marker still say add from del.
+   */
+  tint?: DiffTint | null;
   /**
    * Opens `initial` in the reviewer's editor. Injected only by tests — the
    * default really does spawn `$EDITOR`, which no test may do.
@@ -1441,6 +1448,7 @@ export function App(props: AppProps) {
                 stagedCount={staged.length}
                 model={props.model}
                 worktreeOk={props.worktreeOk}
+                tint={props.tint ?? null}
                 selection={selectAnchor === null ? null : selectedRows()}
                 findingsStatus={findingsStatus}
                 // The shown findings, not every one held: `v` hides refuted

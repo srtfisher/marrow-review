@@ -405,8 +405,6 @@ to a header the reviewer did not ask for.
 The scroll is clamped at the end of the diff, so the last file stops where the diff stops
 instead of scrolling its tail into blank rows. The wheel keeps its own rule, unchanged: the
 view leads and the cursor follows.
-<<<<<<< HEAD
-=======
 
 ## Space folds a file, `F` folds all of them
 
@@ -425,10 +423,45 @@ rule above. `F` twice is a no-op, which is what a toggle should be.
 `F` is not in the bottom row. That bar is six verbs and stays six verbs; help names the
 binding.
 
->>>>>>> fc4f451 (tui: F folds every file, and remembers where you were)
+## Revision: one hardcoded colour, and what it had to buy
+
+The rule at the top of this file — bind to ANSI slots, never truecolor — has one exception
+now: a faint wash behind added and deleted lines, so the changed lines are findable by
+sweeping the pane rather than by reading the gutter down it.
+
+The exception is forced. There is no subtle background in the sixteen slots: `bgGreen` is
+the loudest thing a terminal can draw, and `dim` is a foreground attribute. A tint at
+roughly 8% of the distance from the background to a saturated green has to state its own
+value. Red is set fainter than green on purpose — deletions are usually the taller block,
+and matching the green's weight turned the pane pink.
+
+What hardcoding costs is the thing the original rule was protecting: the value only works
+against one kind of background, and a dark tint on Solarized Light is a black bar. So the
+terminal is *asked* rather than assumed. At startup, before Ink takes stdin, marrow sends
+OSC 11 — "report your background colour" — and picks the dark or light pair from the
+luminance of the reply, falling back to `COLORFGBG` and then to dark. Below 256 colours
+there is no tint at all, because the value would quantise to `bgGreen` and become the exact
+thing this was meant to avoid.
+
+Three consequences worth stating, because each is a rule this file already holds:
+
+- **The wash is additive.** The gutter and the `+`/`-` marker still carry add and del, as
+  they have since syntax highlighting took the colour out of the code column. A terminal
+  that will not answer loses a nicety, not the signal.
+- **It reaches the pane edge.** A tint that stops where the code stops draws a ragged right
+  edge tracking line length, which is noise. A band is structure.
+- **The cursor column stays outside it.** `▸` is position, and position does not get
+  washed with the meaning of the row it happens to be on.
+
+The squint test is unchanged and the tint is calibrated to it: two panes and a status line,
+nothing jumping except the meat gauge and anything yellow. If the diff reads as green and
+red blocks rather than as code, the value is too strong.
+
 ## Rejected defaults, recorded so they stay rejected
 
-- Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme
+- Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme. The one
+  exception is the diff wash above, which no slot can express faintly; it pays for itself by
+  measuring the terminal's background instead of assuming one.
 - `┌─┐` boxes around panels → one vertical rule and tonal tiers
 - Emoji status icons → typographic marks; emoji cell width is unreliable and reads as toy
 - A spinner during model calls → progressive reveal

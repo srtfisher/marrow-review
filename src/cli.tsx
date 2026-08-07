@@ -30,6 +30,7 @@ import {
   type LoadProgress, type ProgressStep,
 } from './tui/progress.js';
 import { enterAlternateScreen, restoreOnExit } from './tui/screen.js';
+import { detectTint } from './tui/tint.js';
 
 /**
  * A worktree is a full checkout, and one is created per reviewed head. Nothing
@@ -213,6 +214,16 @@ async function runTui(session: Session): Promise<number> {
 
   const store = new ReviewStore();
 
+  // Before the alternate screen and before Ink, because it borrows raw mode on
+  // stdin for as long as the terminal takes to answer, and Ink owns stdin from
+  // `render` onwards. Awaited rather than filled in later: a diff that gains a
+  // tint one frame after it appears is a flicker on the first thing read.
+  const tint = await detectTint({
+    stdin: process.stdin,
+    stdout: process.stdout,
+    env: process.env,
+  });
+
   noteApiKeyWithheld(args);
 
   // One transport for the findings, verify, and chat passes; the meat pass
@@ -231,6 +242,7 @@ async function runTui(session: Session): Promise<number> {
         threads={threads}
         model={args.model}
         highlight={args.highlight}
+        tint={tint}
         worktreeOk={worktree !== null}
         filter={filter}
         status={status}
