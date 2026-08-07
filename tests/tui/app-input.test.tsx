@@ -41,7 +41,9 @@ function fakeStdout() {
   };
   stream.columns = 100;
   stream.rows = 30;
-  // Interactive, so Ink emits a frame per render rather than one at unmount.
+  // A terminal as far as anything asking is concerned. What actually makes Ink
+  // emit a frame per render is `interactive: true` at the render call below —
+  // this alone is not enough on CI.
   stream.isTTY = true;
   stream.frames = frames;
   stream.write = (chunk: string) => {
@@ -115,6 +117,12 @@ function mount(props: Partial<Parameters<typeof App>[0]> = {}): Harness {
       stdout: stdout as never,
       patchConsole: false,
       exitOnCtrlC: false,
+      // Say it rather than imply it. Ink infers interactivity as
+      // `!isInCi && stdout.isTTY`, so the faked `isTTY` above is enough on a
+      // developer's machine and not on a CI runner, where `is-in-ci` wins and
+      // Ink batches everything into one frame at unmount — every `frame()` in
+      // this file then reads the empty string and the whole file fails.
+      interactive: true,
       // Ink throttles writes to thirty frames a second, so a key that renders
       // twice — new rows, then the effects that put the cursor back where it
       // belongs — has its second frame held for thirty-four milliseconds. A
