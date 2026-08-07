@@ -17,3 +17,13 @@ test('throws an actionable error when neither is available', async () => {
   const run = async () => ({ stdout: '', code: 1 });
   await expect(resolveGitHubToken(run, {})).rejects.toThrow(/gh auth login/);
 });
+
+test('falls back to GITHUB_TOKEN when gh is not installed at all', async () => {
+  const run = async () => ({ stdout: '', code: 1, missing: true });
+  expect(await resolveGitHubToken(run, { GITHUB_TOKEN: 'ghp_fromEnv' })).toBe('ghp_fromEnv');
+});
+
+test('tells you to install gh rather than to log into one you do not have', async () => {
+  const run = async () => ({ stdout: '', code: 1, missing: true });
+  await expect(resolveGitHubToken(run, {})).rejects.toThrow(/cli\.github\.com/);
+});

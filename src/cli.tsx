@@ -478,13 +478,12 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  const repo = await detectRepo(process.cwd());
-  if (!repo) {
-    process.stderr.write(
-      'Not inside a GitHub clone. Run marrow from a repository with a github.com origin.\n',
-    );
+  const detected = await detectRepo(process.cwd());
+  if (!detected.ok) {
+    process.stderr.write(`${detected.reason}\n`);
     return 1;
   }
+  const repo = detected.repo;
 
   // Awaited, not fired and forgotten: a sweep racing `ensureWorktree` could
   // delete the checkout the agent is about to read. A failed sweep is ignored —

@@ -1,3 +1,4 @@
+import { describeAgentFailure, type AgentFailure } from '../agent/errors.js';
 import type { AgentTransport } from '../agent/types.js';
 import type { Hunk } from '../diff/types.js';
 import type { CachedVerdict } from './cache.js';
@@ -22,6 +23,13 @@ export interface ClassifiedVerdict extends CachedVerdict {
 export interface ClassifyResult {
   summary: string;
   verdicts: Map<string, ClassifiedVerdict>;
+  /**
+   * Why a chunk never came back; null when every chunk answered. Chunks fail
+   * independently and this function never throws, so without it the only trace
+   * of a dead subprocess was hunks marked `classification failed` — a
+   * verdict-shaped string that names no cause.
+   */
+  error: AgentFailure | null;
 }
 
 export const CLASSIFY_SCHEMA: Record<string, unknown> = {
@@ -142,7 +150,7 @@ export async function classifyHunks(
   maxItems = 15,
 ): Promise<ClassifyResult> {
   const verdicts = new Map<string, ClassifiedVerdict>();
-  if (items.length === 0) return { summary: '', verdicts };
+  if (items.length === 0) return { summary: '', verdicts, error: null };
 
   const chunks = chunkHunks(items, maxChars, maxItems);
 
@@ -173,11 +181,15 @@ export async function classifyHunks(
   );
 
   let summary = '';
+  let error: AgentFailure | null = null;
   const failedChunks = new Set<number>();
 
   runs.forEach((result, i) => {
     if (result.status === 'rejected') {
       failedChunks.add(i);
+      // The first is enough: chunks are the same call with different hunks, so
+      // when one dies because Claude Code cannot start, they all say that.
+      error ??= describeAgentFailure(result.reason);
       return;
     }
 
@@ -207,5 +219,5 @@ export async function classifyHunks(
     }
   });
 
-  return { summary, verdicts };
+  return { summary, verdicts, error };
 }

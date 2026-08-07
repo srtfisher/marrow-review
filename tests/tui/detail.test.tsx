@@ -35,6 +35,7 @@ const meat: MeatResult = {
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 2,
   keptAdditions: 1, keptDeletions: 0, totalAdditions: 2, totalDeletions: 0,
   unclassified: 0,
+  classifierError: null,
 };
 
 const units = buildUnits(meat, { expandedFiles: new Set(), foldedFiles: new Set() });

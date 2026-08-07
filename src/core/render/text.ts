@@ -20,6 +20,17 @@ export function renderMeat(result: MeatResult): string {
     '',
   );
 
+  // Before the diff, not after it: this is the reason the count above looks
+  // like nothing was abridged, and it is no use once the diff has scrolled by.
+  if (result.classifierError) {
+    const { summary, detail } = result.classifierError;
+    out.push(
+      `note: ${result.unclassified} hunk(s) were kept unjudged — ${summary}`,
+      ...(detail.length > 0 && detail !== summary ? [`      ${detail}`] : []),
+      '',
+    );
+  }
+
   for (const file of result.files) {
     if (file.dropped) {
       out.push(`── ${file.file.path}  (dropped: ${file.dropped.rule})`, '');

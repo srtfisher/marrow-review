@@ -27,6 +27,7 @@ function meat(): MeatResult {
     keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 1,
     keptAdditions: 1, keptDeletions: 0, totalAdditions: 2, totalDeletions: 0,
     unclassified: 0,
+    classifierError: null,
   };
 }
 

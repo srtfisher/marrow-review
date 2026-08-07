@@ -532,6 +532,7 @@ const meat: MeatResult = {
   keptLines: 1, totalLines: 2, keptFiles: 1, totalFiles: 1,
   keptAdditions: 1, keptDeletions: 0, totalAdditions: 2, totalDeletions: 0,
   unclassified: 0,
+  classifierError: null,
 };
 
 const rawFinding: RawFinding = {
@@ -818,6 +819,7 @@ const twoFileMeat: MeatResult = {
   keptLines: 2, totalLines: 4, keptFiles: 2, totalFiles: 2,
   keptAdditions: 2, keptDeletions: 0, totalAdditions: 4, totalDeletions: 0,
   unclassified: 0,
+  classifierError: null,
 };
 
 /** A transport that answers nothing until the test says so, so a question can
@@ -929,6 +931,46 @@ describe('a failed model pass is stated, not swallowed', () => {
     expect(app.frame()).toContain('press R to retry');
   });
 
+  test('a Claude Code that cannot start is named, and R is not offered', async () => {
+    // What an install that skipped the SDK's platform package looks like.
+    const transport = {
+      async run(): Promise<never> {
+        throw new Error('Claude Code native binary not found at /app/node_modules/claude');
+      },
+    };
+
+    const app = mount({ pr: detail, meat, transport, cwd: '/tmp/worktree' });
+    await delay(80);
+    expect(app.frame()).toContain('reinstall marrow');
+    // Pressing R here fails identically, forever; offering it is worse than
+    // saying nothing.
+    expect(app.frame()).not.toContain('press R to retry');
+  });
+
+  test('the abridgement explains itself when its own pass died', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [] } });
+
+    const app = mount({
+      pr: detail,
+      meat: {
+        ...meat,
+        unclassified: 1,
+        classifierError: {
+          summary: 'Claude Code could not authenticate — run `claude` once to sign in.',
+          detail: 'Please run /login',
+          retryable: false,
+        },
+      },
+      transport,
+      cwd: '/tmp/worktree',
+    });
+    await delay(80);
+    // The findings pass succeeded, so nothing else would have said why the
+    // header admits an unjudged hunk.
+    expect(app.frame()).toContain('could not authenticate');
+  });
+
   test('a pass that ran and found nothing says nothing', async () => {
     const transport = new FakeTransport();
     transport.queue({ structured: { findings: [] } });
@@ -981,6 +1023,7 @@ describe('the app fits the terminal it was given', () => {
     keptLines: 144, totalLines: 144, keptFiles: 1, totalFiles: 1,
     keptAdditions: 144, keptDeletions: 0, totalAdditions: 144, totalDeletions: 0,
     unclassified: 0,
+    classifierError: null,
   };
 
   function frameRows(frame: string): number {
@@ -1237,6 +1280,7 @@ describe('reviewing a large diff', () => {
     keptLines: 202, totalLines: 204, keptFiles: 3, totalFiles: 3,
     keptAdditions: 202, keptDeletions: 0, totalAdditions: 204, totalDeletions: 0,
     unclassified: 0,
+    classifierError: null,
   };
 
   test('fills the pane with the diff instead of one file header', async () => {
@@ -1310,6 +1354,7 @@ function meatOf(files: MeatFile[]): MeatResult {
     keptLines: lines, totalLines: lines, keptFiles: files.length, totalFiles: files.length,
     keptAdditions: lines, keptDeletions: 0, totalAdditions: lines, totalDeletions: 0,
     unclassified: 0,
+    classifierError: null,
   };
 }
 
@@ -1612,6 +1657,7 @@ describe('the mouse', () => {
     keptLines: 40, totalLines: 40, keptFiles: 1, totalFiles: 1,
     keptAdditions: 40, keptDeletions: 0, totalAdditions: 40, totalDeletions: 0,
     unclassified: 0,
+    classifierError: null,
   };
 
   test('turns reporting on while it owns the terminal', async () => {
@@ -2087,6 +2133,7 @@ describe('sweeping a range with the mouse', () => {
     keptLines: 40, totalLines: 40, keptFiles: 1, totalFiles: 1,
     keptAdditions: 40, keptDeletions: 0, totalAdditions: 40, totalDeletions: 0,
     unclassified: 0,
+    classifierError: null,
   };
 
   // With the chrome row above the pane, terminal row 14 is `line 3` (new line

@@ -109,8 +109,11 @@ the cursor passes the end of one. Magenta is the model talking, and only ever th
 ## Requirements
 
 - Node 24+
-- [`gh`](https://cli.github.com) 2.97+, authenticated (`gh auth login`)
-- A Claude Code subscription
+- [`gh`](https://cli.github.com) 2.97+, authenticated (`gh auth login`) — or a `GITHUB_TOKEN`
+  in the environment, which marrow falls back to when `gh` is absent
+- A Claude Code subscription. Claude Code itself ships with marrow, so there is nothing
+  else to install; if it cannot start or cannot authenticate, marrow says so and carries
+  on without the model passes — the diff, your comments, and submitting all still work.
 
 ## Install
 

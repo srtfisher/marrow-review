@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdin, useStdout, useWindowSize } from 'ink';
 import TextInput from 'ink-text-input';
+import { describeAgentFailure, type AgentFailure } from '../core/agent/errors.js';
 import type { AgentTransport } from '../core/agent/types.js';
 import type { Hunk } from '../core/diff/types.js';
 import { ask as askAgent, buildChatContext, type ChatSession } from '../core/findings/chat.js';
@@ -315,6 +316,12 @@ export function App(props: AppProps) {
    * transport looked exactly like a clean pull request.
    */
   const [findingsStatus, setFindingsStatus] = useState<'idle' | 'running' | 'ok' | 'failed'>('idle');
+  /**
+   * Why it failed, in the words to print. "Model pass failed — press R to
+   * retry" is advice that cannot work when Claude Code never started, and a
+   * reviewer pressing R forever is worse served than one told to reinstall.
+   */
+  const [findingsError, setFindingsError] = useState<AgentFailure | null>(null);
   /** Bumped by `R`, which is what re-runs the pass after a failure. */
   const [findingsAttempt, setFindingsAttempt] = useState(0);
   const [showRefuted, setShowRefuted] = useState(false);
@@ -423,7 +430,21 @@ export function App(props: AppProps) {
   // otherwise adding one pushes the status bar off the bottom again. Scrolling
   // and rendering must agree on this number or the cursor leaves the window.
   const findingsFailed = findingsStatus === 'failed';
-  const noteRows = (props.status ? 1 : 0) + (findingsFailed ? 1 : 0);
+  // One line for whichever model pass died — the findings pass first, since it
+  // is the one `R` re-runs. The classifier's reason stands in when findings ran
+  // cleanly, because an abridgement that kept everything is otherwise a
+  // shortfall wearing the face of a judgement.
+  const failure = (findingsFailed ? findingsError : null) ?? props.meat?.classifierError ?? null;
+  // The retry is offered only where it could work: with Claude Code missing or
+  // signed out, `R` fails identically for as long as the reviewer keeps
+  // pressing. Either way the remedy comes first — the note is one row and
+  // truncates, and an SDK error quoted verbatim is long enough to eat the rest.
+  const modelNote = failure === null
+    ? null
+    : failure.retryable
+      ? `Model pass failed — press R to retry. ${failure.summary}`
+      : `Model pass failed — ${failure.summary}`;
+  const noteRows = (props.status ? 1 : 0) + (modelNote ? 1 : 0);
   const paneHeight = Math.max(0, bodyHeight - noteRows);
   const detailHeaderHeight = props.meat
     ? detailHeaderRows(props.meat, props.checks, detailWidth)
@@ -504,10 +525,11 @@ export function App(props: AppProps) {
   useEffect(() => {
     setFindings([]);
     setFindingsStatus('idle');
+    setFindingsError(null);
     if (!openPr || !openMeat || !transport || !cwd) return;
 
     let cancelled = false;
-    let failed = false;
+    let failure: AgentFailure | null = null;
     setFindingsStatus('running');
 
     void (async () => {
@@ -522,14 +544,15 @@ export function App(props: AppProps) {
           failingChecks: props.checks.filter((c) => c.conclusion === 'failure'),
         },
         cwd,
-        () => {
-          failed = true;
+        (error) => {
+          failure = describeAgentFailure(error);
         },
       );
       if (cancelled) return;
       // "Found nothing" and "could not run" are different answers, and the
       // reviewer is entitled to know which one they got.
-      setFindingsStatus(failed ? 'failed' : 'ok');
+      setFindingsStatus(failure === null ? 'ok' : 'failed');
+      setFindingsError(failure);
       if (found.length === 0) return;
 
       // Progressive reveal: findings appear the moment they exist and the
@@ -1398,9 +1421,9 @@ export function App(props: AppProps) {
       )}
       {/* No spinner while it runs — verdicts fill in progressively and there is
           nothing to wait on. A pass that DIED is the one thing worth saying. */}
-      {findingsFailed && (
+      {modelNote && (
         <Text color={theme.color.danger} bold wrap="truncate">
-          Model pass failed — press R to retry.
+          {modelNote}
         </Text>
       )}
     </>

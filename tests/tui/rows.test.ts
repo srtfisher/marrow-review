@@ -41,7 +41,7 @@ function meatOf(files: MeatFile[]): MeatResult {
   return {
     summary: '', files, keptLines: 1, totalLines: 1,
     keptAdditions: 1, keptDeletions: 0, totalAdditions: 1, totalDeletions: 0,
-    keptFiles: files.length, totalFiles: files.length, unclassified: 0,
+    keptFiles: files.length, totalFiles: files.length, unclassified: 0, classifierError: null,
   };
 }
 

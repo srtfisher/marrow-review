@@ -48,6 +48,27 @@ test('shows kept hunk content', async () => {
   expect(out).toContain('+return a - b;');
 });
 
+test('says why nothing was abridged when the classifier never answered', async () => {
+  const out = renderMeat(
+    await computeMeat({
+      files: parseUnifiedDiff(DIFF),
+      ruleContext: { generatedPaths: new Set() },
+      // Empty queue: every run throws, which is what a dead subprocess does.
+      transport: new FakeTransport(),
+      cache: new MemoryVerdictCache(),
+      model: 'sonnet',
+      prTitle: 'T',
+      prBody: '',
+    }),
+  );
+
+  // Before the diff, where it can still be read — and above the counter it
+  // explains, which otherwise reads as a judgement that everything mattered.
+  const note = out.indexOf('kept unjudged');
+  expect(note).toBeGreaterThan(-1);
+  expect(note).toBeLessThan(out.indexOf('src/app.ts'));
+});
+
 test('names the rule for a dropped file without printing its content', async () => {
   const out = renderMeat(await meat());
   expect(out).toContain('pnpm-lock.yaml');

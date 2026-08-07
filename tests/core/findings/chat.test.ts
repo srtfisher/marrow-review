@@ -47,7 +47,18 @@ describe('ask', () => {
     const session = await ask(transport as never, 'opus', { id: null, turns: [] }, 'why?', '/tmp/wt');
     expect(session.turns).toHaveLength(2);
     expect(session.turns[1]!.role).toBe('agent');
-    expect(session.turns[1]!.text.toLowerCase()).toContain('could not');
+    // The failure's own words, not "could not reach the model": this pane is
+    // often where a reviewer first notices the model is gone.
+    expect(session.turns[1]!.text).toContain('SDK died');
+    expect(session.turns[1]!.text).toContain('Your review is unaffected.');
+  });
+
+  test('a Claude Code that never started says so, and says what to do', async () => {
+    const transport = { async run() { throw new Error('spawn claude ENOENT'); } };
+    const session = await ask(transport as never, 'opus', { id: null, turns: [] }, 'why?', '/tmp/wt');
+    expect(session.turns[1]!.text).toMatch(/reinstall marrow/i);
+    // The pane wraps, so the failure's own words fit under the remedy.
+    expect(session.turns[1]!.text).toContain('spawn claude ENOENT');
   });
 
   test('chat is read-only too', async () => {

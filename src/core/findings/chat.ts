@@ -1,3 +1,4 @@
+import { describeAgentFailure } from '../agent/errors.js';
 import type { AgentTransport } from '../agent/types.js';
 import { DENIED_TOOLS, READ_ONLY_TOOLS } from './find.js';
 
@@ -53,10 +54,16 @@ export async function ask(
       ...(session.id ? { resume: session.id } : {}),
     });
     return { id: run.sessionId, turns: [...turns, { role: 'agent', text: run.text }] };
-  } catch {
+  } catch (error) {
+    // Named rather than "could not reach the model": the chat pane is often the
+    // first place a reviewer notices the model is gone, and "reinstall marrow"
+    // is a different afternoon from "the network blipped". This pane wraps, so
+    // it is also the one place with room for the failure's own words.
+    const { summary, detail } = describeAgentFailure(error);
+    const body = detail.length > 0 && detail !== summary ? `${summary}\n\n${detail}` : summary;
     return {
       id: session.id,
-      turns: [...turns, { role: 'agent', text: 'Could not reach the model. Your review is unaffected.' }],
+      turns: [...turns, { role: 'agent', text: `${body}\n\nYour review is unaffected.` }],
     };
   }
 }

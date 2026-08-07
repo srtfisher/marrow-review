@@ -25,6 +25,7 @@ const meat: MeatResult = {
   keptLines: 1, totalLines: 1, keptFiles: 1, totalFiles: 1,
   keptAdditions: 1, keptDeletions: 0, totalAdditions: 1, totalDeletions: 0,
   unclassified: 0,
+  classifierError: null,
 };
 
 const finding: VerifiedFinding = {

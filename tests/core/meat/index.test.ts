@@ -189,6 +189,30 @@ test('a model failure keeps the hunks and never fails the run', async () => {
   expect(first.keep).toBe(true);
   expect(first.reason).toBe('classification failed');
   expect(result.keptLines).toBe(2);
+  // Without this the numbers say "kept everything", which is a judgement the
+  // classifier never made.
+  expect(result.classifierError?.summary).toBe('SDK subprocess exited');
+});
+
+test('a classifier that answers leaves no failure to report', async () => {
+  const files = parseUnifiedDiff(DIFF);
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 'A change.', verdicts: [] } });
+
+  const result = await computeMeat({
+    files,
+    ruleContext: { generatedPaths: new Set() },
+    transport,
+    cache: new MemoryVerdictCache(),
+    model: 'sonnet',
+    prTitle: 'T',
+    prBody: '',
+  });
+
+  // Hunks can go unclassified without anything having failed; the two are
+  // different admissions and only one of them names a cause.
+  expect(result.classifierError).toBeNull();
+  expect(result.unclassified).toBeGreaterThan(0);
 });
 
 test('a degraded verdict is not written to the cache', async () => {

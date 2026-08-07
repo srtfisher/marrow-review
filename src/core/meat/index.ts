@@ -1,3 +1,4 @@
+import { describeAgentFailure, type AgentFailure } from '../agent/errors.js';
 import type { AgentTransport } from '../agent/types.js';
 import type { DiffFile, Hunk } from '../diff/types.js';
 import { hunkKey, type CachedVerdict, type VerdictCache } from './cache.js';
@@ -49,6 +50,13 @@ export interface MeatResult {
    * pane can say so out loud instead.
    */
   unclassified: number;
+  /**
+   * Why the classifier never ran, in the words to print. Null when it ran —
+   * including when it ran and returned less than it was asked for, which
+   * `unclassified` counts. A count of unjudged hunks with no reason beside it
+   * reads as marrow being broken rather than the model being unreachable.
+   */
+  classifierError: AgentFailure | null;
 }
 
 export interface ComputeMeatOptions {
@@ -134,6 +142,7 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
   }
 
   let summary = '';
+  let classifierError: AgentFailure | null = null;
   if (toClassify.length > 0) {
     // A model failure never makes the app unusable: the classification pass is
     // additive, so anything it could not judge stays kept.
@@ -146,9 +155,13 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
         opts.prBody,
         toClassify,
       );
-    } catch {
+    } catch (error) {
+      // `classifyHunks` settles its chunks and reports failures in `error`
+      // rather than throwing, so this is the backstop for a failure before any
+      // chunk ran at all.
       classified = {
         summary: '',
+        error: describeAgentFailure(error),
         verdicts: new Map(
           toClassify.map((item) => [
             item.id,
@@ -158,6 +171,7 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
       };
     }
     summary = classified.summary;
+    classifierError = classified.error;
 
     for (const [key, verdict] of classified.verdicts) {
       const entry = pendingKeys.get(key);
@@ -214,5 +228,6 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
     keptFiles,
     totalFiles: staged.length,
     unclassified,
+    classifierError,
   };
 }

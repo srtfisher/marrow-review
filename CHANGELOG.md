@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-08-06
+
+Missing tools are named, and named accurately. Every one of these failures was
+already survivable — this release is about what marrow says when they happen.
+
+### Changed
+
+- **A missing `gh` is told apart from a `gh` that is signed out.** The fallback
+  to `GITHUB_TOKEN` is unchanged; the error when there is no token no longer
+  tells you to run `gh auth login` against a `gh` you do not have.
+- **A model pass that dies says why, and only offers `R` when retrying could
+  work.** Claude Code failing to start or to authenticate produced "Model pass
+  failed — press R to retry", which is advice that cannot succeed. Both causes
+  are now named with their remedy, and the retry is offered only for failures
+  that might not recur. The chat pane and `--dry-run` carry the same reason.
+- **An abridgement that kept everything says whether that was a judgement.**
+  `MeatResult` now carries the classifier's failure, so a diff with nothing cut
+  can distinguish "the model read it all and kept it all" from "the model never
+  answered".
+
+### Fixed
+
+- **A missing `git` no longer reports a missing GitHub remote.** Every detection
+  failure said "Not inside a GitHub clone"; each cause — no `git`, no
+  repository, no `origin`, a non-GitHub `origin` — now says itself.
+
 ## [0.1.0] - 2026-08-06
 
 Initial release: a terminal tool for reviewing large pull requests, published as
