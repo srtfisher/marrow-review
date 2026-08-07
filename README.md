@@ -11,6 +11,8 @@ parts worth reading, drafts findings anchored to specific lines, lets you accept
 or throw each one away, and submits a single GitHub review with inline comments and
 suggestions.
 
+<img width="2000" height="1425" alt="screenshot of marrow" src="https://github.com/user-attachments/assets/11c080bc-3cd1-40d0-8c23-dce7f9f0e5fd" />
+
 ---
 
 ## Why
