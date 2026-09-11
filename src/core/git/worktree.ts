@@ -9,6 +9,15 @@ export interface Worktree {
   sha: string;
 }
 
+export interface ReviewCheckout extends Worktree {
+  kind: 'current' | 'worktree';
+}
+
+interface ReviewCheckoutOptions {
+  run?: CommandRunner;
+  createWorktree?: typeof ensureWorktree;
+}
+
 export function worktreeRoot(): string {
   return join(homedir(), '.cache', 'marrow', 'worktrees');
 }
@@ -67,6 +76,27 @@ export async function ensureWorktree(
   }
 
   return { path, sha };
+}
+
+export async function resolveReviewCheckout(
+  repo: RepoContext,
+  prNumber: number,
+  sha: string,
+  options: ReviewCheckoutOptions = {},
+): Promise<ReviewCheckout> {
+  const run = options.run ?? defaultRunner;
+  const head = await run('git', ['-C', repo.root, 'rev-parse', 'HEAD']);
+
+  if (head.code === 0 && head.stdout.trim() === sha) {
+    const status = await run('git', ['-C', repo.root, 'status', '--porcelain']);
+    if (status.code === 0 && status.stdout.trim() === '') {
+      return { path: repo.root, sha, kind: 'current' };
+    }
+  }
+
+  const createWorktree = options.createWorktree ?? ensureWorktree;
+  const worktree = await createWorktree(repo, prNumber, sha, run);
+  return { ...worktree, kind: 'worktree' };
 }
 
 export interface PruneOptions {
