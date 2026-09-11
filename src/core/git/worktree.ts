@@ -88,7 +88,9 @@ export async function resolveReviewCheckout(
   const head = await run('git', ['-C', repo.root, 'rev-parse', 'HEAD']);
 
   if (head.code === 0 && head.stdout.trim() === sha) {
-    const status = await run('git', ['-C', repo.root, 'status', '--porcelain']);
+    const status = await run('git', [
+      '-C', repo.root, 'status', '--porcelain', '--untracked-files=normal',
+    ]);
     if (status.code === 0 && status.stdout.trim() === '') {
       return { path: repo.root, sha, kind: 'current' };
     }

@@ -255,6 +255,10 @@ point it at a private repository: the same rules apply as for any other use of C
 on that code. `--dry-run` submits nothing to GitHub, but it is not an offline mode: it still
 runs the abridgement's model pass, so the diff is still sent.
 
+When marrow reuses the current checkout, ignored files remain available to the read-only
+agent even though Git does not consider them checkout changes. Use a separate clone if that
+checkout contains ignored files you do not want the agent to be able to read.
+
 Nothing else is transmitted. The only other network calls are to GitHub, through `gh`'s
 credentials and the Octokit client, to read the pull request and to submit your review.
 

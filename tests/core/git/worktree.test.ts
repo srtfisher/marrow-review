@@ -65,6 +65,21 @@ describe('resolveReviewCheckout', () => {
 
     expect(checkout).toEqual({ path: '/cache/pr', sha: 'abc123', kind: 'worktree' });
   });
+
+  test('finds untracked files even when the user git config hides them', async () => {
+    const checkout = await resolveReviewCheckout(repo, 42, 'abc123', {
+      run: async (_command, args) => ({
+        code: 0,
+        stdout: args.includes('rev-parse')
+          ? 'abc123\n'
+          : args.includes('--untracked-files=normal') ? '?? local.txt\n' : '',
+        stderr: '',
+      }),
+      createWorktree,
+    });
+
+    expect(checkout).toEqual({ path: '/cache/pr', sha: 'abc123', kind: 'worktree' });
+  });
 });
 
 describe('pruneWorktrees', () => {
