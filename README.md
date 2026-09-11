@@ -153,10 +153,11 @@ spinner while GitHub answers, and a failed fetch lands in that same frame with
 `r retry · q quit` rather than as an error under your prompt. Given a pull request up
 front, that same frame shows the loading steps instead.
 
-Run it from inside a clone. marrow fetches the pull request's head commit into a detached
-git worktree so the agent can read whole files and find call sites, not just the diff. No
-clone, or a worktree that fails to create? It degrades to diff-only and says so in the
-header rather than letting you trust a half-evidenced review.
+Run it from inside a clone. If the pull request's head is already checked out and the
+checkout is clean, marrow lets the agent read it directly. Otherwise, it fetches the head
+commit into a detached git worktree. Either way, the agent can read whole files and find
+call sites, not just the diff. If no suitable checkout can be prepared, marrow degrades to
+diff-only and says so in the header rather than letting you trust a half-evidenced review.
 
 ### Keys
 
@@ -248,11 +249,15 @@ navigation, your own comments, or the ability to submit.
 ## What leaves your machine
 
 Reviewing sends the pull request's diff to Anthropic, and — because the agent runs in a
-worktree with `Read`, `Grep`, and `Glob` — whatever files it reads while looking for call
-sites. That is the whole point of the tool, but it is worth stating plainly before you
+clean checkout with `Read`, `Grep`, and `Glob` — whatever files it reads while looking for
+call sites. That is the whole point of the tool, but it is worth stating plainly before you
 point it at a private repository: the same rules apply as for any other use of Claude Code
 on that code. `--dry-run` submits nothing to GitHub, but it is not an offline mode: it still
 runs the abridgement's model pass, so the diff is still sent.
+
+When marrow reuses the current checkout, ignored files remain available to the read-only
+agent even though Git does not consider them checkout changes. Use a separate clone if that
+checkout contains ignored files you do not want the agent to be able to read.
 
 Nothing else is transmitted. The only other network calls are to GitHub, through `gh`'s
 credentials and the Octokit client, to read the pull request and to submit your review.

@@ -48,7 +48,7 @@ export function loadSteps(): ProgressStep[] {
   return [
     pendingStep(STEP.pull, 'pull request and diff'),
     pendingStep(STEP.context, 'review threads and checks'),
-    pendingStep(STEP.worktree, 'git worktree'),
+    pendingStep(STEP.worktree, 'review checkout'),
     pendingStep(STEP.abridge, 'abridging the diff'),
   ];
 }

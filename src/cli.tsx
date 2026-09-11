@@ -11,7 +11,9 @@ import { fetchPullContext } from './core/github/graphql.js';
 import { resolveGitHubToken } from './core/github/auth.js';
 import { submitReview, type ReviewSubmitter } from './core/github/submit.js';
 import { detectRepo, type RepoContext } from './core/git/repo.js';
-import { ensureWorktree, pruneWorktrees } from './core/git/worktree.js';
+import {
+  pruneWorktrees, resolveReviewCheckout, type ReviewCheckout,
+} from './core/git/worktree.js';
 import { parseGeneratedPaths } from './core/git/gitattributes.js';
 import { parseUnifiedDiff } from './core/diff/parse.js';
 import { computeMeat, type MeatResult } from './core/meat/index.js';
@@ -74,21 +76,19 @@ function noteApiKeyWithheld(args: CliArgs): void {
 }
 
 /**
- * The worktree only supplies reading context; failing to create one is not
- * fatal. Returns its path, which is also the directory the agent reads from —
- * null means diff-only, and the agent passes stay off rather than reasoning
- * about whatever commit the user's own checkout happens to be on.
+ * The checkout only supplies reading context; failing to prepare one is not
+ * fatal. Null means diff-only, and the agent passes stay off rather than
+ * reasoning about files that do not match the pull request head.
  */
-async function tryWorktree(
+async function tryReviewCheckout(
   repo: RepoContext,
   pr: PullRequestDetail,
   onFail?: (reason: string) => void,
-): Promise<string | null> {
+): Promise<ReviewCheckout | null> {
   try {
-    const worktree = await ensureWorktree(repo, pr.number, pr.headSha);
-    return worktree.path;
+    return await resolveReviewCheckout(repo, pr.number, pr.headSha);
   } catch (error) {
-    process.stderr.write('note: could not create a worktree; continuing diff-only.\n');
+    process.stderr.write('note: could not prepare a review checkout; continuing diff-only.\n');
     onFail?.(message(error));
     return null;
   }
@@ -167,7 +167,7 @@ async function reviewToStdout(session: Session, prNumber: number): Promise<numbe
   );
 
   noteApiKeyWithheld(args);
-  await tryWorktree(repo, pr);
+  await tryReviewCheckout(repo, pr);
   const result = await runMeat(args, repo, pr, await readGeneratedPaths(repo));
 
   process.stdout.write(`${pr.title} #${pr.number} by ${pr.author}\n`);
@@ -339,11 +339,17 @@ async function runTui(session: Session): Promise<number> {
       step((s) => finishStep(s, STEP.context, Date.now()));
 
       const shortSha = loaded.headSha.slice(0, 7);
-      step((s) => startStep(s, STEP.worktree, Date.now(), `git worktree at ${shortSha}`));
-      worktree = await tryWorktree(repo, loaded, (reason) => {
+      step((s) => startStep(s, STEP.worktree, Date.now(), `preparing context at ${shortSha}`));
+      const checkout = await tryReviewCheckout(repo, loaded, (reason) => {
         step((s) => failStep(s, STEP.worktree, reason, Date.now()));
       });
-      if (worktree !== null) step((s) => finishStep(s, STEP.worktree, Date.now()));
+      worktree = checkout?.path ?? null;
+      if (checkout !== null) {
+        const label = checkout.kind === 'current'
+          ? `current checkout at ${shortSha}`
+          : `git worktree at ${shortSha}`;
+        step((s) => finishStep(s, STEP.worktree, Date.now(), label));
+      }
       // The model passes start only once the diff is on screen, so they are
       // listed as still to come rather than left off — the reviewer should know
       // the work is not over when the loading screen goes away.
