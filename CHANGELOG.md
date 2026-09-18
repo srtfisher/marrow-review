@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-18
+
+### Changed
+
+- **A clean checkout already at the pull request head is read directly, instead
+  of always cloning into a detached worktree.** The agent still gets to read
+  whole files and find call sites either way; when the checkout differs, has
+  tracked or untracked changes, or can't be inspected, marrow falls back to the
+  worktree as before. Untracked-file detection ignores the user's own
+  `status.showUntrackedFiles` config so a hidden file can't slip past the
+  cleanliness check.
+- Added a screenshot to the README.
+
 ## [0.2.0] - 2026-08-06
 
 Missing tools are named, and named accurately. Every one of these failures was
