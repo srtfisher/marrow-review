@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-09-28
+
+### Fixed
+
+- **The abridgement no longer dies with `error_max_structured_output_retries`.**
+  The classifier asks for its verdicts before its summary; written the other way
+  round, a long summary could swallow the verdicts until Claude Code gave up.
+- **A classifier failure no longer offers `R`,** which only re-runs the findings
+  pass and so could never help.
+- **A model pass that exhausts its schema retries says what the schema
+  rejected,** instead of only the SDK's subtype.
+
 ## [0.3.0] - 2026-09-18
 
 ### Changed
