@@ -439,9 +439,10 @@ export function App(props: AppProps) {
   // signed out, `R` fails identically for as long as the reviewer keeps
   // pressing. Either way the remedy comes first — the note is one row and
   // truncates, and an SDK error quoted verbatim is long enough to eat the rest.
+  // `R` re-runs only the findings pass, so a classifier failure never offers it.
   const modelNote = failure === null
     ? null
-    : failure.retryable
+    : failure.retryable && findingsFailed
       ? `Model pass failed — press R to retry. ${failure.summary}`
       : `Model pass failed — ${failure.summary}`;
   const noteRows = (props.status ? 1 : 0) + (modelNote ? 1 : 0);

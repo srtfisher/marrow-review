@@ -194,3 +194,11 @@ test('the prompt names every id it expects back', async () => {
   expect(prompt).toContain('h1, h2');
   expect(prompt).toContain('Return exactly 2 verdicts');
 });
+
+test('the prompt asks for the verdicts before the summary', async () => {
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 's', verdicts: [] } });
+  await classifyHunks(transport, 'opus', 'Title', '', items);
+
+  expect(transport.requests[0]!.prompt).toContain('Give the verdicts first and the summary last');
+});

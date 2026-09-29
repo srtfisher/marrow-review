@@ -971,6 +971,29 @@ describe('a failed model pass is stated, not swallowed', () => {
     expect(app.frame()).toContain('could not authenticate');
   });
 
+  test('a classifier failure does not offer R, which only re-runs findings', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [] } });
+
+    const app = mount({
+      pr: detail,
+      meat: {
+        ...meat,
+        unclassified: 1,
+        classifierError: {
+          summary: 'Agent run failed: error_max_structured_output_retries',
+          detail: 'Agent run failed: error_max_structured_output_retries',
+          retryable: true,
+        },
+      },
+      transport,
+      cwd: '/tmp/worktree',
+    });
+    await delay(80);
+    expect(app.frame()).toContain('error_max_structured_output_retries');
+    expect(app.frame()).not.toContain('press R to retry');
+  });
+
   test('a pass that ran and found nothing says nothing', async () => {
     const transport = new FakeTransport();
     transport.queue({ structured: { findings: [] } });

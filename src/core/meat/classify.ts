@@ -173,7 +173,12 @@ export async function classifyHunks(
           `\nThere are ${chunk.length} hunks below, with these ids:`,
           chunk.map((item) => item.id).join(', '),
           `\nReturn exactly ${chunk.length} verdicts — one for every id above, `
-            + 'and no ids that are not above.\n',
+            + 'and no ids that are not above.',
+          // Left to itself the model writes the summary first, and a long one
+          // sometimes swallows the verdicts into the summary string. Every retry
+          // then fails "must have required property 'verdicts'" until the run
+          // dies. Schema property order does not change this; asking does.
+          'Give the verdicts first and the summary last.\n',
           chunk.map(renderHunk).join('\n\n'),
         ].join('\n'),
       }),

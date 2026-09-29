@@ -39,6 +39,8 @@ function matchUsageNotice(text: string): string | null {
   return null;
 }
 
+const SCHEMA_REJECTION = /^Output does not match required schema: (.+)$/;
+
 /** The shape of the SDK's `query`, narrowed to what this transport calls. */
 export type QueryFn = (args: { prompt: string; options: Options }) => AsyncIterable<SDKMessage>;
 
@@ -105,6 +107,9 @@ export class SdkTransport implements AgentTransport {
     let structured: unknown = null;
     let sessionId = '';
     let usageWarning: string | null = null;
+    // The CLI rejects bad structured output inside the conversation and ends
+    // with only a subtype, so the last rejection is the only record of why.
+    let schemaRejection: string | null = null;
     let usage: { inputTokens: number; outputTokens: number; numTurns: number } = {
       inputTokens: 0,
       outputTokens: 0,
@@ -123,6 +128,15 @@ export class SdkTransport implements AgentTransport {
         continue;
       }
 
+      if (message.type === 'user' && Array.isArray(message.message.content)) {
+        for (const block of message.message.content) {
+          if (block.type !== 'tool_result' || typeof block.content !== 'string') continue;
+          const match = SCHEMA_REJECTION.exec(block.content);
+          if (match?.[1]) schemaRejection = match[1];
+        }
+        continue;
+      }
+
       if (message.type === 'result') {
         sessionId = message.session_id;
         if (message.subtype === 'success') {
@@ -134,7 +148,8 @@ export class SdkTransport implements AgentTransport {
             numTurns: message.num_turns,
           };
         } else {
-          throw new Error(`Agent run failed: ${message.subtype}`);
+          const why = schemaRejection ? ` (${schemaRejection})` : '';
+          throw new Error(`Agent run failed: ${message.subtype}${why}`);
         }
       }
     }
