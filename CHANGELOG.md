@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **marrow is now a local web app.** `npx marrow-review` starts a small server bound to
+  `127.0.0.1` and opens a GitHub-styled review page; the Ink TUI is gone. Every button
+  shows its keyboard shortcut, and `?` lists them all.
+- **The review pass applies a generic rubric** modeled on Alley's code-review skill and
+  Claude Code's `/code-review`: findings are `blocking` or `non-blocking`, carry a type
+  (Security, Correctness, Performance, Accessibility, Maintainability, Tests, Docs,
+  Process), and correctness issues carry a concrete failure scenario. Uncertainty becomes
+  a question, never a blocker. The repository's `CLAUDE.md`/`AGENTS.md` from the base
+  branch are read as project conventions.
+- **Only findings with a failure scenario are put to the refutation lenses;** cleanups and
+  questions are left `plausible` rather than refuted for not describing a failure.
+- Outside a clone, the model passes now run through the GitHub API instead of switching off.
+
+### Added
+
+- **Grouping by intent**, after pulls.review: the kept hunks are grouped by what they are
+  for, core change first. Anything the model does not place lands in a visible Ungrouped
+  group, and a failed grouping falls back to directories.
+- Comment on a block by dragging across the gutter; Write/Preview with GitHub's own
+  rendering; `:` emoji and `@` mention autocomplete; a Suggest change button.
+- Per-file Viewed checkboxes that notice when a file changes after you viewed it.
+- An Ask Claude panel scoped to the code under the cursor.
+- `--source auto|checkout|worktree|api`, `--effort low|medium|high`, `--standards <dir>`,
+  `--port`, `--no-open`, and `owner/repo#n` targets.
+- A Claude Code plugin with a `marrow` skill that launches the app.
+
+### Removed
+
+- `--no-highlight` (the page highlights with Shiki and follows the system theme).
+
 ## [0.3.1] - 2026-09-28
 
 ### Fixed

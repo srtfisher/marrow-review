@@ -2,7 +2,7 @@ import { createContext, Fragment, memo, useContext, useState, type ReactNode } f
 import { api } from '../api.js';
 import { useHighlight, type Token } from '../highlight.js';
 import type { Block, FileView, LineRow } from '../lib/rows.js';
-import type { DiffLine, ReviewThread, StagedComment, TriagedFinding } from '../lib/types.js';
+import type { DiffLine, TriagedFinding } from '../lib/types.js';
 import { Icon } from './icons.js';
 import { Kbd, Label } from './ui.js';
 
@@ -12,8 +12,6 @@ export interface DiffContextValue {
   selected: ReadonlySet<string>;
   highlight: boolean;
   findingsByRow: Map<string, TriagedFinding[]>;
-  commentsByRow: Map<string, StagedComment[]>;
-  threadsByRow: Map<string, ReviewThread[]>;
   /** Rendered under a row: cards, and the composer when it is anchored there. */
   renderBelow: (rowKey: string) => ReactNode;
   onRowMouseDown: (row: LineRow, extend: boolean) => void;

@@ -6,12 +6,12 @@
 
 **A large diff, abridged to what carries meaning.**
 
-marrow is a terminal tool for reviewing large pull requests. It cuts the diff down to the
-parts worth reading, drafts findings anchored to specific lines, lets you accept, rewrite,
-or throw each one away, and submits a single GitHub review with inline comments and
-suggestions.
+marrow is a local web app for reviewing large pull requests. It cuts the diff down to the
+parts worth reading, groups what is left by what it is for, drafts findings anchored to
+specific lines, lets you accept, rewrite, or throw each one away, and submits a single
+GitHub review with inline comments and suggestions.
 
-<img width="2000" height="1425" alt="screenshot of marrow" src="https://github.com/user-attachments/assets/11c080bc-3cd1-40d0-8c23-dce7f9f0e5fd" />
+<img width="1440" height="900" alt="marrow reviewing a pull request: groups in the sidebar, a GitHub-styled diff, and one of Claude's findings inline" src="docs/screenshots/review.png" />
 
 ---
 
@@ -25,88 +25,13 @@ Nothing is ever hidden. Every dropped hunk collapses into a visible fold that na
 rule that dropped it, the header counts what was kept, and one key expands any of it in
 place. An abridgement you cannot audit is just a tool with an opinion.
 
-The idea is borrowed from [`boldsoftware/meat`](https://github.com/boldsoftware/meat),
-which abridges a diff into a "reading diff". marrow reimplements that idea in TypeScript
-and builds a review workflow around it.
+What survives is then **grouped by intent**, not by directory: the core change first,
+supporting changes next, mechanical ones last, each group with a sentence on why it exists.
+One feature that touches five modules reads as one group.
 
-## What it looks like
-
-Pick something to review. The picker is the whole screen and the filter is always live —
-every key you type narrows the list by title, author, or number, so `546` and `settings`
-both get you there:
-
-```
- marrow · octocat/webapp · open                                          reviewing #546
-────────────────────────────────────────────────────────────────────────────────────────
- █▄ ▄█ ▄▀▀▄ █▀▀▄ █▀▀▄ ▄▀▀▄ █   █
- █ ▀ █ █▄▄█ █▄▄▀ █▄▄▀ █  █ █ ▄ █
- █   █ █  █ █ ▀▄ █ ▀▄ ▀▄▄▀ █▀ ▀█
- a large diff, abridged to what carries meaning
-
- filter › settings▏                                                             3 of 12
-
- ❯ #546 Resolve settings pages from packages via a namespace prefix
-     octocat · 3h ago · ● reviewing
-
-   #544 Cache the audience lookup on the settings dashboard
-     hubot · 3h ago
-
-   #521 Settings export omits toggles that were disabled after the last publish,
-       and reports success anyway
-     octocat · 2d ago
-
-────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move   ⏎ review this one   ⇥ filter   ctrl-r refresh   esc back to #546
-```
-
-Titles get the full width and a second row if they need one, because the title is the
-field you choose by. `⏎` opens the one under the cursor. `⇥` cycles the server-side filter
-between open, needs my review, and all.
-
-Leaving a review with `esc` asks once, and the review stays warm: its entry is marked
-`● reviewing`, the top row keeps saying so, and `esc` in the picker walks straight back
-into the same diff — same line, same scroll position, same files checked off. Only opening
-a different pull request replaces it.
-
-Then read it. The review is the whole terminal, the header is a map of every file in the
-change, and the meat gauge says how much of the diff survived:
-
-```
- marrow · octocat/webapp · open
-────────────────────────────────────────────────────────────────────────────────────────
- Resolve settings pages from packages via a namespace prefix
- #546 · octocat · main ← feat/settings-namespace · opus
- Packages can now register their own settings pages under a namespace prefix.
- ▇▇▇▇▇▇▇▁▁▁  kept 178/245 lines · 11/17 files · meat
- ▸  AccountSettingsController.php     resolve-page.ts                   app.tsx
-    ssr.tsx                           PackageServiceProvider.php        settings.tsx
-    NamespacedPagesTest.php           vite.config.ts                    tsconfig.json
-    app.css                           vitest.config.ts
-
- ▸ ▍ packages/billing/src/Http/Controllers/AccountSettingsController.php
-   @@ -36,6 +36,9 @@  [changes how a page is resolved]
-       36     36  public function edit(Request $request): Response
-       37     37  {
-       38        -    return Inertia::render('settings/account', [
-              38 +    return Inertia::render('billing::settings/account', [
-       39     39          'account' => $request->user()->account,
-       40     40      ]);
-       41     41  }
-     ! Namespace prefix is not validated anywhere  important
-        An unregistered prefix resolves to a 500 rather than a 404.
-
-   ▍ resources/js/resolve-page.ts
-   @@ -36,6 +36,9 @@  [changes how a page is resolved]
-
-┄┄┄ 4 hunks folded · imports-only, whitespace — press z to reveal ┄┄┄
-
-┄┄┄ pnpm-lock.yaml · dropped: lockfile ┄┄┄
-────────────────────────────────────────────────────────────────────────────────────────
- ↑↓ move   c comment   s suggest   n finding   d full   ! approve   ] file   ? keys
-```
-
-The `▍` marks a file. `✓` in the index is a file you have read — it checks itself off when
-the cursor passes the end of one. Magenta is the model talking, and only ever the model.
+The abridgement is borrowed from [`boldsoftware/meat`](https://github.com/boldsoftware/meat),
+and the grouping from [pulls.review](https://github.com/antfu/pulls.review) (MIT). marrow
+reimplements both in TypeScript and builds a review workflow around them.
 
 ## Requirements
 
@@ -117,94 +42,80 @@ the cursor passes the end of one. Magenta is the model talking, and only ever th
   else to install; if it cannot start or cannot authenticate, marrow says so and carries
   on without the model passes — the diff, your comments, and submitting all still work.
 
-## Install
-
-```bash
-npx marrow-review
-```
-
-That is the whole install. The package is `marrow-review`; the command it gives you is
-`marrow`. If you review often enough to want it on your `PATH`:
-
-```bash
-npm i -g marrow-review
-```
-
 ## Use
 
 ```bash
-npx marrow-review           # pull requests for the repo you are standing in
-npx marrow-review 42        # review PR 42
-npx marrow-review <url>     # review a PR by URL
-npx marrow-review --dry-run 42   # print the abridged diff, submit nothing
+npx marrow-review                  # pull requests for the repo you are standing in
+npx marrow-review 42               # review PR 42
+npx marrow-review <url>            # review a PR by URL, any repository
+npx marrow-review owner/repo#42    # the same, shorter
+npx marrow-review --dry-run 42     # print the abridged diff, submit nothing
 ```
 
-Installed globally, the command is `marrow`:
+marrow starts a small server on `127.0.0.1`, prints `marrow: <url>`, and opens your
+browser. The URL carries a random token; nothing else on your machine can talk to it.
+`Ctrl-C` stops it. The package is `marrow-review`; installed globally
+(`npm i -g marrow-review`) the command is `marrow`.
 
-```bash
-marrow                      # pull requests for the repo you are standing in
-marrow 42                   # review PR 42
-marrow <url>                # review a PR by URL
-marrow --dry-run 42         # print the abridged diff, submit nothing
+### From Claude Code
+
+The repository is also a Claude Code plugin with a `marrow` skill:
+
+```
+/plugin marketplace add srtfisher/marrow-review
+/plugin install marrow@marrow
 ```
 
-marrow draws before it fetches: the screen is up with the wordmark, the repository, and a
-spinner while GitHub answers, and a failed fetch lands in that same frame with
-`r retry · q quit` rather than as an error under your prompt. Given a pull request up
-front, that same frame shows the loading steps instead.
+Then "review PR 42 in marrow" starts the app and hands you the link. The skill launches
+marrow and nothing else — the review is yours.
 
-Run it from inside a clone. If the pull request's head is already checked out and the
-checkout is clean, marrow lets the agent read it directly. Otherwise, it fetches the head
-commit into a detached git worktree. Either way, the agent can read whole files and find
-call sites, not just the diff. If no suitable checkout can be prepared, marrow degrades to
-diff-only and says so in the header rather than letting you trust a half-evidenced review.
+### Where the agent reads from
 
-### Keys
+Run it from inside a clone and the agent can read whole files and find call sites, not just
+the diff. If the pull request's head is already checked out and clean, marrow reads it in
+place; otherwise it fetches the head commit into a detached git worktree. Outside a clone —
+or with `--source api` — the agent reads files through the GitHub API at the head commit.
+That mode cannot search the repository (GitHub only indexes the default branch), and the
+header says so rather than letting you trust a half-evidenced review.
 
-| | |
-|---|---|
-| `j` `k` | move · `Ctrl-D` `Ctrl-U` half page |
-| `]` `[` | next / previous file · `n` `p` next / previous finding |
-| wheel | scroll the diff · click a line to put the cursor on it |
-| click | a file in the index to jump to it · in the picker, click aims and click again opens |
-| `space` | fold this file · `F` fold every file · `z` reveal its dropped hunks · `Z` reveal everything |
-| type | in the picker: filter by title, author, or number · `⇥` open / needs my review / all |
-| `ctrl-r` | refetch the list · `esc` clears the query, else back to the warm review, else quits |
-| `d` | full diff ↔ meat · `t` existing threads · `o` open on github.com |
-| `a` `e` `s` `x` | accept / rewrite / suggest / drop the finding under the cursor |
-| `c` `s` | write your own comment / suggestion on this line · `V` first to select a range |
-| `v` | show refuted findings and why they were refuted |
-| `i` | ask the model about this hunk · `?` help · `q` quit |
-| `!` | submit |
+## Reviewing
 
-Arriving at a file puts that file at the top of the pane, so `]` shows you the file rather
-than its name at the bottom edge with the contents below the fold. Reading is unaffected:
-`j` and `k` move the view as little as the cursor requires, right up until a keystroke
-lands you on a file header. `F` collapses the whole diff to its file names and a second
-`F` puts it back, leaving you on the file you were reading.
+The page is GitHub's files view with two additions: a sidebar of groups, and Claude.
 
-The keyboard does everything; the mouse is there because a reviewer scrolling a diff
-reaches for the wheel without deciding to. `?` lists every binding, grouped, and scrolls if
-your terminal is too short for all of them — from the review, because in the picker `?` is
-filter text like every other printable key, and the row along the bottom already names all
-five keys it has.
+- **Read.** `j`/`k` move a line cursor; `]`/`[` jump files, `}`/`{` groups. Folded hunks
+  name their rule; `z` reveals them, `d` switches to the full diff. Each file has a
+  **Viewed** checkbox that notices if the file changes after you viewed it.
+- **Comment.** Click a line number, or drag or shift-click across the gutter to select a
+  block, then `c` (or the `+` beside the line). The composer previews with GitHub's own
+  renderer, autocompletes `:emoji:` and `@mentions`, and **Suggest change** inserts a
+  suggestion block prefilled with the selected lines.
+- **Triage Claude.** Findings appear in purple under their line — purple is only ever the
+  model — each marked `blocking` or `non-blocking`, with a type and, for bugs, the concrete
+  failure it would cause. `a` accepts, `e` rewrites, `s` posts it as a suggestion, `x`
+  drops it, `n`/`p` move between them.
+- **Ask.** `i` opens a panel to ask Claude about the code under the cursor.
+- **Submit.** `!` opens the finish dialog: summary, verdict, and what will post.
 
-Submit is `!` rather than a letter on purpose. During triage the most-pressed keys are `a`
-and `x`; approving someone's pull request is outward-facing and awkward to undo, so it does
-not get a shortcut next to them. `!` opens a screen that shows what will happen, then asks.
+Every button shows its key; `?` lists them all. Submit is `!` rather than a letter on
+purpose: during triage the most-pressed keys are `a` and `x`, and approving someone's pull
+request is outward-facing and awkward to undo.
 
-Quitting with unsubmitted work asks before it throws anything away, and drafts are written
-through to disk as you go — closing the laptop is not the same as abandoning the review.
+Drafts are written through to disk as you go. Reopening a pull request picks the review up
+where you left it, and carries comments over to a new head commit when they still anchor.
 
 ## Options
 
 ```
 --model <alias>       reasoning model (default: opus)
---meat-model <alias>  diff classifier (default: one tier below --model)
+--meat-model <alias>  diff classifier and grouping (default: one tier below --model)
+--source <s>          auto | checkout | worktree | api (default: auto)
+--effort <e>          low | medium | high — how much the review reports (default: medium)
+--standards <dir>     your team's review rules: every .md/.yml file in <dir>
 --filter <f>          open | review-requested | all
+--port <n>            listen on this port (default: any free port)
+--no-open             print the URL instead of opening a browser
 --use-api-key         allow ANTHROPIC_API_KEY instead of the subscription
 --dry-run             print, submit nothing
---no-highlight        no syntax colouring in the diff (NO_COLOR also honoured)
 ```
 
 ## How the abridgement works
@@ -213,11 +124,6 @@ through to disk as you go — closing the laptop is not the same as abandoning t
    minified files, deleted files, pure moves, whitespace-only hunks, import-only hunks. Every
    drop is attributed to a named rule. The highest-signal rule reads your `.gitattributes`
    for `linguist-generated`, which is the maintainers' own statement about what is noise.
-
-   Deleting a file and moving one are the two largest things a diff can contain and the two
-   least worth reading: the whole former body arrives marked `-`, to say something the path
-   already says. Both fold to one line. A move that also *edits* the file keeps its edits —
-   the move is free, the change inside it is not.
 2. **A model pass** over what survives, classifying keep/drop with a one-line reason and
    writing the "what this PR actually does" summary.
 3. **A cache**, keyed by hunk content, so the same hunk is never judged twice and a verdict
@@ -225,22 +131,48 @@ through to disk as you go — closing the laptop is not the same as abandoning t
 
 Keeping is the safe default, which means a classifier that returns fewer verdicts than it
 was asked for leaves hunks kept for no reason at all. `kept 244/245 lines` would look like
-a judgement and actually be a shortfall, so the header counts those separately and says so.
+a judgment and actually be a shortfall, so the header counts those separately and says so.
+
+## How grouping works
+
+The kept hunks are given to the model as a manifest — directory, file, and each hunk's
+function context — with the bodies inline when they fit and on demand when they do not.
+Every hunk must land in exactly one group; a grouping that misses some gets one chance to
+correct itself, and anything still unplaced goes to a visible **Ungrouped** group. A change
+of three files or fewer is one group with no model call. If grouping fails, marrow groups by
+directory and says why.
+
+## How the review works
+
+The review pass applies a generic rubric shaped after Alley's code-review standards and
+Claude Code's own `/code-review`:
+
+- **Severity** is `blocking` (must change before merge) or `non-blocking` (worth fixing, do
+  not hold the merge).
+- **Type** is one of Security, Correctness, Performance, Accessibility, Maintainability,
+  Tests, Docs, Process — the earlier one wins when two fit.
+- **Correctness and security issues name a failure scenario**: concrete inputs, then what
+  goes wrong. No scenario, no blocking bug.
+- **Real uncertainty is a question**, never a blocker.
+- Formatting, naming, and anything CI already decides are out of scope.
+- The repository's `CLAUDE.md` and `AGENTS.md` are read as project conventions — from the
+  **base** branch, because at the head they are the pull request author's to edit.
+- `--standards <dir>` adds your team's own rules on top.
+
+Every finding with a failure scenario is then put to a second pass that tries to refute
+it, through two independent lenses: is this code actually reachable, and does the failure
+actually reproduce. Both have to refute for a finding to be marked `refuted`; a split
+verdict leaves it `plausible` and says so. Refuted findings are hidden rather than
+deleted — `v` brings them back with the refutation attached.
 
 ## What the agent can and cannot do
 
-The findings, verification, and chat passes run with `Read`, `Grep`, and `Glob` — and
-nothing else. `Write`, `Edit`, `NotebookEdit`, and `Bash` are denied. A review tool has no
-business modifying your checkout, and denying `Bash` means it cannot run commands in your
-repository. The tool policy is defined once and shared by all three passes, with a test
-asserting the allow and deny sets stay disjoint.
-
-Every finding is then put to a second pass that tries to refute it, through two
-independent lenses: is this code actually reachable, and does the failure actually
-reproduce. Both have to refute for a finding to be marked `refuted`; a split verdict leaves
-it `plausible` and says so. Refuted findings are hidden rather than deleted — `v` brings
-them back with the refutation attached, so you can see what the verifier threw out and
-disagree with it.
+The findings, verification, and chat passes run with `Read`, `Grep`, and `Glob` — or, in API
+mode, two read-only tools that fetch files from GitHub — and nothing else. `Write`, `Edit`,
+`NotebookEdit`, and `Bash` are denied. A review tool has no business modifying your
+checkout, and denying `Bash` means it cannot run commands in your repository. The tool
+policy is defined once and shared by every pass, with a test asserting the allow and deny
+sets stay disjoint.
 
 **If a model call fails, the review still works.** The agent passes are additive: a dead
 subprocess, a rate limit, or malformed output costs you the findings, not the diff,
@@ -248,19 +180,21 @@ navigation, your own comments, or the ability to submit.
 
 ## What leaves your machine
 
-Reviewing sends the pull request's diff to Anthropic, and — because the agent runs in a
-clean checkout with `Read`, `Grep`, and `Glob` — whatever files it reads while looking for
-call sites. That is the whole point of the tool, but it is worth stating plainly before you
-point it at a private repository: the same rules apply as for any other use of Claude Code
-on that code. `--dry-run` submits nothing to GitHub, but it is not an offline mode: it still
-runs the abridgement's model pass, so the diff is still sent.
+Reviewing sends the pull request's diff to Anthropic, and whatever files the agent reads
+while looking for call sites. That is the whole point of the tool, but it is worth stating
+plainly before you point it at a private repository: the same rules apply as for any other
+use of Claude Code on that code. `--dry-run` submits nothing to GitHub, but it is not an
+offline mode: it still runs the abridgement's model pass, so the diff is still sent.
 
 When marrow reuses the current checkout, ignored files remain available to the read-only
-agent even though Git does not consider them checkout changes. Use a separate clone if that
-checkout contains ignored files you do not want the agent to be able to read.
+agent even though Git does not consider them checkout changes. Use a separate clone, or
+`--source worktree`, if that checkout contains ignored files you do not want the agent to
+be able to read.
 
-Nothing else is transmitted. The only other network calls are to GitHub, through `gh`'s
-credentials and the Octokit client, to read the pull request and to submit your review.
+Nothing else is transmitted. The other network calls are to GitHub, through `gh`'s
+credentials: to read the pull request, render comment previews, list emoji and mentions,
+and submit your review. The page itself is served from your machine and loads nothing from
+elsewhere except avatars and emoji images from GitHub.
 
 ## Billing
 
@@ -276,24 +210,19 @@ quietly. marrow removes both variables from the agent subprocess unless you pass
 ```bash
 bun install
 bun test              # the whole suite
-bun run typecheck     # tsc over src and tests both
-bun run lint:boundary # src/core must never import UI
-bun run build         # tsc -> dist/, the published bin
+bun run typecheck     # tsc over src and tests, then over the web page
+bun run lint:boundary # core imports no UI; the page imports core types only
+bun run build         # tsc -> dist/, vite -> dist/web
 ```
 
 The suite needs [bun](https://bun.sh): tests import `bun:test`. The package itself runs on
 plain Node 24+ — bun is a development dependency of the repository, not of the tool.
 
-`src/core/**` is a pure library with no UI imports, enforced by dependency-cruiser.
-`src/tui/**` is the Ink layer. The split is deliberate: the hard parts — diff parsing,
-anchoring, the meat engine, review construction — are testable without rendering, and a
-non-terminal frontend could reuse them.
-
-Layout arithmetic lives in pure modules next to the components that draw from it
-(`fileindex.ts`, `viewport.ts`, `picker.ts`, `chrome.ts`, `hittest.ts`, `help.ts`,
-`hints.ts`) and is unit-tested
-directly. In a terminal, "the renderer and the scroll maths disagree by one row" is a real
-class of bug, and the fix is to have exactly one of them.
+`src/core/**` is a pure library with no UI or HTTP imports, enforced by dependency-cruiser.
+`src/server/**` serves it over HTTP and server-sent events, and `startServer()` is a library
+function so a desktop shell can host the same thing. `src/web/**` is the React page; the
+arithmetic it draws from lives in pure modules under `src/web/lib` and is unit-tested
+directly, so the renderer and the keyboard read one model of the page.
 
 Interface decisions and the reasoning behind them live in `.interface-design/system.md`.
 The design documents behind each feature are in `docs/design/`, and `RELEASING.md` covers

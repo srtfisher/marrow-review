@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-05
 **Status:** approved design (sections 1–3 reviewed in conversation; 4–5 written from the
-positions stated there), implementation in progress
+positions stated there), implemented
 **Size:** large — replaces `src/tui`, adds three core subsystems
 **Depends on:** nothing
 
@@ -232,7 +232,8 @@ change needs no migration.
 
 - `npx marrow-review [pr|url]` — starts the server, opens the browser, prints the URL.
   `--port`, `--no-open`, `--source`, `--effort`, `--standards` join the existing flags.
-  `--dry-run` and non-TTY keep the text path.
+  `--dry-run` keeps the text path. Non-TTY no longer does: the Claude skill launches marrow
+  from a background shell with no TTY, and that has to start the server.
 - **Claude skill** — `skills/marrow/SKILL.md` plus `.claude-plugin/plugin.json` make the
   repository installable as a Claude Code plugin. The skill runs
   `npx -y marrow-review@latest <pr>` in the background, reads the `marrow: <url>` line,

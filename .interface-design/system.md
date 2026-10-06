@@ -1,7 +1,8 @@
 # marrow — interface design system
 
-Medium: terminal (Ink 7). Every rule below is adapted to a medium with one typeface,
-one type size, no shadows, and a background the user chose, not us.
+Medium: terminal (Ink 7) through 0.3; a local web page from 0.4 — see the last revision
+before the rejected-defaults list, which says what carried over and what the medium change
+overturned. The terminal-era rules below stay as the record of why.
 
 ## Intent
 
@@ -456,6 +457,53 @@ Three consequences worth stating, because each is a rule this file already holds
 The squint test is unchanged and the tint is calibrated to it: two panes and a status line,
 nothing jumping except the meat gauge and anything yellow. If the diff reads as green and
 red blocks rather than as code, the value is too strong.
+
+## Revision: the medium changes to a web page (0.4)
+
+The terminal stopped being the right medium for the job this file describes. A reviewer
+wants to drag across a gutter to comment on a block, see a suggestion and an emoji the way
+GitHub will render them, and read a large change in the order that explains it. The page
+replaces the TUI; the intent above — *judge*, a workbench, dense and quiet — is unchanged.
+
+**The palette is GitHub's, not inherited.** The terminal rule was "bind to the slots the
+user already chose." On the web, the reviewer's established palette is GitHub's own: they
+review there every day, and marrow's verdict lands there. So the tokens are Primer's light
+and dark values as `--gh-*` variables (lifted from `srtfisher/address-pr-review`, which
+proved the feel), following `prefers-color-scheme` with a system/light/dark toggle. The
+semantic discipline carries over intact:
+
+- Green and red are additions and deletions, and nothing else.
+- **Purple is the model, and only the model** — Claude's finding cards, the Ask panel, the
+  meat gauge. The terminal's magenta, now `--gh-done`.
+- Yellow is unsubmitted work: pending comments, "changed since viewed", degraded passes.
+- GitHub's selected-line yellow marks a selection; an accent edge marks the cursor row.
+
+**Every action button shows its key.** A `<kbd>` inside the button, colored by the
+button's own text, with `aria-keyshortcuts` beside it — the address-pr-review pattern.
+Finding cards show keys only when the card is under the cursor, because the keys act on the
+focused finding and a page of identical hints is noise. One list (`src/web/lib/keymap.ts`)
+feeds the handler, the help dialog, and every hint, so they cannot disagree.
+
+**The layout is GitHub's files view, plus one column.** Header (title, state pill, branches,
+meat gauge, source, pass status, Ask, Review changes), a sidebar of groups or files, the
+diff. Diff tables, file headers with Viewed checkboxes, thread cards, the Write/Preview
+composer, and the finish dialog all copy GitHub's shapes, so nothing has to be learned.
+
+**Grouping replaces file order.** The sidebar and the page follow the model's groups —
+core change first, mechanical last — with Ungrouped and "Dropped by abridgement" as the last
+two sections. A file split across groups repeats its header with "also in".
+
+**What the medium change overturned:**
+
+- "A spinner during model calls → progressive reveal" now permits both: steps in a popover
+  with live timers, and results that land as they arrive.
+- Boxes are back: GitHub draws file and card borders, and matching GitHub outranks the
+  terminal's tonal-only depth.
+- Mouse drag is admitted — gutter drag is how GitHub selects a block.
+
+**What carried over unchanged:** nothing is hidden (folds name their rule, `z` reveals);
+a shortfall is never presented as a judgment (`kept unjudged` beside the gauge); submit is
+`!`, never a letter beside the triage keys; leaving work unsubmitted is always visible.
 
 ## Rejected defaults, recorded so they stay rejected
 

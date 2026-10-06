@@ -1,0 +1,11 @@
+{
+  "name": "marrow",
+  "owner": { "name": "Sean Fisher" },
+  "plugins": [
+    {
+      "name": "marrow",
+      "source": "./",
+      "description": "Review a large pull request in a local GitHub-styled web app: the diff abridged to what carries meaning, grouped by intent, with Claude's findings inline."
+    }
+  ]
+}

@@ -79,7 +79,7 @@ function Passes({ steps }: { steps: Step[] }) {
   );
 }
 
-export function Gauge({ snapshot }: { snapshot: SessionSnapshot }) {
+function Gauge({ snapshot }: { snapshot: SessionSnapshot }) {
   const meat = snapshot.meat;
   if (!meat) return null;
   const frac = meat.totalLines === 0 ? 1 : meat.keptLines / meat.totalLines;

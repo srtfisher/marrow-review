@@ -38,9 +38,10 @@ function scrollToRow(key: string, block: ScrollLogicalPosition = 'nearest'): voi
 }
 
 export function Review({
-  sessionId, theme, onTheme, onHome,
+  sessionId, viewer, theme, onTheme, onHome,
 }: {
   sessionId: string;
+  viewer: string;
   theme: Theme;
   onTheme: () => void;
   onHome: () => void;
@@ -277,7 +278,7 @@ export function Review({
           <PendingComment
             key={c.id}
             comment={c}
-            viewer={snapshot.pr?.viewerIsAuthor ? snapshot.pr.author : 'you'}
+            viewer={viewer}
             context={context}
             onSave={(body) => saveDraft(snapshot.draft.comments.map((x) => (x.id === c.id ? { ...x, body } : x)))}
             onDelete={() => saveDraft(snapshot.draft.comments.filter((x) => x.id !== c.id))}
@@ -303,7 +304,7 @@ export function Review({
         )}
       </div>
     );
-  }, [snapshot, placedThreads, placedFindings, placedComments, composer, focusedFinding?.id, editNonce, context, triage, saveDraft, saveComposer]);
+  }, [snapshot, viewer, placedThreads, placedFindings, placedComments, composer, focusedFinding?.id, editNonce, context, triage, saveDraft, saveComposer]);
 
   const diffContext: DiffContextValue | null = snapshot ? {
     sessionId,
@@ -311,8 +312,6 @@ export function Review({
     selected,
     highlight: true,
     findingsByRow: placedFindings.byRow,
-    commentsByRow: placedComments.byRow,
-    threadsByRow: placedThreads.byRow,
     renderBelow,
     onRowMouseDown: (row: LineRow, extend: boolean) => {
       dragging.current = true;
@@ -447,7 +446,7 @@ export function Review({
                     {outsideComments.map((c) => (
                       <div key={c.id}>
                         <p className="px-4 pt-2 font-mono text-xs text-fg-muted">{c.path}:{c.line}</p>
-                        <PendingComment comment={c} viewer="you" context={context}
+                        <PendingComment comment={c} viewer={viewer} context={context}
                           onSave={(body) => saveDraft(snapshot.draft.comments.map((x) => (x.id === c.id ? { ...x, body } : x)))}
                           onDelete={() => saveDraft(snapshot.draft.comments.filter((x) => x.id !== c.id))} />
                       </div>

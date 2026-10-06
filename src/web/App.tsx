@@ -52,7 +52,7 @@ export function App() {
   const home = () => { window.location.hash = repo ? `#/${repo.owner}/${repo.repo}` : '#/'; };
 
   if (route.number !== null && sessionId) {
-    return <Review key={sessionId} sessionId={sessionId} theme={theme} onTheme={cycleTheme} onHome={home} />;
+    return <Review key={sessionId} sessionId={sessionId} viewer={app.viewer} theme={theme} onTheme={cycleTheme} onHome={home} />;
   }
   if (route.number !== null) return <div className="flex h-full items-center justify-center text-fg-muted">Opening #{route.number}…</div>;
 

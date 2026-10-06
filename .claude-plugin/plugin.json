@@ -1,0 +1,10 @@
+{
+  "name": "marrow",
+  "description": "Review a large pull request in a local GitHub-styled web app: the diff abridged to what carries meaning, grouped by intent, with Claude's findings inline.",
+  "author": {
+    "name": "Sean Fisher"
+  },
+  "homepage": "https://github.com/srtfisher/marrow-review",
+  "repository": "https://github.com/srtfisher/marrow-review",
+  "license": "MIT"
+}
