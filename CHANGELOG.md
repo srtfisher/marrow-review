@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-06
+
+### Changed
+
+- The release workflow updates the Homebrew tap (`brew install --cask srtfisher/marrow/marrow`)
+  through a deploy key, so each release reaches Homebrew without a manual step. No change to
+  marrow itself.
+
 ## [0.4.1] - 2026-10-06
 
 ### Added
