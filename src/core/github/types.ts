@@ -18,9 +18,13 @@ export interface PullRequestSummary {
   baseRef: string;
   headRef: string;
   updatedAt: string;
+  htmlUrl: string;
 }
 
 export interface PullRequestDetail extends PullRequestSummary {
+  owner: string;
+  repo: string;
+  baseSha: string;
   body: string;
   /** Raw unified diff, as served by GitHub. */
   diff: string;
@@ -33,13 +37,18 @@ export interface PullRequestDetail extends PullRequestSummary {
 
 export interface ReviewThreadComment {
   author: string;
+  avatarUrl?: string | null;
   body: string;
+  /** GitHub's own rendering, so the page shows a thread exactly as github.com does. */
+  bodyHtml?: string | null;
   createdAt: string;
+  url?: string | null;
 }
 
 export interface ReviewThread {
   path: string;
   line: number | null;
+  side?: 'LEFT' | 'RIGHT';
   isResolved: boolean;
   isOutdated: boolean;
   comments: ReviewThreadComment[];

@@ -12,6 +12,7 @@ export interface OctokitLike {
     pulls: {
       get(params: Record<string, unknown>): Promise<{ data: unknown }>;
       list(params: Record<string, unknown>): Promise<{ data: unknown }>;
+      listCommits?(params: Record<string, unknown>): Promise<{ data: unknown }>;
     };
   };
   paginate(fn: unknown, params?: Record<string, unknown>): Promise<unknown[]>;
@@ -30,9 +31,10 @@ interface RawPull {
   deletions?: number | null;
   changed_files?: number | null;
   updated_at: string;
+  html_url?: string;
   user: { login: string } | null;
   head: { sha: string; ref: string };
-  base: { ref: string };
+  base: { ref: string; sha?: string };
 }
 
 function toState(raw: RawPull): PullState {
@@ -51,6 +53,7 @@ function toSummary(raw: RawPull): PullRequestSummary {
     baseRef: raw.base.ref,
     headRef: raw.head.ref,
     updatedAt: raw.updated_at,
+    htmlUrl: raw.html_url ?? '',
   };
 }
 
@@ -97,6 +100,9 @@ export class GitHubClient {
     const raw = detailRes.data as RawPull;
     return {
       ...toSummary(raw),
+      owner,
+      repo,
+      baseSha: raw.base.sha ?? '',
       body: raw.body ?? '',
       diff: String(diffRes.data),
       viewerIsAuthor: (raw.user?.login ?? '') === viewerLogin,
@@ -105,5 +111,17 @@ export class GitHubClient {
       deletions: raw.deletions ?? 0,
       changedFiles: raw.changed_files ?? 0,
     };
+  }
+
+  /** First lines of the PR's commit messages, oldest first. Empty on failure: they are a hint. */
+  async listCommitSubjects(owner: string, repo: string, pull_number: number): Promise<string[]> {
+    const list = this.octokit.rest.pulls.listCommits;
+    if (!list) return [];
+    try {
+      const { data } = await list({ owner, repo, pull_number, per_page: 100 });
+      return (data as Array<{ commit: { message: string } }>).map((c) => c.commit.message.split('\n')[0] ?? '');
+    } catch {
+      return [];
+    }
   }
 }

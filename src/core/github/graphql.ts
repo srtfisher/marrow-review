@@ -20,10 +20,11 @@ query PullContext($owner: String!, $repo: String!, $number: Int!) {
         nodes {
           path
           line
+          diffSide
           isResolved
           isOutdated
           comments(first: 50) {
-            nodes { author { login } body createdAt }
+            nodes { author { login avatarUrl } body bodyHTML createdAt url }
           }
         }
       }
@@ -139,15 +140,19 @@ export async function fetchPullContext(
     return {
       path: String(node['path'] ?? ''),
       line: typeof node['line'] === 'number' ? node['line'] : null,
+      side: node['diffSide'] === 'LEFT' ? 'LEFT' as const : 'RIGHT' as const,
       isResolved: node['isResolved'] === true,
       isOutdated: node['isOutdated'] === true,
       comments: comments.map((c) => {
         const comment = c as Record<string, unknown>;
-        const author = comment['author'] as { login?: string } | null;
+        const author = comment['author'] as { login?: string; avatarUrl?: string } | null;
         return {
           author: author?.login ?? 'unknown',
+          avatarUrl: author?.avatarUrl ?? null,
           body: String(comment['body'] ?? ''),
+          bodyHtml: typeof comment['bodyHTML'] === 'string' ? comment['bodyHTML'] : null,
           createdAt: String(comment['createdAt'] ?? ''),
+          url: typeof comment['url'] === 'string' ? comment['url'] : null,
         };
       }),
     };

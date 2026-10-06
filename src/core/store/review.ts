@@ -12,6 +12,8 @@ export interface PersistedReview {
   number: number;
   headSha: string;
   draft: ReviewDraft;
+  /** Path → content hash of the file's diff when the reviewer marked it viewed. */
+  viewed?: Record<string, string>;
   updatedAt: string;
 }
 
