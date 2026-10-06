@@ -505,7 +505,7 @@ two sections. A file split across groups repeats its header with "also in".
 a shortfall is never presented as a judgment (`kept unjudged` beside the gauge); submit is
 `!`, never a letter beside the triage keys; leaving work unsubmitted is always visible.
 
-## Revision: scores, a passes panel, and live progress (0.5)
+## Revision: scores, a passes panel, and live progress (0.4)
 
 The review became five reviewers and a scorer, and three things on the page changed with it.
 
@@ -526,7 +526,7 @@ reads as a bug.
 ("Review · 3/5 reviewers done"); the overview line and the steps popover carry the rest
 ("waiting on history"). A path once ran the header row into the controls beside it.
 
-## Revision: the Mac app (0.5)
+## Revision: the Mac app (0.4)
 
 **The icon is the favicon at Dock size.** The purple `M` on a macOS squircle, the purple
 deepened top to bottom (`#9a6cf2` → `#5a32a8`) so it is not a flat swatch among other
