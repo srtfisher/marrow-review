@@ -364,6 +364,7 @@ bun test              # the whole suite
 bun run typecheck     # tsc over src and tests, then over the web page
 bun run lint:boundary # core imports no UI; the page imports core types only
 bun run build         # tsc -> dist/, vite -> dist/web
+bun run e2e           # the built page in Chromium, over a fixture server (no GitHub, no model)
 ```
 
 The suite needs [bun](https://bun.sh): tests import `bun:test`. The package itself runs on
@@ -381,6 +382,7 @@ The Mac app is `desktop/`, its own package, and never part of the npm package:
 cd desktop && npm install
 npm start                 # Electron over the repo's dist/ (run the root build first)
 bun test                  # the shell's pure helpers
+npm run e2e               # the app itself, driven by Playwright, over the same fixture server
 scripts/package.sh        # out/marrow-<version>-mac-<arch>.zip; pass arm64 or x64
 scripts/icon.sh           # assets/icon.svg -> assets/icon.icns (needs librsvg)
 ```

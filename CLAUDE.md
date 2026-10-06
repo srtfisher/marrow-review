@@ -13,6 +13,8 @@ bun run typecheck                 # tsc over src + tests, then over src/web (DOM
 bun run lint:boundary             # core imports no UI/HTTP; web imports core types only
 bun run build                     # tsc -> dist/ (bin: dist/cli.js), vite -> dist/web
 node dist/cli.js <pr> --no-open   # run it; prints `marrow: <url>`
+bun run e2e                       # build, then Playwright over the page (needs `bunx playwright install chromium`)
+cd desktop && npm run e2e         # Playwright over the Electron app (macOS)
 ```
 
 Run all four before saying a change is done. A change under `desktop/` also needs
@@ -63,6 +65,8 @@ import. The page talks to the server over `fetch` and `EventSource` only.
   `src/web/lib/rows.ts` → `tests/web/rows.test.ts`, using
   `bun:test` (`test`, `expect`, `describe`). Test names are sentences about behaviour
   ("keeps a rename that also changed content"), not "should" statements.
+- **End-to-end tests run `e2e/fixture-server.ts`**: the real server and page over the
+  session fakes, behind the CLI's arguments and `marrow:` line. Never `gh`, never a model.
 - **Never hit the network or a model in a test.** Use `FakeTransport` from
   `src/core/agent/fake.ts`, or a hand-written class implementing `AgentTransport` for
   failure paths. Diff fixtures live in `tests/fixtures/`.

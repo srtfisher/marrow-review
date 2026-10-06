@@ -1,0 +1,3 @@
+[test]
+# Playwright owns e2e/*.spec.ts; bun matches .spec. files too.
+root = "tests"

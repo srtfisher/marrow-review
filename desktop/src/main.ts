@@ -8,9 +8,11 @@ import { findExecutable, loginShellPath, parseServerUrl, passFlags, tail, toNoti
 const here = dirname(fileURLToPath(import.meta.url));
 // Packaged, marrow is staged into Resources outside the asar: the Claude SDK
 // spawns a native binary, which cannot run from inside the archive.
-const cliPath = app.isPackaged
-  ? join(process.resourcesPath, 'marrow', 'dist', 'cli.js')
-  : join(here, '..', '..', 'dist', 'cli.js');
+// MARROW_DESKTOP_CLI and MARROW_DESKTOP_USER_DATA exist for the e2e tests: a
+// fixture server in place of marrow, and settings that are not yours.
+const cliPath = process.env.MARROW_DESKTOP_CLI
+  ?? (app.isPackaged ? join(process.resourcesPath, 'marrow', 'dist', 'cli.js') : join(here, '..', '..', 'dist', 'cli.js'));
+if (process.env.MARROW_DESKTOP_USER_DATA) app.setPath('userData', process.env.MARROW_DESKTOP_USER_DATA);
 const settingsPath = join(app.getPath('userData'), 'settings.json');
 
 interface Settings {

@@ -23,7 +23,7 @@ jobs:
       - run: bun run lint:boundary
       - run: bun run build
 
-  desktop:
+  e2e-web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -36,12 +36,43 @@ jobs:
         with:
           node-version: 24
 
-      # Typechecking needs Electron's types, not its 100 MB binary.
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run e2e
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-web-traces
+          path: test-results/
+
+  # macOS, not Linux: the app is a Mac app, and the Dock badge is only there.
+  desktop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The fixture server runs under bun, the Electron shell under its own Node.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
       - run: npm ci
         working-directory: desktop
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
       - run: npm run typecheck
         working-directory: desktop
       - run: bun test
         working-directory: desktop
+      - run: npm run e2e
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-desktop-traces
+          path: desktop/test-results/
