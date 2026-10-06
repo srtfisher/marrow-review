@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api } from '../api.js';
 import { useSession, type Theme } from '../hooks.js';
 import { placeByRow, rangeAnchor, suggestionText, type Anchor } from '../lib/anchor.js';
+import { isLow, isShown } from '../lib/findings.js';
 import { insertSuggestion } from '../lib/autocomplete.js';
 import { actionFor, type Action } from '../lib/keymap.js';
 import { stepFile, stepMarked, stepSection } from '../lib/nav.js';
@@ -54,11 +55,12 @@ export function Review({
   const [composer, setComposer] = useState<ComposerState | null>(null);
   const [sidebar, setSidebar] = useState<'groups' | 'files'>('groups');
   const [showThreads, setShowThreads] = useState(true);
-  const [showRefuted, setShowRefuted] = useState(false);
+  const [showLow, setShowLow] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
   const [askScope, setAskScope] = useState<{ label: string; context: string } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitted, setSubmitted] = useState<{ url: string; demoted: number } | null>(null);
   const [editNonce, setEditNonce] = useState(0);
@@ -82,8 +84,8 @@ export function Review({
   }, [rows, rowIndex, cursorKey]);
 
   const findings = useMemo(
-    () => (snapshot?.findings.items ?? []).filter((f) => showRefuted || f.verdict !== 'refuted'),
-    [snapshot?.findings.items, showRefuted],
+    () => (snapshot?.findings.items ?? []).filter((f) => showLow || isShown(f, snapshot?.scoreThreshold ?? 80)),
+    [snapshot?.findings.items, snapshot?.scoreThreshold, showLow],
   );
   const placedFindings = useMemo(() => placeByRow(rows, findings), [rows, findings]);
   const placedComments = useMemo(() => placeByRow(rows, snapshot?.draft.comments ?? []), [rows, snapshot?.draft.comments]);
@@ -222,7 +224,7 @@ export function Review({
       case 'fullDiff': return setView((v) => ({ ...v, fullDiff: !v.fullDiff }));
       case 'sidebar': return setSidebar((m) => (m === 'groups' ? 'files' : 'groups'));
       case 'threads': return setShowThreads((s) => !s);
-      case 'refuted': return setShowRefuted((s) => !s);
+      case 'lowConfidence': return setShowLow((s) => !s);
       case 'viewed': {
         if (!cursorRow) return;
         const path = cursorRow.path;
@@ -235,16 +237,18 @@ export function Review({
       case 'openGithub': if (snapshot.pr?.htmlUrl) window.open(`${snapshot.pr.htmlUrl}/files`, '_blank', 'noopener'); return;
       case 'help': return setHelpOpen(true);
       case 'usage': return setUsageOpen((o) => !o);
+      case 'settings': return setSettingsOpen((o) => !o);
       case 'submit': return setSubmitOpen(true);
-      case 'retry': if (snapshot.findings.status === 'failed' || snapshot.findings.status === 'done') void api.retry(sessionId); return;
+      case 'retry': if (['failed', 'done', 'off'].includes(snapshot.findings.status)) void api.retry(sessionId); return;
       case 'escape':
         if (composer) setComposer(null);
         else if (askOpen) setAskOpen(false);
         else if (usageOpen) setUsageOpen(false);
+        else if (settingsOpen) setSettingsOpen(false);
         else { setSelection(null); setRangeMode(false); }
         return;
     }
-  }, [snapshot, cursorIndex, rows, moveTo, marked, openComposer, rangeMode, cursorKey, focusedFinding, triage, cursorRow, toggleViewed, ask, sessionId, composer, askOpen, usageOpen]);
+  }, [snapshot, cursorIndex, rows, moveTo, marked, openComposer, rangeMode, cursorKey, focusedFinding, triage, cursorRow, toggleViewed, ask, sessionId, composer, askOpen, usageOpen, settingsOpen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -276,7 +280,7 @@ export function Review({
       <div className="divide-y divide-border">
         {threads.map((t, i) => <ThreadCard key={`t${i}`} thread={t} />)}
         {fs.map((f) => (
-          <FindingCard key={f.id} finding={f} focused={f.id === focusedFinding?.id} editNonce={editNonce} context={context} onAction={(a, b) => triage(f.id, a, b)} />
+          <FindingCard key={f.id} finding={f} threshold={snapshot.scoreThreshold} focused={f.id === focusedFinding?.id} editNonce={editNonce} context={context} onAction={(a, b) => triage(f.id, a, b)} />
         ))}
         {cs.map((c) => (
           <PendingComment
@@ -402,6 +406,8 @@ export function Review({
           onHome={onHome}
           usageOpen={usageOpen}
           onUsage={setUsageOpen}
+          settingsOpen={settingsOpen}
+          onSettings={setSettingsOpen}
         />
         {(snapshot.notes.length > 0 || dropped) && (
           <div className="space-y-1 border-b border-border bg-canvas-subtle px-4 py-1.5 text-xs">
@@ -429,7 +435,7 @@ export function Review({
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <Button size="sm" shortcut="fullDiff" pressed={view.fullDiff} onClick={() => run('fullDiff')}>{view.fullDiff ? 'Full diff' : 'Abridged'}</Button>
               <Button size="sm" shortcut="threads" pressed={showThreads} onClick={() => run('threads')}>Threads{snapshot.threads.length > 0 ? ` (${snapshot.threads.length})` : ''}</Button>
-              <Button size="sm" shortcut="refuted" pressed={showRefuted} onClick={() => run('refuted')}>Refuted ({snapshot.findings.items.filter((f) => f.verdict === 'refuted').length})</Button>
+              <Button size="sm" shortcut="lowConfidence" pressed={showLow} onClick={() => run('lowConfidence')}>Low confidence ({snapshot.findings.items.filter((f) => isLow(f, snapshot.scoreThreshold)).length})</Button>
               <Button size="sm" shortcut="revealAll" pressed={view.revealAll} onClick={() => run('revealAll')}>Reveal folds</Button>
               <div className="flex-1" />
               {rangeMode && <Label tone="accent">selecting — move with j/k, then c</Label>}
@@ -446,7 +452,7 @@ export function Review({
                     {outsideFindings.map((f) => (
                       <div key={f.id}>
                         <p className="px-4 pt-2 font-mono text-xs text-fg-muted">{f.path}:{f.line}</p>
-                        <FindingCard finding={f} focused={false} context={context} onAction={(a, b) => triage(f.id, a, b)} />
+                        <FindingCard finding={f} threshold={snapshot.scoreThreshold} focused={false} context={context} onAction={(a, b) => triage(f.id, a, b)} />
                       </div>
                     ))}
                     {outsideComments.map((c) => (

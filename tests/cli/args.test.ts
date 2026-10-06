@@ -71,3 +71,37 @@ test('haiku stays at haiku', () => {
 test('rejects an unknown flag with a clear message', () => {
   expect(() => parseArgs(['--nope'])).toThrow(/Unknown option: --nope/);
 });
+
+test('runs every model pass unless told not to', () => {
+  expect(parseArgs([]).passes).toEqual({ abridge: true, group: true, find: true, verify: true });
+});
+
+test('switches off each pass named with --no-', () => {
+  expect(parseArgs(['--no-abridge', '--no-verify']).passes).toEqual({ abridge: false, group: true, find: true, verify: false });
+  expect(parseArgs(['--no-group', '--no-find']).passes).toEqual({ abridge: true, group: false, find: false, verify: true });
+});
+
+test('--no-open is not mistaken for a pass', () => {
+  const args = parseArgs(['--no-open']);
+  expect(args.open).toBe(false);
+  expect(args.passes.find).toBe(true);
+});
+
+test('reviews one tier below the reasoning model and scores two below, unless told otherwise', () => {
+  const args = parseArgs([]);
+  expect([args.reviewModel, args.verifyModel]).toEqual(['sonnet', 'haiku']);
+  expect(parseArgs(['--model', 'sonnet']).reviewModel).toBe('haiku');
+  expect(parseArgs(['--review-model', 'opus', '--verify-model', 'sonnet'])).toMatchObject({ reviewModel: 'opus', verifyModel: 'sonnet' });
+});
+
+test('a full model id still steps down a tier for the cheaper passes', () => {
+  expect(tierBelow('claude-opus-5-5')).toBe('sonnet');
+  expect(tierBelow('claude-sonnet-5-5')).toBe('haiku');
+  expect(tierBelow('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5-20251001');
+  const args = parseArgs(['--model', 'claude-opus-5-5']);
+  expect([args.meatModel, args.reviewModel, args.verifyModel]).toEqual(['sonnet', 'sonnet', 'haiku']);
+});
+
+test('a model from no known family is used as given', () => {
+  expect(tierBelow('my-gateway-model')).toBe('my-gateway-model');
+});

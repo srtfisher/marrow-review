@@ -95,3 +95,28 @@ test('a failed run carries what it spent on the error', async () => {
   expect(error).toBeInstanceOf(AgentRunError);
   expect((error as InstanceType<typeof AgentRunError>).usage.inputTokens).toBe(4000);
 });
+
+test('reports each tool call as progress while the run is going', async () => {
+  const seen: Array<{ turns: number; reads: number; activity: string }> = [];
+  const transport = new SdkTransport({
+    env: {},
+    query: scripted([
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Looking.' }, { type: 'tool_use', name: 'Read', input: { file_path: '/wt/src/a.ts' } }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Grep', input: { pattern: 'retry' } }] } },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/wt/src/b.ts' } }] } },
+      { type: 'result', subtype: 'success', session_id: 's1', result: 'ok', num_turns: 3, duration_ms: 10 },
+    ]) as never,
+  });
+  await transport.run({ model: 'opus', prompt: 'x', cwd: '/wt', onProgress: (p) => seen.push(p) });
+  expect(seen).toEqual([
+    { turns: 1, reads: 1, activity: 'reading src/a.ts' },
+    { turns: 2, reads: 1, activity: 'searching for “retry”' },
+    { turns: 3, reads: 2, activity: 'reading src/b.ts' },
+  ]);
+});
+
+test('passes a requested effort through, and leaves the SDK default alone otherwise', async () => {
+  const { buildQueryOptions } = await import('../../../src/core/agent/sdk.js');
+  expect(buildQueryOptions({ model: 'sonnet', prompt: 'x', effort: 'low' }, {}).effort).toBe('low');
+  expect('effort' in buildQueryOptions({ model: 'sonnet', prompt: 'x' }, {})).toBe(false);
+});

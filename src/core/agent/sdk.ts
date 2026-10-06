@@ -1,3 +1,4 @@
+import { describeToolUse, isRead } from './progress.js';
 import {
   createSdkMcpServer,
   query,
@@ -114,6 +115,7 @@ export function buildQueryOptions(
     allowedTools: req.allowedTools,
     disallowedTools: req.disallowedTools,
     maxTurns: req.maxTurns,
+    ...(req.effort ? { effort: req.effort } : {}),
     resume: req.resume,
     env,
     settingSources: ISOLATED_SETTINGS,
@@ -146,10 +148,17 @@ export class SdkTransport implements AgentTransport {
     // with only a subtype, so the last rejection is the only record of why.
     let schemaRejection: string | null = null;
     let usage: UsageSummary = EMPTY_USAGE;
+    let turns = 0;
+    let reads = 0;
 
     for await (const message of stream) {
       if (message.type === 'assistant') {
+        turns += 1;
         for (const block of message.message.content) {
+          if (block.type === 'tool_use' && req.onProgress) {
+            if (isRead(block.name)) reads += 1;
+            req.onProgress({ turns, reads, activity: describeToolUse(block.name, block.input as Record<string, unknown>, req.cwd) });
+          }
           if (block.type === 'text') {
             text += block.text;
             const notice = matchUsageNotice(block.text);

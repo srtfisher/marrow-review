@@ -1,3 +1,4 @@
+import type { AgentProgress } from './progress.js';
 export interface UsageSummary {
   inputTokens: number;
   outputTokens: number;
@@ -35,10 +36,17 @@ export interface AgentRequest {
   resume?: string;
   maxTurns?: number;
   /**
+   * How hard the model reasons. Left unset, the SDK uses 'high', which spends
+   * most of a short structured answer's tokens on thinking.
+   */
+  effort?: 'low' | 'medium' | 'high';
+  /**
    * In-process tools served to this run only. Their names reach the model as
    * `toolName(name)`, which is also what `allowedTools` must list to permit them.
    */
   tools?: AgentTool[];
+  /** Called as the run's tool calls arrive, so a long pass can say what it is doing. */
+  onProgress?: (progress: AgentProgress) => void;
 }
 
 export interface AgentToolParam {

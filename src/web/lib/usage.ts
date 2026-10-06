@@ -4,7 +4,7 @@ const ORDER: Array<{ pass: UsagePass; label: string }> = [
   { pass: 'abridge', label: 'Abridge' },
   { pass: 'group', label: 'Group' },
   { pass: 'find', label: 'Review' },
-  { pass: 'verify', label: 'Verify' },
+  { pass: 'verify', label: 'Score' },
   { pass: 'chat', label: 'Ask Claude' },
 ];
 
@@ -35,9 +35,19 @@ export function headlineTokens(p: PassUsage): number {
   return p.inputTokens + p.cacheCreationTokens + p.outputTokens;
 }
 
-export function usageRows(report: UsageReport): Array<{ label: string; usage: PassUsage }> {
+const NOTHING: PassUsage = {
+  runs: 0, running: 0, failed: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0, durationMs: 0, turns: 0, reads: 0,
+};
+
+/** `notes` say why a pass cost little or nothing, and give it a row even when it made no call. */
+export function usageRows(
+  report: UsageReport,
+  notes: Partial<Record<UsagePass, string>> = {},
+): Array<{ label: string; usage: PassUsage; note: string | null }> {
   return ORDER.flatMap(({ pass, label }) => {
     const usage = report[pass];
-    return usage ? [{ label, usage }] : [];
+    const note = notes[pass] ?? null;
+    if (!usage && !note) return [];
+    return [{ label, usage: usage ?? NOTHING, note }];
   });
 }

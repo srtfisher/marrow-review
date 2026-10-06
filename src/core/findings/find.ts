@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { AgentTransport } from '../agent/types.js';
-import type { CheckRun, ReviewThread } from '../github/types.js';
-import type { MeatResult } from '../meat/index.js';
-import { buildRubric, type Effort } from '../review/rubric.js';
+import { buildRubric } from '../review/rubric.js';
 import { DENIED_TOOLS, READ_ONLY_TOOLS, type AgentAccess } from '../source/index.js';
+import { findingsKey, type FindingsCache } from './cache.js';
+import type { ReviewContext } from './context.js';
+import { applicableLenses, buildLensPrompt, LENS_SPECS, type ReviewLens } from './lenses.js';
+import { mergeFindings } from './merge.js';
 import { FINDINGS_SCHEMA } from './schema.js';
 import type { Finding, RawFinding } from './types.js';
 
@@ -13,55 +15,6 @@ export type { Finding, RawFinding };
 // because find is where a reader auditing the tool policy looks first.
 export { DENIED_TOOLS, READ_ONLY_TOOLS };
 
-export interface FindingsInput {
-  prTitle: string;
-  prBody: string;
-  meat: MeatResult;
-  threads: ReviewThread[];
-  failingChecks: CheckRun[];
-  effort: Effort;
-  standards: string;
-  conventions: string;
-}
-
-export function buildFindingsPrompt(input: FindingsInput): string {
-  const parts: string[] = [`Pull request: ${input.prTitle}`];
-
-  if (input.prBody.trim().length > 0) parts.push(`\nDescription:\n${input.prBody.trim()}`);
-  if (input.meat.summary.length > 0) parts.push(`\nWhat this change does:\n${input.meat.summary}`);
-
-  if (input.failingChecks.length > 0) {
-    const lines = input.failingChecks.map(
-      (c) => `- ${c.name}${c.output ? `: ${c.output}` : ''}`,
-    );
-    parts.push(`\nFailing checks:\n${lines.join('\n')}`);
-  }
-
-  if (input.threads.length > 0) {
-    const lines = input.threads.flatMap((t) =>
-      t.comments.map((c) => `- ${t.path}:${t.line ?? '?'} ${c.author}: ${c.body}`),
-    );
-    parts.push(`\nExisting review comments — do not repeat these:\n${lines.join('\n')}`);
-  }
-
-  parts.push('\nThe abridged diff follows. Only hunks worth reading are included.\n');
-
-  for (const file of input.meat.files) {
-    const kept = file.hunks.filter((h) => h.keep);
-    if (kept.length === 0) continue;
-    parts.push(`<file path="${file.file.path}">`);
-    for (const meatHunk of kept) {
-      const body = meatHunk.hunk.lines
-        .map((l) => `${l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}${l.text}`)
-        .join('\n');
-      parts.push(`${meatHunk.hunk.header}\n${body}`);
-    }
-    parts.push('</file>');
-  }
-
-  return parts.join('\n');
-}
-
 export function findingId(raw: RawFinding): string {
   return createHash('sha256')
     .update(`${raw.path}:${raw.side}:${raw.line}:${raw.title}`)
@@ -69,40 +22,33 @@ export function findingId(raw: RawFinding): string {
     .slice(0, 16);
 }
 
-/**
- * Runs the findings pass. Never throws: the agent passes are additive, and a
- * model failure must leave the reviewer with a fully usable manual review.
- *
- * `onError` exists because "ran and found nothing" and "never ran" both used to
- * come back as `[]`, so a dead transport was indistinguishable from a clean
- * pull request. The caller decides what to say about it; this function still
- * never throws.
- */
-export async function runFindings(
-  transport: AgentTransport,
-  model: string,
-  input: FindingsInput,
-  access: AgentAccess,
-  onError?: (error: unknown) => void,
-): Promise<Finding[]> {
-  let structured: unknown;
-  try {
-    const run = await transport.run({
-      model,
-      cwd: access.cwd,
-      systemPrompt: buildRubric(input),
-      prompt: buildFindingsPrompt(input),
-      schema: FINDINGS_SCHEMA,
-      allowedTools: access.allowedTools,
-      disallowedTools: [...DENIED_TOOLS],
-      tools: access.tools,
-    });
-    structured = run.structured;
-  } catch (error) {
-    onError?.(error);
-    return [];
-  }
+export interface ReviewProgress {
+  /** Reviewers finished, from the model or the cache. */
+  done: number;
+  total: number;
+  /** The reviewers still running, once most are done: "waiting on bugs". */
+  activity: string | null;
+}
 
+export interface FindOptions {
+  cache?: FindingsCache;
+  /** Skip the cache lookup (results are still stored). */
+  fresh?: boolean;
+  /** Once per reviewer that failed; the others still land. */
+  onError?: (lens: ReviewLens, error: unknown) => void;
+  onProgress?: (progress: ReviewProgress) => void;
+}
+
+export interface FindResult {
+  findings: Finding[];
+  /** Reviewers that ran (or came from the cache), in lens order. */
+  ran: ReviewLens[];
+  failed: ReviewLens[];
+  /** Reviewers answered from the cache. */
+  cached: number;
+}
+
+function toFindings(structured: unknown, lens: ReviewLens): Finding[] {
   const raw = (structured as { findings?: RawFinding[] } | null)?.findings ?? [];
   return raw.map((f) => ({
     ...f,
@@ -112,5 +58,81 @@ export async function runFindings(
     // The schema allows a blocking question; the rubric does not.
     severity: f.kind === 'question' ? 'non-blocking' : f.severity,
     id: findingId(f),
+    lenses: [lens],
   }));
+}
+
+/**
+ * Runs every reviewer whose lens has something to look at, all at once, then merges
+ * what they raised. Never throws: the agent passes are additive. A failed reviewer
+ * costs its own findings and is reported through `onError`; it is never cached, and
+ * neither is anything else that failed — the cache has no expiry.
+ */
+export async function runFindings(
+  transport: AgentTransport,
+  model: string,
+  ctx: ReviewContext,
+  access: AgentAccess,
+  opts: FindOptions = {},
+): Promise<FindResult> {
+  const lenses = applicableLenses(ctx);
+  const systemPrompt = buildRubric({ effort: ctx.effort });
+  // The summary is model prose that differs between a classified run and a fully
+  // cached one; keyed on it, a restart would never hit.
+  const keyCtx = { ...ctx, meat: { ...ctx.meat, summary: '' } };
+  let done = 0;
+  let cached = 0;
+  const failed: ReviewLens[] = [];
+  const pending = new Set(lenses);
+  const report = () => {
+    const waiting = done > 0 && pending.size > 0 && pending.size <= 2
+      ? `waiting on ${[...pending].map((l) => LENS_SPECS[l].label).join(', ')}`
+      : null;
+    opts.onProgress?.({ done, total: lenses.length, activity: waiting });
+  };
+  report();
+
+  const results = await Promise.all(lenses.map(async (lens): Promise<Finding[]> => {
+    const spec = LENS_SPECS[lens];
+    const prompt = buildLensPrompt(lens, ctx);
+    const key = findingsKey(model, systemPrompt, buildLensPrompt(lens, keyCtx));
+    const finish = (findings: Finding[]) => {
+      done += 1;
+      pending.delete(lens);
+      report();
+      return findings;
+    };
+    if (opts.cache && !opts.fresh) {
+      const hit = await opts.cache.getFindings(key).catch(() => null);
+      if (hit) {
+        cached += 1;
+        return finish(hit);
+      }
+    }
+    try {
+      const run = await transport.run({
+        model,
+        cwd: access.cwd,
+        systemPrompt,
+        prompt,
+        schema: FINDINGS_SCHEMA,
+        // Every reviewer answers from what it was handed, in one turn: the context it
+        // would go looking for was gathered before it started, and a reviewer with
+        // tools once spent five minutes wandering and then lost everything to its turn cap.
+        allowedTools: [],
+        disallowedTools: [...DENIED_TOOLS, ...READ_ONLY_TOOLS],
+        tools: [],
+        effort: ctx.effort,
+      });
+      const findings = toFindings(run.structured, lens);
+      await opts.cache?.setFindings(key, findings).catch(() => {});
+      return finish(findings);
+    } catch (error) {
+      failed.push(lens);
+      opts.onError?.(lens, error);
+      return finish([]);
+    }
+  }));
+
+  return { findings: mergeFindings(results.flat()), ran: lenses, failed, cached };
 }

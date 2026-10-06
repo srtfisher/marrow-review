@@ -2,13 +2,13 @@ import { test, expect, describe } from 'bun:test';
 import {
   accept, drop, edit, initTriage, toggleSuggestion, toStagedComments, visibleFindings,
 } from '../../../src/core/findings/triage.js';
-import type { VerifiedFinding } from '../../../src/core/findings/verify.js';
+import type { ScoredFinding } from '../../../src/core/findings/score.js';
 
-function vf(id: string, over: Partial<VerifiedFinding> = {}): VerifiedFinding {
+function vf(id: string, over: Partial<ScoredFinding> = {}): ScoredFinding {
   return {
     id, path: 'a.ts', line: 10, side: 'RIGHT', startLine: null,
     severity: 'blocking', type: 'Correctness', kind: 'issue', failureScenario: null, title: `t-${id}`, body: `b-${id}`,
-    confidence: 'high', suggestion: null, verdict: 'confirmed', refutations: [], ...over,
+    confidence: 'high', suggestion: null, lenses: ['bugs'], score: 90, scoreReason: 'checked', ...over,
   };
 }
 
@@ -86,14 +86,20 @@ describe('toStagedComments', () => {
 });
 
 describe('visibleFindings', () => {
-  test('hides refuted findings by default but never deletes them', () => {
-    const list = initTriage([vf('a'), vf('b', { verdict: 'refuted' })]);
-    expect(visibleFindings(list, false).map((f) => f.id)).toEqual(['a']);
-    expect(visibleFindings(list, true).map((f) => f.id)).toEqual(['a', 'b']);
+  test('folds findings scored below the line by default but never deletes them', () => {
+    const list = initTriage([vf('a'), vf('b', { score: 40 })]);
+    expect(visibleFindings(list, false, 80).map((f) => f.id)).toEqual(['a']);
+    expect(visibleFindings(list, true, 80).map((f) => f.id)).toEqual(['a', 'b']);
   });
 
-  test('plausible findings stay visible — only refuted collapse', () => {
-    const list = initTriage([vf('a', { verdict: 'plausible' })]);
-    expect(visibleFindings(list, false)).toHaveLength(1);
+  test('an unscored finding stays visible — a failed scorer never hides anything', () => {
+    expect(visibleFindings(initTriage([vf('a', { score: null })]), false, 80)).toHaveLength(1);
+  });
+
+  test('the line moves with effort', () => {
+    const list = initTriage([vf('a', { score: 70 })]);
+    expect(visibleFindings(list, false, 80)).toHaveLength(0);
+    expect(visibleFindings(list, false, 60)).toHaveLength(1);
   });
 });
+

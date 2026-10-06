@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  API_TOOL_NAMES, DENIED_TOOLS, READ_ONLY_TOOLS, apiTools, localSource, resolveSource,
+  API_TOOL_NAMES, DENIED_TOOLS, READ_ONLY_TOOLS, apiTools, deniedFor, localSource, resolveSource,
 } from '../../../src/core/source/index.js';
 import { toolName } from '../../../src/core/agent/types.js';
 import type { ContentsApi } from '../../../src/core/github/contents.js';
@@ -63,6 +63,7 @@ describe('resolveSource', () => {
     expect(source.kind).toBe('api');
     expect(source.canSearch).toBe(false);
     expect(source.access.allowedTools).toEqual(API_TOOL_NAMES.map(toolName));
+    expect(deniedFor(source.access)).toEqual(expect.arrayContaining(['Read', 'Grep', 'Glob', 'Bash']));
     expect(degraded).toBeNull();
   });
 

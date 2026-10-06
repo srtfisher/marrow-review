@@ -57,6 +57,8 @@ export interface MeatResult {
    * reads as marrow being broken rather than the model being unreachable.
    */
   classifierError: AgentFailure | null;
+  /** The classifier was switched off, so `unclassified` is a choice rather than a shortfall. */
+  classifierSkipped: boolean;
 }
 
 export interface ComputeMeatOptions {
@@ -67,6 +69,11 @@ export interface ComputeMeatOptions {
   model: string;
   prTitle: string;
   prBody: string;
+  /**
+   * False runs the rules alone. The cache is skipped in both directions: "rules
+   * only" should cut the same on the first run as the hundredth.
+   */
+  classify?: boolean;
 }
 
 /**
@@ -92,6 +99,7 @@ function changedLineCount(hunk: Hunk): number {
 }
 
 export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult> {
+  const classify = opts.classify ?? true;
   const staged: MeatFile[] = [];
   const toClassify: ClassifyItem[] = [];
   const pendingKeys = new Map<string, MeatHunk>();
@@ -117,6 +125,11 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
       const hunkVerdict = evaluateHunk(hunk, file.path);
       if (hunkVerdict) {
         hunks.push({ hunk, keep: false, reason: hunkVerdict.rule, source: 'rule' });
+        continue;
+      }
+
+      if (!classify) {
+        hunks.push({ hunk, keep: true, reason: 'abridgement model off', source: 'fallback' });
         continue;
       }
 
@@ -229,5 +242,6 @@ export async function computeMeat(opts: ComputeMeatOptions): Promise<MeatResult>
     totalFiles: staged.length,
     unclassified,
     classifierError,
+    classifierSkipped: !classify,
   };
 }

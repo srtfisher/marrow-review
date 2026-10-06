@@ -5,7 +5,7 @@ import { SdkTransport, buildQueryOptions } from '../../../src/core/agent/sdk.js'
 import { DENIED_TOOLS, READ_ONLY_TOOLS } from '../../../src/core/findings/find.js';
 import { ask } from '../../../src/core/findings/chat.js';
 import { runFindings } from '../../../src/core/findings/find.js';
-import { runVerify } from '../../../src/core/findings/verify.js';
+import { runScore } from '../../../src/core/findings/score.js';
 import type { AgentRequest } from '../../../src/core/agent/types.js';
 import type { MeatResult } from '../../../src/core/meat/index.js';
 
@@ -23,7 +23,7 @@ function recordingQuery(seen: Options[]) {
         subtype: 'success',
         session_id: 's1',
         result: '{}',
-        structured_output: { findings: [], refuted: false, reasoning: 'x' },
+        structured_output: { findings: [], score: 50, reason: 'x' },
         num_turns: 1,
         usage: { input_tokens: 1, output_tokens: 1 },
       } as unknown as SDKMessage;
@@ -35,7 +35,7 @@ const meat: MeatResult = {
   summary: '', files: [], keptLines: 0, totalLines: 0, keptFiles: 0, totalFiles: 0,
   keptAdditions: 0, keptDeletions: 0, totalAdditions: 0, totalDeletions: 0,
   unclassified: 0,
-  classifierError: null,
+  classifierError: null, classifierSkipped: false,
 };
 
 describe('SdkTransport isolation', () => {
@@ -71,16 +71,17 @@ describe('SdkTransport isolation', () => {
     const finding = {
       id: 'f1', path: 'a.ts', line: 1, side: 'RIGHT' as const, startLine: null,
       severity: 'non-blocking' as const, type: 'Correctness' as const, kind: 'issue' as const, failureScenario: 'x', title: 't', body: 'b',
-      confidence: 'low' as const, suggestion: null,
+      confidence: 'low' as const, suggestion: null, lenses: ['bugs' as const],
     };
 
     await runFindings(transport, 'opus', {
       prTitle: 't', prBody: '', meat, threads: [], failingChecks: [], effort: 'medium', standards: '', conventions: '',
+      files: [], omittedFiles: [], history: [],
     }, readOnlyAccess('/tmp/w'));
-    await runVerify(transport, 'opus', [finding], readOnlyAccess('/tmp/w'));
+    await runScore(transport, 'opus', [finding], readOnlyAccess('/tmp/w'));
     await ask(transport, 'opus', { id: null, turns: [] }, 'why?', readOnlyAccess('/tmp/w'));
 
-    expect(seen.length).toBeGreaterThanOrEqual(4);
+    expect(seen.length).toBeGreaterThanOrEqual(3);
     for (const options of seen) expect(options.settingSources).toEqual([]);
   });
 

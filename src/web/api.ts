@@ -1,5 +1,5 @@
 import type {
-  PullFilter, PullRequestSummary, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
+  PassSettings, PullFilter, PullRequestSummary, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
 } from './lib/types.js';
 
 const params = new URLSearchParams(window.location.search);
@@ -31,6 +31,7 @@ export interface AppInfo {
   version: string;
   filter: PullFilter;
   initial: { owner: string; repo: string; number: number } | null;
+  passes: PassSettings;
 }
 
 const qs = (o: Record<string, string | undefined>) =>
@@ -38,6 +39,7 @@ const qs = (o: Record<string, string | undefined>) =>
 
 export const api = {
   app: () => call<AppInfo>('GET', '/app'),
+  settings: (passes: PassSettings) => call<{ passes: PassSettings }>('PUT', '/settings', { passes }).then((r) => r.passes),
   pulls: (filter: PullFilter, owner?: string, repo?: string) =>
     call<{ pulls: PullRequestSummary[] }>('GET', `/pulls?${qs({ filter, owner, repo })}`).then((r) => r.pulls),
   open: (owner: string, repo: string, number: number) => call<{ id: string }>('POST', '/sessions', { owner, repo, number }),

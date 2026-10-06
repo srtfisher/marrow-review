@@ -8,6 +8,7 @@ import type { PullFilter, PullRequestSummary } from '../core/github/types.js';
 import type { RepoContext } from '../core/git/repo.js';
 import type { Side, StagedComment, Verdict } from '../core/review/types.js';
 import { VERDICTS } from '../core/review/verdicts.js';
+import { parsePassSettings, type PassSettings } from '../core/session/passes.js';
 import type { ReviewSession, TriageAction } from '../core/session/session.js';
 
 export interface AppContext {
@@ -18,8 +19,10 @@ export interface AppContext {
   filter: PullFilter;
   /** Set when marrow was started with a pull request, so the page opens straight into it. */
   initial: { owner: string; repo: string; number: number } | null;
+  /** The passes a new review runs, until the page changes them. */
+  passes: PassSettings;
   listPulls(owner: string, repo: string, filter: PullFilter): Promise<PullRequestSummary[]>;
-  createSession(id: string, owner: string, repo: string, number: number): ReviewSession;
+  createSession(id: string, owner: string, repo: string, number: number, passes: PassSettings): ReviewSession;
   extras: ExtrasApi;
 }
 
@@ -130,6 +133,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const sessions = new Map<string, ReviewSession>();
   const streams = new Set<ServerResponse>();
   let emoji: Promise<Record<string, string>> | null = null;
+  let passes: PassSettings = { ...app.passes };
   let counter = 0;
 
   function session(id: string): ReviewSession {
@@ -147,7 +151,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     }
     counter += 1;
     const id = `${owner}-${repo}-${number}-${counter}`;
-    const s = app.createSession(id, owner, repo, number);
+    const s = app.createSession(id, owner, repo, number, { ...passes });
     sessions.set(id, s);
     void s.load();
     return s;
@@ -184,8 +188,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       case 'GET /app':
         return send(res, 200, {
           repo: app.repo ? { owner: app.repo.owner, repo: app.repo.repo } : null,
-          viewer: app.viewer, version: app.version, filter: app.filter, initial: app.initial,
+          viewer: app.viewer, version: app.version, filter: app.filter, initial: app.initial, passes,
         });
+
+      case 'PUT /settings': {
+        const next = parsePassSettings((await readJson(req)).passes);
+        if (!next) throw new HttpError(400, 'passes must give abridge, group, find, and verify as booleans.');
+        passes = next;
+        return send(res, 200, { passes });
+      }
 
       case 'GET /pulls': {
         const owner = url.searchParams.get('owner') ?? app.repo?.owner;

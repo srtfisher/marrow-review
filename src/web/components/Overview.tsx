@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import type { SessionSnapshot } from '../lib/types.js';
+import { isShown } from '../lib/findings.js';
 import { Icon } from './icons.js';
-import { Button, Label, Markdown, Spinner } from './ui.js';
+import { Button, Kbd, Label, Markdown, Spinner } from './ui.js';
 
 export function Overview({
   snapshot, context, outside, onRetry,
@@ -18,9 +19,13 @@ export function Overview({
   const summary = g?.overallSummary || snapshot.meat?.summary || '';
   const failing = snapshot.checks.filter((c) => c.conclusion === 'failure');
   const items = snapshot.findings.items;
-  const blocking = items.filter((f) => f.severity === 'blocking' && f.verdict !== 'refuted').length;
-  const questions = items.filter((f) => f.kind === 'question').length;
-  const rest = items.filter((f) => f.verdict !== 'refuted').length - blocking - questions;
+  const shown = items.filter((f) => isShown(f, snapshot.scoreThreshold ?? 80));
+  const blocking = shown.filter((f) => f.severity === 'blocking' && f.kind === 'issue').length;
+  const questions = shown.filter((f) => f.kind === 'question').length;
+  const rest = shown.length - blocking - questions;
+  const low = items.length - shown.length;
+  const findStep = snapshot.steps.find((s) => s.id === 'find');
+  const verifyStep = snapshot.steps.find((s) => s.id === 'verify');
 
   return (
     <section className="mb-6 rounded-md border border-border" id="overview">
@@ -60,8 +65,20 @@ export function Overview({
 
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="inline-flex items-center gap-1 font-semibold text-done"><Icon name="sparkle" size={14} />Claude's review</span>
-          {snapshot.findings.status === 'finding' && <span className="inline-flex items-center gap-1.5 text-fg-muted"><Spinner size={12} />reviewing…</span>}
-          {snapshot.findings.status === 'verifying' && <span className="inline-flex items-center gap-1.5 text-fg-muted"><Spinner size={12} />verifying {items.length} finding{items.length === 1 ? '' : 's'}…</span>}
+          {snapshot.findings.status === 'finding' && (
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-fg-muted">
+              <Spinner size={12} /><span className="truncate">reviewing{findStep?.detail ? ` — ${findStep.detail}` : '…'}</span>
+            </span>
+          )}
+          {snapshot.findings.status === 'verifying' && verifyStep?.state === 'running' && (
+            <span className="inline-flex items-center gap-1.5 text-fg-muted"><Spinner size={12} />scoring — {verifyStep.detail ?? `${items.length} findings`}</span>
+          )}
+          {snapshot.findings.status === 'off' && (
+            <>
+              <span className="text-fg-muted">Review pass off.</span>
+              <Button size="sm" shortcut="retry" onClick={onRetry}>Run it</Button>
+            </>
+          )}
           {snapshot.findings.status === 'failed' && (
             <>
               <span className="text-attention">{snapshot.findings.error?.summary} Your review is unaffected.</span>
@@ -73,6 +90,7 @@ export function Overview({
               <Label tone={blocking > 0 ? 'danger' : 'muted'}>{blocking} blocking</Label>
               <Label>{rest} non-blocking</Label>
               {questions > 0 && <Label tone="accent">{questions} question{questions === 1 ? '' : 's'}</Label>}
+              {low > 0 && <span className="text-xs text-fg-muted">{low} low confidence<Kbd>v</Kbd></span>}
               {snapshot.findings.status === 'done' && items.length === 0 && <span className="text-fg-muted">Nothing worth raising.</span>}
             </>
           )}

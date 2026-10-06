@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { isLow, scoreTone } from '../lib/findings.js';
 import { relativeTime } from '../lib/format.js';
 import type { ReviewThread, StagedComment, TriagedFinding, TriageAction } from '../lib/types.js';
 import { Composer } from './Composer.js';
 import { Icon } from './icons.js';
 import { Avatar, Button, Label, Markdown } from './ui.js';
 
-const VERDICT_TONE = { confirmed: 'success', plausible: 'attention', refuted: 'muted' } as const;
+const LENS_LABEL = { conventions: 'conventions', bugs: 'bugs', history: 'history', priorComments: 'prior comments', codeComments: 'code comments' } as const;
 
 function SuggestionPreview({ code }: { code: string }) {
   return (
@@ -21,9 +22,10 @@ function SuggestionPreview({ code }: { code: string }) {
 }
 
 export function FindingCard({
-  finding, focused, context, onAction, editNonce = 0,
+  finding, focused, context, onAction, editNonce = 0, threshold,
 }: {
   finding: TriagedFinding;
+  threshold: number;
   focused: boolean;
   context: string;
   onAction: (action: TriageAction, body?: string) => void;
@@ -62,10 +64,11 @@ export function FindingCard({
         {isQuestion ? <Label tone="accent">question</Label>
           : <Label tone={finding.severity === 'blocking' ? 'danger' : 'muted'}>{finding.severity}</Label>}
         <Label>{finding.type}</Label>
-        {!isQuestion && finding.failureScenario !== null && (
-          <Label tone={VERDICT_TONE[finding.verdict]} title={finding.refutations.map((r) => `${r.lens}: ${r.reasoning}`).join('\n')}>
-            {finding.verdict}
-          </Label>
+        {finding.score !== null && (
+          <Label tone={scoreTone(finding.score, threshold)} title={finding.scoreReason ?? ''}>score {finding.score}</Label>
+        )}
+        {finding.lenses?.length > 0 && (
+          <span className="text-xs text-fg-muted">via {finding.lenses.map((l) => LENS_LABEL[l]).join(', ')}</span>
         )}
         {finding.confidence !== 'high' && <span className="text-xs text-fg-muted">{finding.confidence} confidence</span>}
         {finding.state === 'accepted' && (
@@ -93,10 +96,10 @@ export function FindingCard({
         </div>
       )}
       {finding.suggestion && !editing && <div className="mt-2"><SuggestionPreview code={finding.suggestion} /></div>}
-      {finding.verdict === 'refuted' && (
+      {isLow(finding, threshold) && (
         <div className="mt-2 rounded-md border border-border bg-canvas px-3 py-2 text-xs text-fg-muted">
-          <p className="font-semibold">Refuted by both verifiers</p>
-          {finding.refutations.map((r) => <p key={r.lens}><span className="font-medium">{r.lens}:</span> {r.reasoning}</p>)}
+          <p className="font-semibold">Low confidence — scored {finding.score}, below {threshold}</p>
+          {finding.scoreReason && <p>{finding.scoreReason}</p>}
         </div>
       )}
       {!editing && (

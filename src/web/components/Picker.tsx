@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AppInfo } from '../api.js';
 import { parseTarget, relativeTime } from '../lib/format.js';
 import type { PullFilter, PullRequestSummary } from '../lib/types.js';
+import { Settings } from './Settings.js';
 import { Icon } from './icons.js';
 import { Avatar, Kbd, Label, Spinner } from './ui.js';
 
@@ -56,7 +57,8 @@ export function Picker({ app, repo, onOpen, onRepo }: {
     <div className="mx-auto flex h-full max-w-4xl flex-col px-4 py-8">
       <div className="mb-6 flex items-baseline gap-3">
         <h1 className="text-2xl font-semibold text-done">marrow</h1>
-        <p className="text-sm text-fg-muted">a large diff, abridged to what carries meaning</p>
+        <p className="flex-1 text-sm text-fg-muted">a large diff, abridged to what carries meaning</p>
+        <Settings shortcut={false} />
       </div>
       <div className="mb-3 flex items-center gap-2 text-sm">
         <Icon name="pr" className="text-fg-muted" />

@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test';
 import { formatCost, formatDuration, formatTokens, headlineTokens, usageRows } from '../../src/web/lib/usage.js';
 
-const p = (input: number) => ({ runs: 1, failed: 0, inputTokens: input, outputTokens: 10, cacheReadTokens: 50_000, cacheCreationTokens: 5, costUsd: 0, durationMs: 0 });
+const p = (input: number) => ({ runs: 1, running: 0, failed: 0, inputTokens: input, outputTokens: 10, cacheReadTokens: 50_000, cacheCreationTokens: 5, costUsd: 0, durationMs: 0, turns: 0, reads: 0 });
 
 test('tokens read as a person would say them', () => {
   expect(formatTokens(950)).toBe('950');
@@ -27,5 +27,15 @@ test('the headline leaves cache reads out', () => {
 });
 
 test('rows follow the pipeline order and skip passes that never ran', () => {
-  expect(usageRows({ verify: p(1), abridge: p(2) }).map((r) => r.label)).toEqual(['Abridge', 'Verify']);
+  expect(usageRows({ verify: p(1), abridge: p(2) }).map((r) => r.label)).toEqual(['Abridge', 'Score']);
+});
+
+test('a pass that cost nothing still gets a row, saying why', () => {
+  const rows = usageRows({ verify: p(1) }, { group: 'from cache' });
+  expect(rows.map((r) => [r.label, r.note])).toEqual([['Group', 'from cache'], ['Score', null]]);
+  expect(rows[0]!.usage.runs).toBe(0);
+});
+
+test('a note rides along with a pass that also spent something', () => {
+  expect(usageRows({ abridge: p(1) }, { abridge: '43 hunks from cache' })[0]!.note).toBe('43 hunks from cache');
 });

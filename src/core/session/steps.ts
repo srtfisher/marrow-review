@@ -17,7 +17,7 @@ const LABELS: Record<StepId, string> = {
   abridge: 'Abridge the diff',
   group: 'Group by intent',
   find: 'Review',
-  verify: 'Verify findings',
+  verify: 'Score findings',
 };
 
 export function initialSteps(): Step[] {
@@ -39,7 +39,8 @@ export function setStep(
       ...s,
       state,
       detail: detail === undefined ? s.detail : detail,
-      startedAt: state === 'running' ? now : s.startedAt,
+      // A running step is updated with progress; only a fresh start resets its clock.
+      startedAt: state === 'running' && s.state !== 'running' ? now : s.startedAt,
       finishedAt: state === 'running' || state === 'pending' ? null : now,
     };
   });

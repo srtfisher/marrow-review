@@ -1,16 +1,16 @@
 import type { StagedComment } from '../review/types.js';
-import type { VerifiedFinding } from './verify.js';
+import { isShown, type ScoredFinding } from './score.js';
 
 export type TriageState = 'pending' | 'accepted' | 'dropped';
 
-export interface TriagedFinding extends VerifiedFinding {
+export interface TriagedFinding extends ScoredFinding {
   state: TriageState;
   /** The reviewer's own wording, when they rewrote the model's. */
   editedBody: string | null;
   asSuggestion: boolean;
 }
 
-export function initTriage(findings: VerifiedFinding[]): TriagedFinding[] {
+export function initTriage(findings: ScoredFinding[]): TriagedFinding[] {
   return findings.map((f) => ({ ...f, state: 'pending', editedBody: null, asSuggestion: false }));
 }
 
@@ -54,12 +54,13 @@ export function toStagedComments(list: TriagedFinding[]): StagedComment[] {
 }
 
 /**
- * Refuted findings collapse out of the default view but are never deleted — if
- * the verifier was wrong, the reviewer has to be able to see that it was.
+ * Findings scored below the line collapse out of the default view but are never
+ * deleted — if the scorer was wrong, the reviewer has to be able to see that it was.
  */
 export function visibleFindings(
   list: TriagedFinding[],
-  showRefuted: boolean,
+  showLow: boolean,
+  threshold: number,
 ): TriagedFinding[] {
-  return showRefuted ? list : list.filter((f) => f.verdict !== 'refuted');
+  return showLow ? list : list.filter((f) => isShown(f, threshold));
 }

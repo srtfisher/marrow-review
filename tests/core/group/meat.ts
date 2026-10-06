@@ -17,6 +17,6 @@ export function meatOf(spec: Record<string, Array<[string, boolean]>>, summary =
   }));
   return {
     summary, files, keptLines: 0, totalLines: 0, keptAdditions: 0, keptDeletions: 0,
-    totalAdditions: 0, totalDeletions: 0, keptFiles: 0, totalFiles: files.length, unclassified: 0, classifierError: null,
+    totalAdditions: 0, totalDeletions: 0, keptFiles: 0, totalFiles: files.length, unclassified: 0, classifierError: null, classifierSkipped: false,
   };
 }

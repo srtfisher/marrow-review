@@ -5,11 +5,14 @@ import type { AgentTransport } from '../agent/types.js';
 import { parseUnifiedDiff } from '../diff/parse.js';
 import type { DiffFile } from '../diff/types.js';
 import { ask as askAgent, type ChatSession } from '../findings/chat.js';
+import type { FindingsCache } from '../findings/cache.js';
 import { runFindings } from '../findings/find.js';
 import {
   accept, drop, edit, initTriage, toggleSuggestion, toStagedComments, type TriagedFinding,
 } from '../findings/triage.js';
-import { runVerify, type VerifiedFinding } from '../findings/verify.js';
+import { filesToRead, readChangedFiles, type ReviewContext } from '../findings/context.js';
+import { anchorExcerpt, isScorable, runScore, type ScoredFinding } from '../findings/score.js';
+import { fetchFileHistory } from '../github/history.js';
 import { parseGeneratedPaths } from '../git/gitattributes.js';
 import type { RepoContext } from '../git/repo.js';
 import type { GitHubClient } from '../github/client.js';
@@ -18,27 +21,34 @@ import { fetchPullContext, type GraphQlFn } from '../github/graphql.js';
 import { submitReview, type ReviewSubmitter } from '../github/submit.js';
 import type { CheckRun, PullRequestDetail, ReviewThread } from '../github/types.js';
 import type { GroupCache } from '../group/cache.js';
-import { runGrouping } from '../group/index.js';
+import { groupByDirectory } from '../group/fallback.js';
+import { keptHunks, runGrouping } from '../group/index.js';
 import { layoutSections, type LayoutSection } from '../group/layout.js';
 import type { GroupingResult } from '../group/types.js';
 import type { VerdictCache } from '../meat/cache.js';
 import { computeMeat, type MeatResult } from '../meat/index.js';
 import { demoteUnanchorable } from '../review/anchors.js';
 import { buildReviewPayload } from '../review/payload.js';
-import { readConventions, type Effort } from '../review/rubric.js';
+import { readConventions, SCORE_THRESHOLD, type Effort } from '../review/rubric.js';
 import type { ReviewDraft, Side, StagedComment, Verdict } from '../review/types.js';
 import { blockedForAuthor, authorBlockReason } from '../review/verdicts.js';
 import { resolveSource, type ReviewSource, type SourceKind, type SourceRequest } from '../source/index.js';
 import { carryOver, type ReviewStore } from '../store/review.js';
+import type { PassSettings } from './passes.js';
 import { initialSteps, setStep, type Step, type StepId, type StepState } from './steps.js';
 
 export interface SessionConfig {
   model: string;
   meatModel: string;
+  /** The parallel reviewers; /code-review runs them on Sonnet. */
+  reviewModel: string;
+  /** Scoring one finding is narrow work, and there is one scorer per finding. */
+  verifyModel: string;
   effort: Effort;
   /** Team standards from `--standards`, already loaded. */
   standards: string;
   source: SourceRequest;
+  passes: PassSettings;
 }
 
 export interface SessionDeps {
@@ -50,6 +60,7 @@ export interface SessionDeps {
   store: Pick<ReviewStore, 'load' | 'save' | 'findPreviousHead' | 'clear'>;
   meatCache: VerdictCache;
   groupCache: GroupCache;
+  findingsCache: FindingsCache;
   /** A local clone of this pull request's repository, or null. */
   repo: RepoContext | null;
   viewer: string;
@@ -63,7 +74,8 @@ export interface Note {
   text: string;
 }
 
-export type FindingsStatus = 'idle' | 'finding' | 'verifying' | 'done' | 'failed';
+/** `off`: the find pass was switched off for this review, which is not the same as finding nothing. */
+export type FindingsStatus = 'idle' | 'finding' | 'verifying' | 'done' | 'failed' | 'off';
 
 export interface FindingsState {
   status: FindingsStatus;
@@ -98,6 +110,10 @@ export interface SessionSnapshot {
   loadError: string | null;
   /** What each model pass has spent so far. */
   usage: UsageReport;
+  /** Results reused from an earlier run instead of paid for again: how many reviewers, and how many scores. */
+  fromCache: { find: number; verify: number };
+  /** Findings scored below this fold into "Low confidence"; set by `--effort`. */
+  scoreThreshold: number;
   usageTotal: PassUsage;
 }
 
@@ -112,10 +128,10 @@ export function fileHash(file: DiffFile): string {
 
 /**
  * Carries the reviewer's decisions across a list that was replaced underneath
- * them — verification lands seconds after the findings do, and an accept made
+ * them — scores land seconds after the findings do, and an accept made
  * in between must survive it.
  */
-export function mergeTriage(current: TriagedFinding[], next: VerifiedFinding[]): TriagedFinding[] {
+export function mergeTriage(current: TriagedFinding[], next: ScoredFinding[]): TriagedFinding[] {
   const byId = new Map(current.map((f) => [f.id, f]));
   return next.map((f) => {
     const prev = byId.get(f.id);
@@ -198,6 +214,8 @@ export class ReviewSession {
       draft: EMPTY_DRAFT, viewed: {},
       chat: { session: { id: null, turns: [] }, pending: false },
       notes: [], submitted: null, loadError: null, usage: {}, usageTotal: totalUsage({}),
+      fromCache: { find: 0, verify: 0 },
+      scoreThreshold: SCORE_THRESHOLD[deps.config.effort],
     };
     this.meter = new UsageMeter((usage) => this.patch({ usage, usageTotal: totalUsage(usage) }));
   }
@@ -275,13 +293,18 @@ export class ReviewSession {
         model: deps.config.meatModel,
         prTitle: pr.title,
         prBody: pr.body,
+        classify: deps.config.passes.abridge,
       });
       const fileHashes = Object.fromEntries(meat.files.map((f) => [f.file.path, fileHash(f.file)]));
       this.patch({ meat, fileHashes, sections: layoutSections(meat, []) });
-      this.step('abridge', meat.classifierError ? 'failed' : 'done',
-        meat.classifierError
-          ? `${meat.unclassified} hunks kept unjudged — ${meat.classifierError.summary}`
-          : `kept ${meat.keptLines}/${meat.totalLines} lines`);
+      if (meat.classifierSkipped) {
+        this.step('abridge', 'skipped', `rules only — ${meat.unclassified} hunk${meat.unclassified === 1 ? '' : 's'} kept unjudged`);
+      } else {
+        this.step('abridge', meat.classifierError ? 'failed' : 'done',
+          meat.classifierError
+            ? `${meat.unclassified} hunks kept unjudged — ${meat.classifierError.summary}`
+            : `kept ${meat.keptLines}/${meat.totalLines} lines`);
+      }
 
       await this.restoreDraft(pr, meat).catch(() => {});
     } catch (error) {
@@ -290,7 +313,13 @@ export class ReviewSession {
     }
 
     void this.runGroup();
-    void this.runFind();
+    if (deps.config.passes.find) {
+      void this.runFind();
+    } else {
+      this.patch({ findings: { status: 'off', items: [], error: null } });
+      this.step('find', 'skipped', 'switched off');
+      this.step('verify', 'skipped', 'switched off');
+    }
   }
 
   private async restoreDraft(pr: PullRequestDetail, meat: MeatResult): Promise<void> {
@@ -314,6 +343,12 @@ export class ReviewSession {
   private async runGroup(): Promise<void> {
     const { pr, meat, owner, repo, number } = this.state;
     if (!pr || !meat || !this.source) return;
+    if (!this.deps.config.passes.group) {
+      const groups = groupByDirectory(keptHunks(meat));
+      this.patch({ grouping: { overallSummary: meat.summary, source: 'directory', error: null }, sections: layoutSections(meat, groups) });
+      this.step('group', 'skipped', 'switched off — grouped by directory');
+      return;
+    }
     this.step('group', 'running');
     const commits = await this.deps.client.listCommitSubjects(owner, repo, number);
     const result = await runGrouping({
@@ -332,21 +367,20 @@ export class ReviewSession {
     }
   }
 
-  private async runFind(): Promise<void> {
-    const { pr, meat, owner, repo } = this.state;
-    const source = this.source;
-    if (!pr || !meat || !source) return;
-    const run = ++this.findingsRun;
+  /**
+   * Everything the reviewers read, fetched once. Each piece degrades on its own: a
+   * failed history request leaves those reviewers nothing to do, not the review broken.
+   */
+  private async gatherContext(pr: PullInfo, meat: MeatResult, source: ReviewSource): Promise<ReviewContext> {
     const { deps } = this;
-
-    this.step('find', 'running');
-    this.step('verify', 'pending', null);
-    this.patch({ findings: { status: 'finding', items: [], error: null } });
-
-    const conventions = await readConventions((path) =>
-      readContent(deps.contents, owner, repo, path, pr.baseSha || pr.baseRef));
-    let failure: unknown = null;
-    const found = await runFindings(this.meter.transport('find', deps.transport), deps.config.model, {
+    const { owner, repo, number } = this.state;
+    const changed = meat.files.map((f) => f.file.path);
+    const [conventions, read, history] = await Promise.all([
+      readConventions((path) => readContent(deps.contents, owner, repo, path, pr.baseSha || pr.baseRef), changed),
+      readChangedFiles(filesToRead(meat), (path) => source.readHead(path)),
+      fetchFileHistory(deps.graphql, owner, repo, pr.baseSha, changed, number).catch(() => []),
+    ]);
+    return {
       prTitle: pr.title,
       prBody: pr.body,
       meat,
@@ -355,39 +389,97 @@ export class ReviewSession {
       effort: deps.config.effort,
       standards: deps.config.standards,
       conventions,
-    }, source.access, (e) => { failure = e; });
-    if (run !== this.findingsRun) return;
+      files: read.files,
+      omittedFiles: read.omitted,
+      history,
+    };
+  }
 
-    if (failure !== null) {
-      const error = describeAgentFailure(failure);
+  private async runFind(fresh = false): Promise<void> {
+    const { pr, meat } = this.state;
+    const source = this.source;
+    if (!pr || !meat || !source) return;
+    const run = ++this.findingsRun;
+    const { deps } = this;
+    const current = () => run === this.findingsRun;
+
+    this.step('find', 'running', 'gathering context');
+    this.step('verify', 'pending', null);
+    this.patch({ findings: { status: 'finding', items: [], error: null }, fromCache: { find: 0, verify: 0 } });
+
+    const ctx = await this.gatherContext(pr, meat, source);
+    if (!current()) return;
+    let lastError: unknown = null;
+    const result = await runFindings(this.meter.transport('find', deps.transport), deps.config.reviewModel, ctx, source.access, {
+      cache: deps.findingsCache,
+      fresh,
+      onError: (_lens, e) => { lastError = e; },
+      onProgress: (p) => {
+        if (current()) this.step('find', 'running', `${p.done}/${p.total} reviewers done${p.activity ? ` · ${p.activity}` : ''}`);
+      },
+    });
+    if (!current()) return;
+
+    if (result.ran.length > 0 && result.failed.length === result.ran.length) {
+      const error = describeAgentFailure(lastError);
       this.patch({ findings: { status: 'failed', items: [], error } });
       this.step('find', 'failed', error.summary);
       this.step('verify', 'skipped');
       return;
     }
+    if (result.failed.length > 0) {
+      this.note({ tone: 'info', text: `The ${result.failed.join(', ')} reviewer${result.failed.length === 1 ? '' : 's'} failed; findings from the others are shown.` });
+    }
 
-    const unverified = found.map((f) => ({ ...f, verdict: 'plausible' as const, refutations: [] }));
-    const absorbed = absorbAccepted(initTriage(unverified), this.state.draft);
-    this.patch({ draft: absorbed.draft, findings: { status: 'verifying', items: absorbed.findings, error: null } });
-    this.step('find', 'done', `${found.length} finding${found.length === 1 ? '' : 's'}`);
+    const found = result.findings;
+    const unscored = found.map((f) => ({ ...f, score: null, scoreReason: null }));
+    const absorbed = absorbAccepted(initTriage(unscored), this.state.draft);
+    this.patch({ draft: absorbed.draft, findings: { status: 'verifying', items: absorbed.findings, error: null }, fromCache: { find: result.cached, verify: 0 } });
+    const reused = result.cached > 0 ? ` · ${result.cached} from cache` : '';
+    this.step('find', 'done', `${found.length} finding${found.length === 1 ? '' : 's'} from ${result.ran.length} reviewer${result.ran.length === 1 ? '' : 's'}${reused}`);
 
-    if (found.length === 0) {
-      this.patch({ findings: { status: 'done', items: [], error: null } });
-      this.step('verify', 'skipped');
+    const toScore = found.filter(isScorable).length;
+    if (toScore === 0) {
+      this.patch({ findings: { ...this.state.findings, status: 'done' } });
+      this.step('verify', 'skipped', found.length === 0 ? null : 'only questions, which are not scored');
       return;
     }
 
-    this.step('verify', 'running');
-    const verified = await runVerify(this.meter.transport('verify', deps.transport), deps.config.model, found, source.access);
-    if (run !== this.findingsRun) return;
-    const items = mergeTriage(this.state.findings.items, verified);
-    this.patch({ findings: { status: 'done', items, error: null } });
-    const refuted = verified.filter((f) => f.verdict === 'refuted').length;
-    this.step('verify', 'done', refuted > 0 ? `${refuted} refuted` : 'nothing refuted');
+    if (!deps.config.passes.verify) {
+      this.patch({ findings: { ...this.state.findings, status: 'done' } });
+      this.step('verify', 'skipped', 'switched off — findings are unscored');
+      return;
+    }
+
+    this.step('verify', 'running', `0/${toScore} scored`);
+    const files = this.files;
+    const scored = await runScore(this.meter.transport('verify', deps.transport), deps.config.verifyModel, found, source.access, {
+      excerpt: (f) => anchorExcerpt(files, f),
+      conventions: ctx.conventions,
+      standards: ctx.standards,
+      cache: deps.findingsCache,
+      fresh,
+      onProgress: (done, total) => {
+        if (current()) this.step('verify', 'running', `${done}/${total} scored`);
+      },
+    });
+    if (!current()) return;
+    const items = mergeTriage(this.state.findings.items, scored.scored);
+    this.patch({ findings: { status: 'done', items, error: null }, fromCache: { ...this.state.fromCache, verify: scored.cached } });
+    const threshold = this.state.scoreThreshold;
+    const low = scored.scored.filter((f) => f.score !== null && f.score < threshold).length;
+    const failedScores = scored.scored.filter((f) => isScorable(f) && f.score === null).length;
+    const parts = [
+      low > 0 ? `${low} below ${threshold}` : `all at or above ${threshold}`,
+      ...(failedScores > 0 ? [`${failedScores} unscored`] : []),
+      ...(scored.cached > 0 ? [`${scored.cached} from cache`] : []),
+    ];
+    this.step('verify', failedScores === toScore ? 'failed' : 'done', parts.join(' · '));
   }
 
+  /** An explicit request for a fresh answer, so it skips the cache (and replaces what is there). */
   retryFindings(): void {
-    void this.runFind();
+    void this.runFind(true);
   }
 
   private persist(): void {

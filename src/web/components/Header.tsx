@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Theme } from '../hooks.js';
 import type { SessionSnapshot, Step } from '../lib/types.js';
-import { popoverAlign } from '../lib/popover.js';
 import { formatCost, formatDuration, formatTokens, headlineTokens, usageRows } from '../lib/usage.js';
 import { Icon } from './icons.js';
-import { Avatar, Button, Kbd, Label, Spinner } from './ui.js';
+import { Settings } from './Settings.js';
+import { Avatar, Button, Kbd, Label, Spinner, usePopover } from './ui.js';
 
 const STATE_PILL = {
   open: 'bg-success-emphasis text-white',
@@ -18,20 +18,10 @@ function elapsed(step: Step, now: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** Closes on an outside click, and picks the edge to hang from when it opens. */
-function usePopover(open: boolean, onClose: () => void, width: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [align, setAlign] = useState<'left' | 'right'>('left');
-  useEffect(() => {
-    if (!open) return;
-    const rect = ref.current?.getBoundingClientRect();
-    if (rect) setAlign(popoverAlign(rect.left, rect.right, width, window.innerWidth));
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
-    window.addEventListener('mousedown', close);
-    return () => window.removeEventListener('mousedown', close);
-  }, [open, onClose, width]);
-  const position = `${align === 'left' ? 'left-0' : 'right-0'} max-w-[calc(100vw-2rem)]`;
-  return { ref, position };
+/** Progress details read "21 files read · reading src/app.ts"; the header row only has room for the count. */
+function headline(detail: string | null): string {
+  const first = detail?.split(' · ')[0];
+  return first ? ` · ${first}` : '…';
 }
 
 function StepIcon({ step }: { step: Step }) {
@@ -56,7 +46,7 @@ export function StepList({ steps }: { steps: Step[] }) {
           <span className="mt-1"><StepIcon step={s} /></span>
           <div className="min-w-0 flex-1">
             <div className={s.state === 'pending' ? 'text-fg-muted' : ''}>{s.label}</div>
-            {s.detail && <div className="text-xs text-fg-muted">{s.detail}</div>}
+            {s.detail && <div className="text-xs text-fg-muted [overflow-wrap:anywhere]">{s.detail}</div>}
           </div>
           <span className="font-mono text-xs text-fg-muted">{elapsed(s, now)}</span>
         </li>
@@ -79,7 +69,7 @@ function Passes({ steps }: { steps: Step[] }) {
         className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs text-fg-muted hover:bg-btn-hover hover:text-fg"
         aria-expanded={open}
       >
-        {running ? <><Spinner size={12} />{running.label}…</>
+        {running ? <><Spinner size={12} /><span className="max-w-[16rem] truncate">{running.label}{headline(running.detail)}</span></>
           : failed.length > 0 ? <><Icon name="alert" size={12} className="text-attention" />{failed.length} pass{failed.length === 1 ? '' : 'es'} degraded</>
             : <><Icon name="checkCircle" size={12} className="text-success" />All passes done</>}
       </button>
@@ -94,11 +84,17 @@ function Passes({ steps }: { steps: Step[] }) {
 
 function Usage({ snapshot, open, onOpen }: { snapshot: SessionSnapshot; open: boolean; onOpen: (open: boolean) => void }) {
   const close = useCallback(() => onOpen(false), [onOpen]);
-  const { ref, position } = usePopover(open, close, 544);
+  const { ref, position } = usePopover(open, close, 640);
   const running = snapshot.steps.some((st) => st.state === 'running');
-  const rows = usageRows(snapshot.usage);
   const total = snapshot.usageTotal;
   const cached = snapshot.meat?.files.reduce((n, f) => n + f.hunks.filter((h) => h.source === 'cache').length, 0) ?? 0;
+  const grouped = snapshot.grouping?.source;
+  const rows = usageRows(snapshot.usage, {
+    ...(cached > 0 ? { abridge: `${cached} hunk${cached === 1 ? '' : 's'} from cache` } : {}),
+    ...(grouped === 'cache' ? { group: 'from cache' } : grouped === 'single' ? { group: 'small change, no call' } : {}),
+    ...(snapshot.fromCache?.find ? { find: `${snapshot.fromCache.find} reviewer${snapshot.fromCache.find === 1 ? '' : 's'} from cache` } : {}),
+    ...(snapshot.fromCache?.verify ? { verify: `${snapshot.fromCache.verify} score${snapshot.fromCache.verify === 1 ? '' : 's'} from cache` } : {}),
+  });
   const cell = 'px-2 py-1 text-right font-mono tabular-nums';
   return (
     <div className="relative" ref={ref}>
@@ -115,7 +111,7 @@ function Usage({ snapshot, open, onOpen }: { snapshot: SessionSnapshot; open: bo
         <Kbd>u</Kbd>
       </button>
       {open && (
-        <div className={`absolute top-full z-40 mt-1 w-[34rem] overflow-x-auto rounded-md border border-border bg-overlay p-3 shadow-xl ${position}`}>
+        <div className={`absolute top-full z-40 mt-1 w-[40rem] overflow-x-auto rounded-md border border-border bg-overlay p-3 shadow-xl ${position}`}>
           <h3 className="mb-2 text-sm font-semibold">Token usage</h3>
           {rows.length === 0 ? (
             <p className="text-sm text-fg-muted">{running ? 'A model call is running; its usage appears when it finishes.' : 'No model calls were made.'}</p>
@@ -125,6 +121,8 @@ function Usage({ snapshot, open, onOpen }: { snapshot: SessionSnapshot; open: bo
                 <tr className="border-b border-border">
                   <th className="px-2 py-1 text-left font-medium">Pass</th>
                   <th className="px-2 py-1 text-right font-medium">Runs</th>
+                  <th className="px-2 py-1 text-right font-medium" title="Model turns; each re-sends the conversation so far">Turns</th>
+                  <th className="px-2 py-1 text-right font-medium" title="Files the agent opened">Reads</th>
                   <th className="px-2 py-1 text-right font-medium">Input</th>
                   <th className="px-2 py-1 text-right font-medium">Output</th>
                   <th className="px-2 py-1 text-right font-medium" title="Context re-read from the prompt cache">Cache read</th>
@@ -133,10 +131,15 @@ function Usage({ snapshot, open, onOpen }: { snapshot: SessionSnapshot; open: bo
                 </tr>
               </thead>
               <tbody>
-                {[...rows, { label: 'Total', usage: total }].map(({ label, usage }) => (
+                {[...rows, { label: 'Total', usage: total, note: null }].map(({ label, usage, note }) => (
                   <tr key={label} className={label === 'Total' ? 'border-t border-border font-semibold' : ''}>
-                    <td className="px-2 py-1">{label}</td>
-                    <td className={cell}>{usage.runs}{usage.failed > 0 && <span className="text-attention" title={`${usage.failed} failed`}> ({usage.failed}✕)</span>}</td>
+                    <td className="px-2 py-1">{label}{note && <span className="block text-[11px] text-fg-muted">{note}</span>}</td>
+                    <td className={cell}>
+                      {usage.runs}{usage.failed > 0 && <span className="text-attention" title={`${usage.failed} failed`}> ({usage.failed}✕)</span>}
+                      {usage.running > 0 && <span className="inline-flex items-center gap-1 pl-1.5 text-fg-muted" title="Started; counted when each finishes"><Spinner size={10} />{usage.running}</span>}
+                    </td>
+                    <td className={cell}>{usage.turns ?? 0}</td>
+                    <td className={cell}>{usage.reads ?? 0}</td>
                     <td className={cell}>{formatTokens(usage.inputTokens + usage.cacheCreationTokens)}</td>
                     <td className={cell}>{formatTokens(usage.outputTokens)}</td>
                     <td className={`${cell} text-fg-muted`}>{formatTokens(usage.cacheReadTokens)}</td>
@@ -149,7 +152,7 @@ function Usage({ snapshot, open, onOpen }: { snapshot: SessionSnapshot; open: bo
           )}
           <p className="mt-2 text-xs text-fg-muted">
             {rows.length > 0 && running && <>Passes still running are counted when each call finishes. </>}
-            {cached > 0 && <>{cached} hunk{cached === 1 ? '' : 's'} came from the abridgement cache and cost nothing. </>}
+            {(cached > 0 || grouped === 'cache' || snapshot.fromCache?.find || snapshot.fromCache?.verify) && <>Anything from cache cost nothing; ⇧R runs the review fresh. </>}
             Time is summed per run, so passes that run in parallel add up past the wall clock.
             Cost is the API-equivalent estimate the agent SDK reports; a Claude Code subscription is not billed per token.
           </p>
@@ -171,18 +174,22 @@ function Gauge({ snapshot }: { snapshot: SessionSnapshot }) {
       <span>
         kept <span className="font-semibold text-fg">{meat.keptLines}/{meat.totalLines}</span> lines · {meat.keptFiles}/{meat.totalFiles} files
       </span>
-      {meat.unclassified > 0 && (
-        <Label tone="attention" title={meat.classifierError?.detail ?? ''}>{meat.unclassified} kept unjudged</Label>
-      )}
+      {meat.classifierSkipped
+        ? <Label title="The abridgement model was switched off; only the rules folded anything">rules only · {meat.unclassified} kept unjudged</Label>
+        : meat.unclassified > 0 && (
+          <Label tone="attention" title={meat.classifierError?.detail ?? ''}>{meat.unclassified} kept unjudged</Label>
+        )}
     </div>
   );
 }
 
 export function Header({
-  snapshot, theme, onTheme, onAsk, onSubmit, pending, onHome, usageOpen = false, onUsage = () => {},
+  snapshot, theme, onTheme, onAsk, onSubmit, pending, onHome, usageOpen = false, onUsage = () => {}, settingsOpen, onSettings,
 }: {
   usageOpen?: boolean;
   onUsage?: (open: boolean) => void;
+  settingsOpen?: boolean;
+  onSettings?: (open: boolean) => void;
   snapshot: SessionSnapshot;
   theme: Theme;
   onTheme: () => void;
@@ -234,6 +241,7 @@ export function Header({
           <Passes steps={snapshot.steps} />
           {/* An older server sends no usage; the page outlives a rebuild under it. */}
           {snapshot.usageTotal && <Usage snapshot={snapshot} open={usageOpen} onOpen={onUsage} />}
+          <Settings open={settingsOpen} onOpen={onSettings} />
         </div>
       )}
     </header>

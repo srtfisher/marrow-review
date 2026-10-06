@@ -298,3 +298,36 @@ test('splits the kept and total counters into additions and deletions', async ()
   expect(result.totalAdditions + result.totalDeletions).toBe(result.totalLines);
   expect(result.keptAdditions + result.keptDeletions).toBe(result.keptLines);
 });
+
+test('with the classifier off, rules still fold and the rest is kept unjudged without the model or the cache', async () => {
+  const files = parseUnifiedDiff(DIFF);
+  const transport = new FakeTransport();
+  const touched: string[] = [];
+  const cache = new MemoryVerdictCache();
+  await cache.set(hunkKey('src/app.ts', files.find((f) => f.path === 'src/app.ts')!.hunks[0]!), { keep: false, reason: 'cached drop' });
+  const spy = {
+    get: async (key: string) => { touched.push(`get ${key}`); return cache.get(key); },
+    set: async (key: string) => { touched.push(`set ${key}`); },
+  };
+
+  const result = await computeMeat({
+    files,
+    ruleContext: { generatedPaths: new Set() },
+    transport,
+    cache: spy,
+    model: 'sonnet',
+    prTitle: 'T',
+    prBody: '',
+    classify: false,
+  });
+
+  expect(transport.requests).toHaveLength(0);
+  expect(touched).toEqual([]);
+  expect(result.files.find((f) => f.file.path === 'pnpm-lock.yaml')!.hunks.every((h) => !h.keep && h.source === 'rule')).toBe(true);
+  const app = result.files.find((f) => f.file.path === 'src/app.ts')!;
+  expect(app.hunks[0]!.keep).toBe(true);
+  expect(app.hunks[0]!.reason).toBe('abridgement model off');
+  expect(result.classifierSkipped).toBe(true);
+  expect(result.classifierError).toBeNull();
+  expect(result.unclassified).toBeGreaterThan(0);
+});

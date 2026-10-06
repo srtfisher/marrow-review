@@ -13,6 +13,7 @@ import type { ReviewSubmitter } from './core/github/submit.js';
 import { parseGeneratedPaths } from './core/git/gitattributes.js';
 import { detectRepo, type RepoContext } from './core/git/repo.js';
 import { pruneWorktrees } from './core/git/worktree.js';
+import { FileFindingsCache } from './core/findings/cache.js';
 import { FileGroupCache } from './core/group/cache.js';
 import { FileVerdictCache } from './core/meat/cache.js';
 import { computeMeat } from './core/meat/index.js';
@@ -39,13 +40,20 @@ Usage:
   marrow --dry-run <number>   print the abridged diff, submit nothing
 
 Options:
-  --model <alias>       reasoning model (default: opus)
+  --model <alias>       Ask, and the tier the others step down from (default: opus)
   --meat-model <alias>  diff classifier and grouping (default: one tier below --model)
+  --review-model <m>    the five parallel reviewers (default: one tier below --model)
+  --verify-model <m>    the scorer, one call per finding (default: two tiers below --model)
   --source <s>          auto | checkout | worktree | api (default: auto)
-  --effort <e>          low | medium | high — how much the review reports (default: medium)
+  --effort <e>          low | medium | high — reviewer effort and the score shown (90/80/60; default: medium)
   --standards <dir>     your team's review rules: every .md/.yml file in <dir>
   --filter <f>          open | review-requested | all (default: open)
   --port <n>            listen on this port (default: any free port)
+  --no-abridge          abridge with the rules alone; no model classifier
+  --no-group            lay the diff out by directory instead of by intent
+  --no-find             skip Claude's review (and so its verification)
+  --no-verify           keep findings unscored: skip the 0-100 confidence scoring
+                        (all four can be changed for the next review in the page)
   --no-open             print the URL instead of opening a browser
   --use-api-key         allow ANTHROPIC_API_KEY; otherwise the Claude Code
                         subscription is used and the key is stripped
@@ -101,6 +109,7 @@ async function dryRun(args: CliArgs, client: GitHubClient, octokit: Octokit, own
     model: args.meatModel,
     prTitle: pr.title,
     prBody: pr.body,
+    classify: args.passes.abridge,
   });
   process.stdout.write(`${pr.title} #${pr.number} by ${pr.author}\n${pr.baseRef} <- ${pr.headRef}\n\n`);
   process.stdout.write(renderMeat(result));
@@ -161,9 +170,10 @@ async function main(): Promise<number> {
       version: MARROW_VERSION,
       filter: args.filter,
       initial: target && args.prNumber !== null ? { ...target, number: args.prNumber } : null,
+      passes: args.passes,
       listPulls: (owner, repo, filter) => client.listPulls(owner, repo, filter),
       extras: octokit,
-      createSession: (id, owner, repo, number) => new ReviewSession(id, owner, repo, number, {
+      createSession: (id, owner, repo, number, passes) => new ReviewSession(id, owner, repo, number, {
         client,
         graphql: (query, vars) => octokit.graphql(query, vars),
         contents: octokit as never,
@@ -172,9 +182,10 @@ async function main(): Promise<number> {
         store,
         meatCache: new FileVerdictCache(`${owner}/${repo}`),
         groupCache: new FileGroupCache(`${owner}/${repo}`),
+        findingsCache: new FileFindingsCache(`${owner}/${repo}`),
         repo: sameRepo(clone, owner, repo),
         viewer,
-        config: { model: args.model, meatModel: args.meatModel, effort: args.effort, standards, source: args.source },
+        config: { model: args.model, meatModel: args.meatModel, reviewModel: args.reviewModel, verifyModel: args.verifyModel, effort: args.effort, standards, source: args.source, passes },
       }),
     },
   });

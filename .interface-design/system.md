@@ -505,6 +505,27 @@ two sections. A file split across groups repeats its header with "also in".
 a shortfall is never presented as a judgment (`kept unjudged` beside the gauge); submit is
 `!`, never a letter beside the triage keys; leaving work unsubmitted is always visible.
 
+## Revision: scores, a passes panel, and live progress (0.5)
+
+The review became five reviewers and a scorer, and three things on the page changed with it.
+
+**A finding shows a score, not a verdict.** `score 85` in a label — green at 90 and above,
+yellow from the line up to 90, grey below it — with the scorer's reason as its title, and
+"via bugs, history" naming the reviewers that raised it. Below the line it folds into **Low
+confidence (N)**, the same never-deleted treatment refuted findings had; `v` opens it, and
+the card says what it scored and why. A question carries no score: there was nothing to be
+confident about.
+
+**Passes is a popover, and it changes the next review only.** Gear icon, `,` from the one
+keymap, four checkboxes with a one-line consequence each, and a footer saying an open
+review keeps its own settings. It sits with the token count because both are about what the
+review spends. Score greys out under Review rather than hiding: a control that vanishes
+reads as a bug.
+
+**Progress says what is happening, briefly.** The header shows the step and its count
+("Review · 3/5 reviewers done"); the overview line and the steps popover carry the rest
+("waiting on history"). A path once ran the header row into the controls beside it.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme. The one

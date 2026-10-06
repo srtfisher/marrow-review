@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { isShown } from '../lib/findings.js';
 import { SHORTCUTS } from '../lib/keymap.js';
 import type { SessionSnapshot, Verdict } from '../lib/types.js';
 import { Composer } from './Composer.js';
@@ -79,7 +80,7 @@ export function SubmitDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isAuthor = snapshot.pr?.viewerIsAuthor === true;
-  const pendingFindings = snapshot.findings.items.filter((f) => f.state === 'pending' && f.verdict !== 'refuted').length;
+  const pendingFindings = snapshot.findings.items.filter((f) => f.state === 'pending' && isShown(f, snapshot.scoreThreshold)).length;
 
   const submit = async () => {
     setBusy(true);

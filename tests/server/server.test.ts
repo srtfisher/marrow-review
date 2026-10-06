@@ -2,6 +2,7 @@ import { test, expect, describe, afterEach } from 'bun:test';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ALL_PASSES, type PassSettings } from '../../src/core/session/passes.js';
 import { ReviewSession } from '../../src/core/session/session.js';
 import { startServer, type AppContext, type RunningServer } from '../../src/server/index.js';
 import { deps } from '../core/session/fixtures.js';
@@ -13,11 +14,11 @@ function app(over: Partial<AppContext> = {}): AppContext & { created: number } {
   const ctx = {
     created: 0,
     repo: { root: '/clone', owner: 'o', repo: 'r' },
-    viewer: 'me', version: '0.0.0', filter: 'open' as const, initial: null,
+    viewer: 'me', version: '0.0.0', filter: 'open' as const, initial: null, passes: ALL_PASSES,
     listPulls: async () => [{ number: 42, title: 'T', author: 'a', state: 'open' as const, isDraft: false, headSha: 's', baseRef: 'main', headRef: 'f', updatedAt: 'now', htmlUrl: '' }],
-    createSession: (id: string, owner: string, repo: string, number: number) => {
+    createSession: (id: string, owner: string, repo: string, number: number, passes: PassSettings) => {
       ctx.created += 1;
-      return new ReviewSession(id, owner, repo, number, deps());
+      return new ReviewSession(id, owner, repo, number, deps({ config: { ...deps().config, passes } }));
     },
     extras: { request: async (route: string) => ({ data: route === 'GET /emojis' ? { tada: 'https://x/tada.png' } : '<p>hi</p>' }) },
     ...over,
@@ -64,6 +65,32 @@ describe('startServer', () => {
     const b = await open();
     expect(a.id).toBe(b.id);
     expect(ctx.created).toBe(1);
+  });
+
+  test('changed pass settings reach the next review, not one already open', async () => {
+    const { call } = await start();
+    const open = (number: number) => call('/api/sessions', { method: 'POST', body: JSON.stringify({ number }) }).then((r) => r.json() as Promise<{ id: string }>);
+    const status = async (id: string) => {
+      let snap = await (await call(`/api/sessions/${id}`)).json() as { findings: { status: string } };
+      for (let i = 0; i < 50 && !['done', 'off', 'failed'].includes(snap.findings.status); i += 1) {
+        await new Promise((r) => setTimeout(r, 5));
+        snap = await (await call(`/api/sessions/${id}`)).json() as typeof snap;
+      }
+      return snap.findings.status;
+    };
+    const before = await open(42);
+    const res = await call('/api/settings', { method: 'PUT', body: JSON.stringify({ passes: { ...ALL_PASSES, find: false } }) });
+    expect(res.status).toBe(200);
+    expect(((await (await call('/api/app')).json()) as { passes: PassSettings }).passes.find).toBe(false);
+    const after = await open(43);
+    expect(await status(before.id)).toBe('done');
+    expect(await status(after.id)).toBe('off');
+  });
+
+  test('refuses pass settings that are not four booleans', async () => {
+    const { call } = await start();
+    const res = await call('/api/settings', { method: 'PUT', body: JSON.stringify({ passes: { abridge: 'no' } }) });
+    expect(res.status).toBe(400);
   });
 
   test('serves a snapshot and accepts triage and draft edits', async () => {

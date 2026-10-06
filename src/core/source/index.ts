@@ -14,6 +14,13 @@ export interface AgentAccess {
   cwd: string;
   allowedTools: string[];
   tools: AgentTool[];
+  /** Denied on top of `DENIED_TOOLS`: in API mode, the local file tools, which would read an empty directory. */
+  deniedTools?: readonly string[];
+}
+
+/** The deny list for a run with this access. */
+export function deniedFor(access: AgentAccess): string[] {
+  return [...DENIED_TOOLS, ...(access.deniedTools ?? [])];
 }
 
 export interface ReviewSource {
@@ -89,7 +96,7 @@ export async function apiSource(api: ContentsApi, pr: PullRef): Promise<ReviewSo
   return {
     kind: 'api',
     canSearch: false,
-    access: { cwd, allowedTools: API_TOOL_NAMES.map(toolName), tools: apiTools(api, pr) },
+    access: { cwd, allowedTools: API_TOOL_NAMES.map(toolName), tools: apiTools(api, pr), deniedTools: READ_ONLY_TOOLS },
     readHead: (path) => readContent(api, pr.owner, pr.repo, path, pr.headSha),
   };
 }

@@ -3,10 +3,12 @@ import { EMPTY_USAGE } from '../../../src/core/agent/types.js';
 import { join } from 'node:path';
 import type { AgentRequest, AgentRun, AgentTransport } from '../../../src/core/agent/types.js';
 import { FINDINGS_SCHEMA } from '../../../src/core/findings/schema.js';
-import { VERIFY_SCHEMA } from '../../../src/core/findings/verify.js';
+import { SCORE_SCHEMA } from '../../../src/core/findings/score.js';
 import type { PullRequestDetail } from '../../../src/core/github/types.js';
+import { MemoryFindingsCache } from '../../../src/core/findings/cache.js';
 import { MemoryGroupCache } from '../../../src/core/group/cache.js';
 import { MemoryVerdictCache } from '../../../src/core/meat/cache.js';
+import { ALL_PASSES } from '../../../src/core/session/passes.js';
 import { ReviewSession, type SessionDeps } from '../../../src/core/session/session.js';
 import { readOnlyAccess, type ResolvedSource } from '../../../src/core/source/index.js';
 import type { PersistedReview } from '../../../src/core/store/review.js';
@@ -33,7 +35,7 @@ export class RoutingTransport implements AgentTransport {
       if (this.fail) throw new Error('rate limited');
       return run({ findings: this.findings });
     }
-    if (req.schema === VERIFY_SCHEMA) return run({ refuted: false, reasoning: 'holds' });
+    if (req.schema === SCORE_SCHEMA) return run({ score: 90, reason: 'holds' });
     if (req.schema) return run({ summary: 'Handles server errors.', verdicts: [] });
     return { ...run(null), text: 'An answer.', sessionId: 'chat-1' };
   }
@@ -73,9 +75,10 @@ export function deps(over: Partial<SessionDeps> = {}): SessionDeps & { submitted
     store: new MemoryStore(),
     meatCache: new MemoryVerdictCache(),
     groupCache: new MemoryGroupCache(),
+    findingsCache: new MemoryFindingsCache(),
     repo: null,
     viewer: 'me',
-    config: { model: 'opus', meatModel: 'sonnet', effort: 'medium', standards: '', source: 'auto' },
+    config: { model: 'opus', meatModel: 'sonnet', reviewModel: 'sonnet', verifyModel: 'haiku', effort: 'medium', standards: '', source: 'auto', passes: ALL_PASSES },
     resolveSource: async () => resolved,
     ...over,
   };
@@ -84,7 +87,7 @@ export function deps(over: Partial<SessionDeps> = {}): SessionDeps & { submitted
 export async function settle(session: ReviewSession): Promise<void> {
   for (let i = 0; i < 50; i += 1) {
     const s = session.snapshot();
-    if (s.loadError || (s.findings.status === 'done' || s.findings.status === 'failed') && s.grouping) return;
+    if (s.loadError || (s.findings.status === 'done' || s.findings.status === 'failed' || s.findings.status === 'off') && s.grouping) return;
     await new Promise((r) => setTimeout(r, 2));
   }
   throw new Error('session never settled');

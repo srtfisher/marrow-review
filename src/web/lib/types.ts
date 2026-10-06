@@ -2,6 +2,7 @@ export type {
   FindingsState, Note, PullInfo, SessionSnapshot, TriageAction,
 } from '../../core/session/session.js';
 export type { Step } from '../../core/session/steps.js';
+export type { PassSettings } from '../../core/session/passes.js';
 export type { MeatFile, MeatHunk, MeatResult } from '../../core/meat/index.js';
 export type { LayoutFile, LayoutSection } from '../../core/group/layout.js';
 export type { GroupCategory } from '../../core/group/types.js';

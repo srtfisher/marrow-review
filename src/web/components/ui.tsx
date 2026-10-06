@@ -1,8 +1,9 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { renderMarkdown } from '../api.js';
 import { useMarkdown } from '../hooks.js';
 import { ariaKey, keyLabel, type Action } from '../lib/keymap.js';
+import { popoverAlign } from '../lib/popover.js';
 import { Icon, type IconName } from './icons.js';
 
 export function Kbd({ children }: { children: string }) {
@@ -100,4 +101,20 @@ export function Donut({ done, total, size = 14 }: { done: number; total: number;
       />
     </svg>
   );
+}
+
+/** Closes on an outside click, and picks the edge to hang from when it opens. */
+export function usePopover(open: boolean, onClose: () => void, width: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [align, setAlign] = useState<'left' | 'right'>('left');
+  useEffect(() => {
+    if (!open) return;
+    const rect = ref.current?.getBoundingClientRect();
+    if (rect) setAlign(popoverAlign(rect.left, rect.right, width, window.innerWidth));
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [open, onClose, width]);
+  const position = `${align === 'left' ? 'left-0' : 'right-0'} max-w-[calc(100vw-2rem)]`;
+  return { ref, position };
 }

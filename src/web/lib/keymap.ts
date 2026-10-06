@@ -1,8 +1,8 @@
 export type Action =
   | 'down' | 'up' | 'nextFile' | 'prevFile' | 'nextGroup' | 'prevGroup' | 'nextFinding' | 'prevFinding'
   | 'comment' | 'range' | 'suggest' | 'accept' | 'edit' | 'drop'
-  | 'reveal' | 'revealAll' | 'fullDiff' | 'sidebar' | 'threads' | 'refuted' | 'viewed'
-  | 'ask' | 'openGithub' | 'help' | 'submit' | 'retry' | 'usage' | 'escape';
+  | 'reveal' | 'revealAll' | 'fullDiff' | 'sidebar' | 'threads' | 'lowConfidence' | 'viewed'
+  | 'ask' | 'openGithub' | 'help' | 'submit' | 'retry' | 'usage' | 'settings' | 'escape';
 
 export interface Shortcut {
   key: string;
@@ -29,7 +29,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { key: 'a', label: 'a', action: 'accept', description: 'Accept the finding at the cursor', group: 'Findings' },
   { key: 'e', label: 'e', action: 'edit', description: 'Edit the finding at the cursor', group: 'Findings' },
   { key: 'x', label: 'x', action: 'drop', description: 'Drop the finding at the cursor', group: 'Findings' },
-  { key: 'v', label: 'v', action: 'refuted', description: 'Show refuted findings', group: 'Findings' },
+  { key: 'v', label: 'v', action: 'lowConfidence', description: 'Show findings scored below the line', group: 'Findings' },
   { key: 'R', label: '⇧R', action: 'retry', description: 'Run the review pass again', group: 'Findings' },
   { key: 'z', label: 'z', action: 'reveal', description: 'Reveal folded hunks in this file', group: 'View' },
   { key: 'Z', label: '⇧Z', action: 'revealAll', description: 'Reveal everything folded', group: 'View' },
@@ -40,6 +40,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { key: 'i', label: 'i', action: 'ask', description: 'Ask Claude about this code', group: 'Review' },
   { key: 'o', label: 'o', action: 'openGithub', description: 'Open on GitHub', group: 'Review' },
   { key: 'u', label: 'u', action: 'usage', description: 'Token usage by pass', group: 'Review' },
+  { key: ',', label: ',', action: 'settings', description: 'Model passes for the next review', group: 'Review' },
   { key: '?', label: '?', action: 'help', description: 'Keyboard shortcuts', group: 'Review' },
   { key: '!', label: '!', action: 'submit', description: 'Review changes', group: 'Review' },
 ];

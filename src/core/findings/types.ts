@@ -1,5 +1,6 @@
 import type { FindingType } from '../review/rubric.js';
 import type { Side } from '../review/types.js';
+import type { ReviewLens } from './lenses.js';
 
 export type Severity = 'blocking' | 'non-blocking';
 export type Confidence = 'high' | 'medium' | 'low';
@@ -22,6 +23,9 @@ export interface Finding {
   confidence: Confidence;
   /** Replacement code for a GitHub suggestion block, when the model offered one. */
   suggestion: string | null;
+  /** The reviewers that raised it; more than one when the same point was merged. */
+  lenses: ReviewLens[];
 }
 
-export type RawFinding = Omit<Finding, 'id'>;
+/** What a reviewer returns, before it is given an id and attributed to its lens. */
+export type RawFinding = Omit<Finding, 'id' | 'lenses'>;

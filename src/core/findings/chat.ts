@@ -1,6 +1,6 @@
 import { describeAgentFailure } from '../agent/errors.js';
 import type { AgentTransport } from '../agent/types.js';
-import { DENIED_TOOLS, type AgentAccess } from '../source/index.js';
+import { deniedFor, type AgentAccess } from '../source/index.js';
 
 export interface ChatTurn {
   role: 'user' | 'agent';
@@ -52,7 +52,7 @@ export async function ask(
       systemPrompt: CHAT_SYSTEM_PROMPT,
       prompt: context && !session.id ? `${context}\n\nQuestion: ${question}` : question,
       allowedTools: access.allowedTools,
-      disallowedTools: [...DENIED_TOOLS],
+      disallowedTools: deniedFor(access),
       tools: access.tools,
       ...(session.id ? { resume: session.id } : {}),
     });
