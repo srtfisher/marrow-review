@@ -71,6 +71,16 @@ jobs:
       - run: npm run e2e
         working-directory: desktop
 
+      # The same packaging the release runs, so a break shows up here and not
+      # on a tag; the zips are kept for trying a branch.
+      - run: scripts/package.sh arm64 && scripts/package.sh x64
+        working-directory: desktop
+      - uses: actions/upload-artifact@v7
+        with:
+          name: marrow-mac
+          path: desktop/out/*.zip
+          retention-days: 14
+
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
