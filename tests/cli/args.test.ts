@@ -14,8 +14,36 @@ test('parses a bare PR number', () => {
   expect(parseArgs(['42']).prNumber).toBe(42);
 });
 
-test('parses a PR URL', () => {
-  expect(parseArgs(['https://github.com/octocat/marrow/pull/42']).prNumber).toBe(42);
+test('parses a PR URL, keeping the repository it names', () => {
+  const args = parseArgs(['https://github.com/octocat/marrow/pull/42']);
+  expect(args.prNumber).toBe(42);
+  expect(args.prRepo).toEqual({ owner: 'octocat', repo: 'marrow' });
+});
+
+test('parses an owner/repo#number reference', () => {
+  expect(parseArgs(['octocat/marrow#7']).prRepo).toEqual({ owner: 'octocat', repo: 'marrow' });
+});
+
+test('a bare number names no repository', () => {
+  expect(parseArgs(['42']).prRepo).toBeNull();
+});
+
+test('the server opens the browser on a port the OS picks unless told otherwise', () => {
+  expect(parseArgs([]).open).toBe(true);
+  expect(parseArgs([]).port).toBe(0);
+  const args = parseArgs(['--no-open', '--port', '4321']);
+  expect(args.open).toBe(false);
+  expect(args.port).toBe(4321);
+});
+
+test('source and effort accept only their own values', () => {
+  expect(parseArgs(['--source', 'api', '--effort', 'high'])).toMatchObject({ source: 'api', effort: 'high' });
+  expect(() => parseArgs(['--source', 'ftp'])).toThrow('--source must be one of');
+  expect(() => parseArgs(['--effort', 'max'])).toThrow('--effort must be one of');
+});
+
+test('an unknown filter is refused rather than passed to GitHub', () => {
+  expect(() => parseArgs(['--filter', 'mine'])).toThrow('--filter must be one of');
 });
 
 test('--model shifts the meat model down a tier', () => {
@@ -38,18 +66,6 @@ test('parses flags', () => {
 
 test('haiku stays at haiku', () => {
   expect(tierBelow('haiku')).toBe('haiku');
-});
-
-test('highlights by default, and --no-highlight turns it off', () => {
-  // On by default because reading code is what the tool is for; off because
-  // some terminals and colour schemes it cannot see will fight it.
-  expect(parseArgs([]).highlight).toBe(true);
-  expect(parseArgs(['--no-highlight']).highlight).toBe(false);
-});
-
-test('honours NO_COLOR, which is not marrow to argue with', () => {
-  expect(parseArgs([], { NO_COLOR: '1' }).highlight).toBe(false);
-  expect(parseArgs([], { NO_COLOR: '' }).highlight).toBe(true);
 });
 
 test('rejects an unknown flag with a clear message', () => {

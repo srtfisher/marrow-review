@@ -1,0 +1,306 @@
+@import 'tailwindcss';
+
+/* Primer's light and dark palettes, swapped by data-theme or the OS setting. */
+:root {
+  color-scheme: light;
+  --gh-canvas: #ffffff;
+  --gh-canvas-subtle: #f6f8fa;
+  --gh-canvas-inset: #f6f8fa;
+  --gh-overlay: #ffffff;
+  --gh-border: #d0d7de;
+  --gh-border-muted: #d8dee4;
+  --gh-fg: #1f2328;
+  --gh-fg-muted: #656d76;
+  --gh-accent: #0969da;
+  --gh-accent-emphasis: #0969da;
+  --gh-accent-subtle: #ddf4ff;
+  --gh-success: #1a7f37;
+  --gh-success-emphasis: #1f883d;
+  --gh-success-emphasis-hover: #1a7f37;
+  --gh-success-subtle: #dafbe1;
+  --gh-danger: #d1242f;
+  --gh-danger-subtle: #ffebe9;
+  --gh-attention: #9a6700;
+  --gh-attention-subtle: #fff8c5;
+  --gh-done: #8250df;
+  --gh-done-subtle: #fbefff;
+  --gh-neutral-muted: rgb(175 184 193 / 0.2);
+  --gh-btn: #f6f8fa;
+  --gh-btn-hover: #eff2f5;
+  --gh-diff-add: #dafbe1;
+  --gh-diff-add-num: #ccffd8;
+  --gh-diff-add-word: #abf2bc;
+  --gh-diff-del: #ffebe9;
+  --gh-diff-del-num: #ffd7d5;
+  --gh-diff-hunk: #ddf4ff;
+  --gh-diff-selected: #fff8c5;
+  --gh-diff-selected-num: #fae17d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --gh-canvas: #0d1117;
+    --gh-canvas-subtle: #161b22;
+    --gh-canvas-inset: #010409;
+    --gh-overlay: #161b22;
+    --gh-border: #30363d;
+    --gh-border-muted: #21262d;
+    --gh-fg: #e6edf3;
+    --gh-fg-muted: #8d96a0;
+    --gh-accent: #4493f8;
+    --gh-accent-emphasis: #1f6feb;
+    --gh-accent-subtle: rgb(56 139 253 / 0.1);
+    --gh-success: #3fb950;
+    --gh-success-emphasis: #238636;
+    --gh-success-emphasis-hover: #2ea043;
+    --gh-success-subtle: rgb(46 160 67 / 0.15);
+    --gh-danger: #f85149;
+    --gh-danger-subtle: rgb(248 81 73 / 0.1);
+    --gh-attention: #d29922;
+    --gh-attention-subtle: rgb(187 128 9 / 0.15);
+    --gh-done: #a371f7;
+    --gh-done-subtle: rgb(163 113 247 / 0.15);
+    --gh-neutral-muted: rgb(110 118 129 / 0.4);
+    --gh-btn: #21262d;
+    --gh-btn-hover: #30363d;
+    --gh-diff-add: rgb(46 160 67 / 0.15);
+    --gh-diff-add-num: rgb(63 185 80 / 0.3);
+    --gh-diff-add-word: rgb(46 160 67 / 0.4);
+    --gh-diff-del: rgb(248 81 73 / 0.1);
+    --gh-diff-del-num: rgb(248 81 73 / 0.3);
+    --gh-diff-hunk: rgb(56 139 253 / 0.1);
+    --gh-diff-selected: rgb(187 128 9 / 0.15);
+    --gh-diff-selected-num: rgb(187 128 9 / 0.4);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --gh-canvas: #0d1117;
+  --gh-canvas-subtle: #161b22;
+  --gh-canvas-inset: #010409;
+  --gh-overlay: #161b22;
+  --gh-border: #30363d;
+  --gh-border-muted: #21262d;
+  --gh-fg: #e6edf3;
+  --gh-fg-muted: #8d96a0;
+  --gh-accent: #4493f8;
+  --gh-accent-emphasis: #1f6feb;
+  --gh-accent-subtle: rgb(56 139 253 / 0.1);
+  --gh-success: #3fb950;
+  --gh-success-emphasis: #238636;
+  --gh-success-emphasis-hover: #2ea043;
+  --gh-success-subtle: rgb(46 160 67 / 0.15);
+  --gh-danger: #f85149;
+  --gh-danger-subtle: rgb(248 81 73 / 0.1);
+  --gh-attention: #d29922;
+  --gh-attention-subtle: rgb(187 128 9 / 0.15);
+  --gh-done: #a371f7;
+  --gh-done-subtle: rgb(163 113 247 / 0.15);
+  --gh-neutral-muted: rgb(110 118 129 / 0.4);
+  --gh-btn: #21262d;
+  --gh-btn-hover: #30363d;
+  --gh-diff-add: rgb(46 160 67 / 0.15);
+  --gh-diff-add-num: rgb(63 185 80 / 0.3);
+  --gh-diff-add-word: rgb(46 160 67 / 0.4);
+  --gh-diff-del: rgb(248 81 73 / 0.1);
+  --gh-diff-del-num: rgb(248 81 73 / 0.3);
+  --gh-diff-hunk: rgb(56 139 253 / 0.1);
+  --gh-diff-selected: rgb(187 128 9 / 0.15);
+  --gh-diff-selected-num: rgb(187 128 9 / 0.4);
+}
+
+@theme {
+  --breakpoint-3xl: 110rem;
+}
+
+@theme inline {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --color-canvas: var(--gh-canvas);
+  --color-canvas-subtle: var(--gh-canvas-subtle);
+  --color-canvas-inset: var(--gh-canvas-inset);
+  --color-overlay: var(--gh-overlay);
+  --color-border: var(--gh-border);
+  --color-border-muted: var(--gh-border-muted);
+  --color-fg: var(--gh-fg);
+  --color-fg-muted: var(--gh-fg-muted);
+  --color-accent: var(--gh-accent);
+  --color-accent-emphasis: var(--gh-accent-emphasis);
+  --color-accent-subtle: var(--gh-accent-subtle);
+  --color-success: var(--gh-success);
+  --color-success-emphasis: var(--gh-success-emphasis);
+  --color-success-emphasis-hover: var(--gh-success-emphasis-hover);
+  --color-success-subtle: var(--gh-success-subtle);
+  --color-danger: var(--gh-danger);
+  --color-danger-subtle: var(--gh-danger-subtle);
+  --color-attention: var(--gh-attention);
+  --color-attention-subtle: var(--gh-attention-subtle);
+  --color-done: var(--gh-done);
+  --color-done-subtle: var(--gh-done-subtle);
+  --color-neutral-muted: var(--gh-neutral-muted);
+  --color-btn: var(--gh-btn);
+  --color-btn-hover: var(--gh-btn-hover);
+  --color-diff-add: var(--gh-diff-add);
+  --color-diff-add-num: var(--gh-diff-add-num);
+  --color-diff-del: var(--gh-diff-del);
+  --color-diff-del-num: var(--gh-diff-del-num);
+  --color-diff-hunk: var(--gh-diff-hunk);
+  --color-diff-selected: var(--gh-diff-selected);
+  --color-diff-selected-num: var(--gh-diff-selected-num);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--gh-canvas);
+  color: var(--gh-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A subset of GitHub's markdown-body styles for comment HTML rendered by GitHub. */
+.markdown-body {
+  overflow-wrap: break-word;
+  > :first-child {
+    margin-top: 0;
+  }
+  > :last-child {
+    margin-bottom: 0;
+  }
+  p,
+  ul,
+  ol,
+  blockquote,
+  pre,
+  table,
+  details {
+    margin: 0 0 16px;
+  }
+  a {
+    color: var(--gh-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2rem;
+  }
+  ul {
+    list-style: disc;
+    padding-left: 2em;
+  }
+  ol {
+    list-style: decimal;
+    padding-left: 2em;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 24px 0 16px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  h1 {
+    font-size: 2em;
+  }
+  h2 {
+    font-size: 1.5em;
+  }
+  h3 {
+    font-size: 1.25em;
+  }
+  code {
+    padding: 0.2em 0.4em;
+    font-family: var(--font-mono);
+    font-size: 85%;
+    background: var(--gh-neutral-muted);
+    border-radius: 6px;
+  }
+  pre {
+    padding: 16px;
+    overflow: auto;
+    font-size: 85%;
+    line-height: 1.45;
+    background: var(--gh-canvas-subtle);
+    border-radius: 6px;
+    code {
+      padding: 0;
+      background: transparent;
+      font-size: 100%;
+    }
+  }
+  blockquote {
+    padding: 0 1em;
+    color: var(--gh-fg-muted);
+    border-left: 0.25em solid var(--gh-border);
+  }
+  img {
+    max-width: 100%;
+  }
+  table {
+    border-collapse: collapse;
+    td,
+    th {
+      padding: 6px 13px;
+      border: 1px solid var(--gh-border);
+    }
+  }
+  .user-mention,
+  .team-mention {
+    font-weight: 600;
+    color: var(--gh-fg);
+    text-decoration: none;
+  }
+  .blob-code-deletion {
+    background: var(--gh-diff-del);
+  }
+  .blob-code-addition {
+    background: var(--gh-diff-add);
+  }
+  .blob-code-inner {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    padding: 0 8px;
+  }
+}
+
+/* Shiki emits both themes as variables; the active one follows the page theme. */
+.shiki-token {
+  color: var(--shiki-light);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .shiki-token {
+    color: var(--shiki-dark);
+  }
+}
+:root[data-theme='dark'] .shiki-token {
+  color: var(--shiki-dark);
+}
+
+.markdown-body img.emoji {
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.2em;
+}
+
+/* The cursor row: GitHub's selected-line yellow, with an accent edge so it reads at a glance. */
+tr[data-cursor] > td:first-child {
+  box-shadow: inset 3px 0 0 var(--gh-accent-emphasis);
+}
+
+@keyframes marrow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: marrow-spin 0.8s linear infinite;
+}

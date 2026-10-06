@@ -1,29 +1,42 @@
 module.exports = {
   forbidden: [
     {
-      name: 'core-must-not-import-ui',
+      name: 'core-must-not-import-ui-or-http',
       severity: 'error',
-      comment: 'src/core must stay UI-free so it can back a non-terminal frontend later.',
+      comment: 'src/core is the library every frontend shares: no UI, no HTTP server.',
       from: { path: '^src/core' },
-      // Path boundaries matter: an unanchored '^src/tui' also matches a future
-      // 'src/tuition', which would report a violation against non-UI code and
-      // teach everyone to ignore this rule. Verified both directions.
-      to: { path: '^(src/tui(/|$)|node_modules/(ink|ink-text-input|ink-spinner|react)(/|$))' },
+      // Path boundaries matter: an unanchored '^src/web' also matches a future
+      // 'src/webhooks', which would report a violation against non-UI code and
+      // teach everyone to ignore this rule.
+      to: { path: '^(src/(web|server|cli)(/|$)|node_modules/(react|react-dom)(/|$))' },
+    },
+    {
+      name: 'server-must-not-import-web',
+      severity: 'error',
+      comment: 'The server serves the built page; it never imports its source.',
+      from: { path: '^src/server' },
+      to: { path: '^src/web(/|$)' },
+    },
+    {
+      name: 'web-imports-core-types-only',
+      severity: 'error',
+      comment: 'The page runs in a browser: it may share core types, never core code.',
+      from: { path: '^src/web' },
+      to: { path: '^src/(core|server|cli)(/|$)', dependencyTypesNot: ['type-only'] },
     },
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    tsConfig: { fileName: 'tsconfig.json' },
-    // Without these, an ESM-only package that ships an `exports` map — Ink is
-    // exactly this — comes back `couldNotResolve`, and a rule that names it can
-    // never fire. The guard then reports "no violations" for `src/core`
-    // importing Ink directly, which is worse than having no guard at all.
-    // Verified: with these options a core -> ink import is reported as an error;
-    // without them it passes silently.
+    tsConfig: { fileName: 'tsconfig.web.json' },
+    tsPreCompilationDeps: true,
+    // Without these, an ESM-only package that ships an `exports` map comes back
+    // `couldNotResolve`, and a rule that names it can never fire — the guard
+    // then reports "no violations" for exactly the import it exists to catch.
     enhancedResolveOptions: {
       exportsFields: ['exports'],
       conditionNames: ['import', 'node', 'default'],
       mainFields: ['module', 'main'],
+      extensions: ['.ts', '.tsx', '.js'],
     },
   },
 };
