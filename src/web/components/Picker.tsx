@@ -169,10 +169,12 @@ function PullRow({ pull: p, where, active, onHover, onOpen }: {
         <Icon name="pr" className={`mt-0.5 ${p.isDraft ? 'text-fg-muted' : p.state === 'merged' ? 'text-done' : p.state === 'closed' ? 'text-danger' : 'text-success'}`} />
         <div className="min-w-0 flex-1">
           <p className="font-semibold">{p.title} {p.isDraft && <Label>Draft</Label>}</p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-fg-muted">
-            {where && <span className="font-semibold text-fg">{where}</span>}
-            #{p.number} · <Avatar login={p.author} size={14} />{p.author} · updated {relativeTime(p.updatedAt)}
-            <span className="font-mono">· {p.headRef}</span>
+          <p className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
+            {where && <span className="shrink-0 font-semibold text-fg">{where}</span>}
+            <span className="flex shrink-0 items-center gap-1.5">
+              #{p.number} · <Avatar login={p.author} size={14} />{p.author} · updated {relativeTime(p.updatedAt)} ·
+            </span>
+            <span className="min-w-0 truncate font-mono" title={p.headRef}>{p.headRef}</span>
           </p>
         </div>
         {active && <span className="self-center text-xs text-fg-muted"><Kbd>⏎</Kbd></span>}
