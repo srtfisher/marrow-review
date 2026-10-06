@@ -18,6 +18,8 @@ export interface CliArgs {
   source: SourceRequest;
   effort: Effort;
   standards: string | null;
+  /** A Claude Code executable to use instead of the one bundled with the SDK. */
+  claudePath: string | null;
   port: number;
   open: boolean;
   passes: PassSettings;
@@ -59,6 +61,7 @@ export function parseArgs(argv: string[]): CliArgs {
   let source: SourceRequest = 'auto';
   let effort: Effort = 'medium';
   let standards: string | null = null;
+  let claudePath: string | null = null;
   let port = 0;
   let open = true;
   const passes: PassSettings = { ...DEFAULT_PASSES };
@@ -82,6 +85,11 @@ export function parseArgs(argv: string[]): CliArgs {
     if (arg === '--source') { source = oneOf(argv[++i], SOURCES, '--source'); continue; }
     if (arg === '--effort') { effort = oneOf(argv[++i], EFFORTS, '--effort'); continue; }
     if (arg === '--standards') { standards = argv[++i] ?? null; continue; }
+    if (arg === '--claude-path') {
+      claudePath = argv[++i] ?? null;
+      if (!claudePath) throw new Error('--claude-path needs a path');
+      continue;
+    }
     if (arg === '--port') {
       const value = Number.parseInt(argv[++i] ?? '', 10);
       if (Number.isNaN(value) || value < 0 || value > 65535) throw new Error('--port must be a port number');
@@ -108,6 +116,6 @@ export function parseArgs(argv: string[]): CliArgs {
 
   return {
     prNumber, prRepo, model, meatModel: meatModel ?? tierBelow(model), reviewModel: reviewModel ?? tierBelow(model), verifyModel: verifyModel ?? tierBelow(tierBelow(model)), dryRun, useApiKey, showHelp,
-    filter, source, effort, standards, port, open, passes,
+    filter, source, effort, standards, claudePath, port, open, passes,
   };
 }

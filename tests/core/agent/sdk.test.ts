@@ -120,3 +120,41 @@ test('passes a requested effort through, and leaves the SDK default alone otherw
   expect(buildQueryOptions({ model: 'sonnet', prompt: 'x', effort: 'low' }, {}).effort).toBe('low');
   expect('effort' in buildQueryOptions({ model: 'sonnet', prompt: 'x' }, {})).toBe(false);
 });
+
+test('a Claude Code path is handed to the SDK as its executable', async () => {
+  let seen: string | undefined;
+  const transport = new SdkTransport({
+    env: {},
+    claudePath: '/bin/sh',
+    query: ({ options }) => {
+      seen = options.pathToClaudeCodeExecutable;
+      return scripted([{ type: 'result', subtype: 'success', session_id: 's', result: '', num_turns: 1, usage: { input_tokens: 1, output_tokens: 1 } }])();
+    },
+  });
+  await transport.run({ model: 'opus', prompt: 'x' });
+  expect(seen).toBe('/bin/sh');
+});
+
+test('without a path the SDK keeps its bundled binary', async () => {
+  let seen: string | undefined = 'unset';
+  const transport = new SdkTransport({
+    env: {},
+    query: ({ options }) => {
+      seen = options.pathToClaudeCodeExecutable;
+      return scripted([{ type: 'result', subtype: 'success', session_id: 's', result: '', num_turns: 1, usage: { input_tokens: 1, output_tokens: 1 } }])();
+    },
+  });
+  await transport.run({ model: 'opus', prompt: 'x' });
+  expect(seen).toBeUndefined();
+});
+
+test('a Claude Code path with nothing there fails as not installed, before the SDK runs', async () => {
+  let ran = false;
+  const transport = new SdkTransport({
+    env: {},
+    claudePath: '/nonexistent/claude',
+    query: () => { ran = true; return scripted([])(); },
+  });
+  await expect(transport.run({ model: 'opus', prompt: 'x' })).rejects.toThrow(/Claude Code is not installed at \/nonexistent\/claude/);
+  expect(ran).toBe(false);
+});

@@ -85,3 +85,37 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --title "marrow $version" \
             --notes-file RELEASE_NOTES.md
+
+  # The Mac app rides along on the same release. No Developer ID, so it is
+  # ad-hoc signed and not notarized; the README says how to open it.
+  desktop:
+    needs: release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+      - run: npm ci
+        working-directory: desktop
+      - run: npm run typecheck
+        working-directory: desktop
+      - run: bun test
+        working-directory: desktop
+
+      # One runner builds both: Electron downloads per arch, and with the SDK's
+      # native Claude Code stripped out, nothing else marrow ships is native.
+      - run: scripts/package.sh arm64 && scripts/package.sh x64
+        working-directory: desktop
+
+      - name: Attach the app to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" desktop/out/*.zip --clobber

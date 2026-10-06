@@ -15,7 +15,8 @@ bun run build                     # tsc -> dist/ (bin: dist/cli.js), vite -> dis
 node dist/cli.js <pr> --no-open   # run it; prints `marrow: <url>`
 ```
 
-Run all four before saying a change is done. `bun test` alone does not catch a type error in
+Run all four before saying a change is done. A change under `desktop/` also needs
+`cd desktop && npm run typecheck && bun test`; root `bun test` does not reach it. `bun test` alone does not catch a type error in
 a file no test imports, and `tsc -p tsconfig.json` does not cover `tests/`.
 
 ## Architecture
@@ -37,6 +38,7 @@ src/server/** node:http + SSE over ReviewSession; startServer() is the desktop-s
 src/web/**    React + Vite + Tailwind; page-model arithmetic lives in src/web/lib
 src/cli.ts    args -> startServer -> open browser; --dry-run prints text
 skills/       the Claude Code skill that launches marrow (plugin in .claude-plugin/)
+desktop/      optional Electron shell: forks dist/cli.js, own package.json, not in the npm package
 ```
 
 The split is load-bearing, not decorative. The hard parts — diff parsing, anchoring, the
@@ -111,6 +113,15 @@ not grant a pass more than it needs.
 
 The review rubric (`src/core/review/rubric.ts`) is generic on purpose — nothing
 team-internal ships in the package. Teams add their own rules with `--standards <dir>`.
+
+## The Mac app
+
+`desktop/` talks to marrow only through the CLI: it forks `dist/cli.js --no-open` and reads
+the `marrow: <url>` line, so keep that line stable. The page reaches the shell through
+`window.marrowDesktop` (`notify`, `savePasses`), which is absent in a browser — anything
+added there must be optional-chained and do nothing without it. The shell passes
+`--claude-path` because packaging strips the SDK's bundled binary; a missing Claude Code
+must still start the server.
 
 ## Interface work
 

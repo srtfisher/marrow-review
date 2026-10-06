@@ -22,3 +22,26 @@ jobs:
       - run: bun test
       - run: bun run lint:boundary
       - run: bun run build
+
+  desktop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Typechecking needs Electron's types, not its 100 MB binary.
+      - run: npm ci
+        working-directory: desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      - run: npm run typecheck
+        working-directory: desktop
+      - run: bun test
+        working-directory: desktop

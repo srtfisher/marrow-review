@@ -1,3 +1,4 @@
+import { accessSync, constants } from 'node:fs';
 import { describeToolUse, isRead } from './progress.js';
 import {
   createSdkMcpServer,
@@ -55,6 +56,8 @@ export type QueryFn = (args: { prompt: string; options: Options }) => AsyncItera
 export interface SdkTransportOptions {
   useApiKey?: boolean;
   env?: NodeJS.ProcessEnv;
+  /** A Claude Code on the machine, used instead of the SDK's bundled binary. */
+  claudePath?: string | null;
   /** Injectable for tests; production always uses the SDK's own `query`. */
   query?: QueryFn;
 }
@@ -104,8 +107,10 @@ function toolServer(tools: AgentTool[]): McpServerConfig {
 export function buildQueryOptions(
   req: AgentRequest,
   env: Record<string, string | undefined>,
+  claudePath: string | null = null,
 ): Options {
   return {
+    ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
     ...(req.tools && req.tools.length > 0
       ? { mcpServers: { [AGENT_TOOL_SERVER]: toolServer(req.tools) } }
       : {}),
@@ -128,16 +133,27 @@ export function buildQueryOptions(
 export class SdkTransport implements AgentTransport {
   private readonly env: Record<string, string | undefined>;
   private readonly query: QueryFn;
+  private readonly claudePath: string | null;
 
   constructor(options: SdkTransportOptions = {}) {
     this.env = buildSubprocessEnv(options.env ?? process.env, options.useApiKey === true);
     this.query = options.query ?? query;
+    this.claudePath = options.claudePath ?? null;
   }
 
   async run(req: AgentRequest): Promise<AgentRun> {
+    // Checked here rather than left to the SDK, whose "not found" reads as a
+    // broken install of marrow; this one is the user's to install.
+    if (this.claudePath) {
+      try {
+        accessSync(this.claudePath, constants.X_OK);
+      } catch {
+        throw new Error(`Claude Code is not installed at ${this.claudePath}.`);
+      }
+    }
     const stream = this.query({
       prompt: req.prompt,
-      options: buildQueryOptions(req, this.env),
+      options: buildQueryOptions(req, this.env, this.claudePath),
     });
 
     let text = '';

@@ -1,0 +1,27 @@
+{
+  "name": "marrow-desktop",
+  "productName": "marrow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An optional Mac app around the marrow server.",
+  "license": "MIT",
+  "author": "Sean Fisher",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "bun test",
+    "start": "npm run build && electron .",
+    "icon": "scripts/icon.sh",
+    "stage": "scripts/stage.sh",
+    "package": "scripts/package.sh"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@types/bun": "^1.3.14",
+    "@types/node": "^24.0.0",
+    "electron": "^44.5.1",
+    "typescript": "^5.6.0"
+  }
+}
