@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AppInfo } from '../api.js';
 import { parseTarget, relativeTime } from '../lib/format.js';
 import type { PullFilter, PullRequestSummary, RequestedPull } from '../lib/types.js';
+import type { SubmittedReview } from './Review.js';
 import { Settings } from './Settings.js';
 import { Icon } from './icons.js';
 import { Avatar, Kbd, Label, Spinner } from './ui.js';
@@ -12,9 +13,11 @@ const FILTERS: Array<{ id: PullFilter; label: string }> = [
   { id: 'all', label: 'All' },
 ];
 
-export function Picker({ app, repo, onOpen, onRepo }: {
+export function Picker({ app, repo, submitted, onDismiss, onOpen, onRepo }: {
   app: AppInfo;
   repo: { owner: string; repo: string } | null;
+  submitted: SubmittedReview | null;
+  onDismiss: () => void;
   onOpen: (owner: string, repo: string, number: number) => void;
   onRepo: (owner: string, repo: string) => void;
 }) {
@@ -71,6 +74,17 @@ export function Picker({ app, repo, onOpen, onRepo }: {
         <p className="flex-1 text-sm text-fg-muted">a large diff, abridged to what carries meaning</p>
         <Settings shortcut={false} />
       </div>
+      {submitted && (
+        <div role="status" className="mb-4 flex items-center gap-2 rounded-md border border-success/40 bg-success-subtle px-3 py-2 text-sm">
+          <Icon name="checkCircle" className="shrink-0 text-success" />
+          <p className="min-w-0 flex-1">
+            Review submitted on <span className="font-semibold">#{submitted.number}</span> {submitted.title}
+            {submitted.demoted > 0 && <span className="text-fg-muted"> · {submitted.demoted} comment{submitted.demoted === 1 ? '' : 's'} moved into the summary</span>}
+          </p>
+          <a href={submitted.url} target="_blank" rel="noreferrer" className="shrink-0 font-medium text-accent hover:underline">View on GitHub</a>
+          <button type="button" onClick={onDismiss} aria-label="Dismiss" className="rounded-md p-1 text-fg-muted hover:bg-btn-hover hover:text-fg"><Icon name="x" /></button>
+        </div>
+      )}
       <div className="mb-3 flex items-center gap-2 text-sm">
         <Icon name="pr" className="text-fg-muted" />
         <span className="font-semibold">{repo ? `${repo.owner}/${repo.repo}` : 'No repository'}</span>

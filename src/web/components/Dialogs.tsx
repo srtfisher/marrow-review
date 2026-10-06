@@ -58,11 +58,12 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
   );
 }
 
-const VERDICT_TEXT: Record<Verdict, { label: string; help: string }> = {
-  COMMENT: { label: 'Comment', help: 'Submit general feedback without explicit approval.' },
-  APPROVE: { label: 'Approve', help: 'Submit feedback and approve merging these changes.' },
-  REQUEST_CHANGES: { label: 'Request changes', help: 'Submit feedback that must be addressed before merging.' },
+const VERDICT_TEXT: Record<Verdict, { label: string; help: string; digit: string }> = {
+  COMMENT: { label: 'Comment', help: 'Submit general feedback without explicit approval.', digit: '1' },
+  APPROVE: { label: 'Approve', help: 'Submit feedback and approve merging these changes.', digit: '2' },
+  REQUEST_CHANGES: { label: 'Request changes', help: 'Submit feedback that must be addressed before merging.', digit: '3' },
 };
+const VERDICTS = Object.keys(VERDICT_TEXT) as Verdict[];
 
 export function SubmitDialog({
   open, onClose, snapshot, context, comments, onSubmit,
@@ -98,17 +99,24 @@ export function SubmitDialog({
     <Dialog open={open} onClose={onClose} title="Finish your review" width="44rem">
       <div
         className="space-y-4 px-4 py-3"
-        onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); return; }
+          // e.code, because on a Mac ⌥1 reports e.key as "¡".
+          const v = e.altKey && !e.metaKey && !e.ctrlKey ? VERDICTS.find((x) => e.code === `Digit${VERDICT_TEXT[x].digit}`) : undefined;
+          if (!v) return;
+          e.preventDefault();
+          if (!(isAuthor && v !== 'COMMENT')) setVerdict(v);
+        }}
       >
-        <Composer value={body} onChange={setBody} context={context} label="Review summary" placeholder="Leave a summary (optional)" minRows={4} />
+        <Composer value={body} onChange={setBody} context={context} label="Review summary" placeholder="Leave a summary (optional)" minRows={4} autoFocus />
         <fieldset className="space-y-2">
-          {(Object.keys(VERDICT_TEXT) as Verdict[]).map((v) => {
+          {VERDICTS.map((v) => {
             const blocked = isAuthor && v !== 'COMMENT';
             return (
               <label key={v} className={`flex gap-2 ${blocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                <input type="radio" name="verdict" checked={verdict === v} disabled={blocked} onChange={() => setVerdict(v)} className="mt-1 accent-[var(--gh-accent-emphasis)]" />
+                <input type="radio" name="verdict" checked={verdict === v} disabled={blocked} onChange={() => setVerdict(v)} aria-keyshortcuts={`Alt+${VERDICT_TEXT[v].digit}`} className="mt-1 accent-[var(--gh-accent-emphasis)]" />
                 <span>
-                  <span className="font-semibold">{VERDICT_TEXT[v].label}</span>
+                  <span className="font-semibold">{VERDICT_TEXT[v].label}</span>{!blocked && <span className="text-fg-muted"><Kbd>{`⌥${VERDICT_TEXT[v].digit}`}</Kbd></span>}
                   <span className="block text-xs text-fg-muted">{blocked ? 'GitHub does not allow this on your own pull request.' : VERDICT_TEXT[v].help}</span>
                 </span>
               </label>
