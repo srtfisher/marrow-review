@@ -1,5 +1,6 @@
 import { describeAgentFailure, type AgentFailure } from '../agent/errors.js';
 import type { AgentTransport } from '../agent/types.js';
+import { DENIED_TOOLS } from '../source/index.js';
 import type { Hunk } from '../diff/types.js';
 import type { CachedVerdict } from './cache.js';
 
@@ -81,7 +82,7 @@ but cannot review one they never saw. Give every verdict a short reason.`;
  */
 export const MAX_HUNK_LINES = 80;
 
-export function renderHunk(item: ClassifyItem): string {
+export function renderHunk(item: ClassifyItem, id: string = item.id): string {
   const lines = item.hunk.lines.map(
     (l) => `${l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : ' '}${l.text}`,
   );
@@ -94,7 +95,7 @@ export function renderHunk(item: ClassifyItem): string {
       ...lines.slice(-20),
     ];
 
-  return `<hunk id="${item.id}" file="${item.filePath}">\n${item.hunk.header}\n${body.join('\n')}\n</hunk>`;
+  return `<hunk id="${id}" file="${item.filePath}">\n${item.hunk.header}\n${body.join('\n')}\n</hunk>`;
 }
 
 /**
@@ -153,17 +154,25 @@ export async function classifyHunks(
   if (items.length === 0) return { summary: '', verdicts, error: null };
 
   const chunks = chunkHunks(items, maxChars, maxItems);
+  // The model answers with `h1`…`hN` rather than the 64-character content
+  // hashes: copying fifteen hashes back exactly is output the run pays for in
+  // latency, and one mistyped character orphans a verdict.
+  const localIds = chunks.map((chunk) => chunk.map((_, j) => `h${j + 1}`));
 
   // allSettled, not all: one chunk whose run rejects must not discard the
   // verdicts its siblings returned. The agent pass is additive — a model
   // failure degrades the abridgement, it does not fail the review.
   const runs = await Promise.allSettled(
-    chunks.map((chunk) =>
+    chunks.map((chunk, c) =>
       transport.run({
         model,
         systemPrompt: SYSTEM_PROMPT,
         schema: CLASSIFY_SCHEMA,
-        disallowedTools: ['Write', 'Edit', 'NotebookEdit', 'Bash'],
+        // Everything it needs is in the prompt. With file tools it went
+        // grepping through whatever directory marrow was started in — the
+        // wrong version of the code, four turns, a minute of wall clock.
+        allowedTools: [],
+        disallowedTools: [...DENIED_TOOLS, 'Read', 'Grep', 'Glob'],
         prompt: [
           `Pull request: ${prTitle}`,
           prBody.trim().length > 0 ? `\nDescription:\n${prBody.trim()}` : '',
@@ -171,7 +180,7 @@ export async function classifyHunks(
           // detectable by the model itself. A run that quietly omitted verdicts
           // left those hunks kept by fallback, which looks like no abridgement.
           `\nThere are ${chunk.length} hunks below, with these ids:`,
-          chunk.map((item) => item.id).join(', '),
+          localIds[c]!.join(', '),
           `\nReturn exactly ${chunk.length} verdicts — one for every id above, `
             + 'and no ids that are not above.',
           // Left to itself the model writes the summary first, and a long one
@@ -179,7 +188,7 @@ export async function classifyHunks(
           // then fails "must have required property 'verdicts'" until the run
           // dies. Schema property order does not change this; asking does.
           'Give the verdicts first and the summary last.\n',
-          chunk.map(renderHunk).join('\n\n'),
+          chunk.map((item, j) => renderHunk(item, localIds[c]![j])).join('\n\n'),
         ].join('\n'),
       }),
     ),
@@ -206,8 +215,12 @@ export async function classifyHunks(
     if (summary.length === 0 && typeof structured.summary === 'string') {
       summary = structured.summary;
     }
+    const chunk = chunks[i]!;
+    const byLocal = new Map(localIds[i]!.map((local, j) => [local, chunk[j]!.id]));
+    const real = new Set(chunk.map((item) => item.id));
     for (const v of structured.verdicts ?? []) {
-      verdicts.set(v.id, { keep: v.keep, reason: v.reason });
+      const id = byLocal.get(v.id) ?? (real.has(v.id) ? v.id : undefined);
+      if (id) verdicts.set(id, { keep: v.keep, reason: v.reason });
     }
   });
 

@@ -202,3 +202,28 @@ test('the prompt asks for the verdicts before the summary', async () => {
 
   expect(transport.requests[0]!.prompt).toContain('Give the verdicts first and the summary last');
 });
+
+test('the classifier gets no tools: everything it judges is in the prompt', async () => {
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 's', verdicts: [] } });
+  await classifyHunks(transport, 'haiku', 'T', '', [{ id: 'k1', filePath: 'a.ts', hunk: hunk('x') }]);
+  const req = transport.requests[0]!;
+  expect(req.allowedTools).toEqual([]);
+  for (const tool of ['Read', 'Grep', 'Glob', 'Bash', 'WebFetch']) expect(req.disallowedTools).toContain(tool);
+});
+
+test('the model answers with short ids that map back to the hunk keys', async () => {
+  const transport = new FakeTransport();
+  const key = 'f'.repeat(64);
+  transport.queue({ structured: { summary: 's', verdicts: [{ id: 'h1', keep: false, reason: 'rename' }] } });
+  const result = await classifyHunks(transport, 'haiku', 'T', '', [{ id: key, filePath: 'a.ts', hunk: hunk('x') }]);
+  expect(transport.requests[0]!.prompt).not.toContain(key);
+  expect(result.verdicts.get(key)).toEqual({ keep: false, reason: 'rename' });
+});
+
+test('a verdict for an id from another chunk is not attributed to this one', async () => {
+  const transport = new FakeTransport();
+  transport.queue({ structured: { summary: 's', verdicts: [{ id: 'h9', keep: false, reason: 'x' }] } });
+  const result = await classifyHunks(transport, 'haiku', 'T', '', [{ id: 'k1', filePath: 'a.ts', hunk: hunk('x') }]);
+  expect(result.verdicts.get('k1')!.synthetic).toBe(true);
+});
