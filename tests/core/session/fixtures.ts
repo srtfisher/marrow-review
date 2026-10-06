@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { EMPTY_USAGE } from '../../../src/core/agent/types.js';
 import { join } from 'node:path';
 import type { AgentRequest, AgentRun, AgentTransport } from '../../../src/core/agent/types.js';
 import { FINDINGS_SCHEMA } from '../../../src/core/findings/schema.js';
@@ -19,7 +20,7 @@ export const finding = {
 };
 
 function run(structured: unknown): AgentRun {
-  return { text: '', structured, sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 }, usageWarning: null };
+  return { text: '', structured, sessionId: 's', usage: { ...EMPTY_USAGE, numTurns: 1 }, usageWarning: null };
 }
 
 /** Answers by pass rather than by call order, since grouping and find run concurrently. */

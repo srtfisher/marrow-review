@@ -20,6 +20,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Only findings with a failure scenario are put to the refutation lenses;** cleanups and
   questions are left `plausible` rather than refuted for not describing a failure.
 - Outside a clone, the model passes now run through the GitHub API instead of switching off.
+- **The abridgement classifier gets no tools and short ids.** It had been browsing the
+  directory marrow was started in and copying 64-character hashes back; on a five-file pull
+  request it now answers in seconds instead of over a minute, and no longer exhausts its
+  schema retries.
 
 ### Added
 
@@ -30,6 +34,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rendering; `:` emoji and `@` mention autocomplete; a Suggest change button.
 - Per-file Viewed checkboxes that notice when a file changes after you viewed it.
 - An Ask Claude panel scoped to the code under the cursor.
+- Token usage per pass (`u`): runs, input, output, cache reads, time, and the SDK's
+  API-equivalent cost, including what failed runs spent.
 - `--source auto|checkout|worktree|api`, `--effort low|medium|high`, `--standards <dir>`,
   `--port`, `--no-open`, and `owner/repo#n` targets.
 - A Claude Code plugin with a `marrow` skill that launches the app.

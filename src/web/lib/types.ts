@@ -10,3 +10,4 @@ export type { ReviewDraft, Side, StagedComment, Verdict } from '../../core/revie
 export type { TriagedFinding } from '../../core/findings/triage.js';
 export type { ChatSession, ChatTurn } from '../../core/findings/chat.js';
 export type { CheckRun, PullFilter, PullRequestSummary, ReviewThread } from '../../core/github/types.js';
+export type { PassUsage, UsagePass, UsageReport } from '../../core/agent/meter.js';

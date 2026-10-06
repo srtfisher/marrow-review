@@ -104,6 +104,9 @@ The page is GitHub's files view with two additions: a sidebar of groups, and Cla
   <img width="1440" height="900" alt="A comment on lines 99 to 101, previewed with GitHub's renderer: an emoji and a suggested change" src="docs/screenshots/comment.png" />
 
 - **Ask.** `i` opens a panel to ask Claude about the code under the cursor.
+- **See the spend.** The header shows the tokens the review has used; `u` breaks them down
+  by pass — abridge, group, review, verify, ask — with cache reads, time, and the SDK's
+  API-equivalent cost estimate.
 - **Submit.** `!` opens the finish dialog: summary, verdict, and what will post.
 
 Every button shows its key; `?` lists them all. Submit is `!` rather than a letter on

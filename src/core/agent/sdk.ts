@@ -11,7 +11,8 @@ import {
 import { z } from 'zod/v4';
 import { MARROW_VERSION } from '../version.js';
 import {
-  AGENT_TOOL_SERVER, type AgentRequest, type AgentRun, type AgentTool, type AgentTransport,
+  AGENT_TOOL_SERVER, AgentRunError, EMPTY_USAGE, type AgentRequest, type AgentRun, type AgentTool,
+  type AgentTransport, type UsageSummary,
 } from './types.js';
 
 /**
@@ -144,11 +145,7 @@ export class SdkTransport implements AgentTransport {
     // The CLI rejects bad structured output inside the conversation and ends
     // with only a subtype, so the last rejection is the only record of why.
     let schemaRejection: string | null = null;
-    let usage: { inputTokens: number; outputTokens: number; numTurns: number } = {
-      inputTokens: 0,
-      outputTokens: 0,
-      numTurns: 0,
-    };
+    let usage: UsageSummary = EMPTY_USAGE;
 
     for await (const message of stream) {
       if (message.type === 'assistant') {
@@ -173,23 +170,27 @@ export class SdkTransport implements AgentTransport {
 
       if (message.type === 'result') {
         sessionId = message.session_id;
+        usage = {
+          inputTokens: message.usage?.input_tokens ?? 0,
+          outputTokens: message.usage?.output_tokens ?? 0,
+          cacheReadTokens: message.usage?.cache_read_input_tokens ?? 0,
+          cacheCreationTokens: message.usage?.cache_creation_input_tokens ?? 0,
+          costUsd: message.total_cost_usd ?? 0,
+          durationMs: message.duration_ms ?? 0,
+          numTurns: message.num_turns ?? 0,
+        };
         if (message.subtype === 'success') {
           structured = message.structured_output ?? null;
           if (text.length === 0) text = message.result;
-          usage = {
-            inputTokens: message.usage.input_tokens,
-            outputTokens: message.usage.output_tokens,
-            numTurns: message.num_turns,
-          };
         } else {
           const why = schemaRejection ? ` (${schemaRejection})` : '';
-          throw new Error(`Agent run failed: ${message.subtype}${why}`);
+          throw new AgentRunError(`Agent run failed: ${message.subtype}${why}`, usage);
         }
       }
     }
 
     if (req.schema && structured === null) {
-      throw new Error('Agent returned no structured output despite a schema being set.');
+      throw new AgentRunError('Agent returned no structured output despite a schema being set.', usage);
     }
 
     return { text, structured, sessionId, usage, usageWarning };

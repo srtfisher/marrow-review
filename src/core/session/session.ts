@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describeAgentFailure, type AgentFailure } from '../agent/errors.js';
+import { totalUsage, UsageMeter, type PassUsage, type UsageReport } from '../agent/meter.js';
 import type { AgentTransport } from '../agent/types.js';
 import { parseUnifiedDiff } from '../diff/parse.js';
 import type { DiffFile } from '../diff/types.js';
@@ -95,6 +96,9 @@ export interface SessionSnapshot {
   notes: Note[];
   submitted: { url: string; verdict: Verdict } | null;
   loadError: string | null;
+  /** What each model pass has spent so far. */
+  usage: UsageReport;
+  usageTotal: PassUsage;
 }
 
 export type SessionListener = (patch: Partial<SessionSnapshot>) => void;
@@ -176,6 +180,7 @@ export class ReviewSession {
   private files: DiffFile[] = [];
   private findingsRun = 0;
   private chatRun = 0;
+  private readonly meter: UsageMeter;
 
   constructor(
     readonly id: string,
@@ -192,8 +197,9 @@ export class ReviewSession {
       findings: { status: 'idle', items: [], error: null },
       draft: EMPTY_DRAFT, viewed: {},
       chat: { session: { id: null, turns: [] }, pending: false },
-      notes: [], submitted: null, loadError: null,
+      notes: [], submitted: null, loadError: null, usage: {}, usageTotal: totalUsage({}),
     };
+    this.meter = new UsageMeter((usage) => this.patch({ usage, usageTotal: totalUsage(usage) }));
   }
 
   snapshot(): SessionSnapshot {
@@ -264,7 +270,7 @@ export class ReviewSession {
       const meat = await computeMeat({
         files: this.files,
         ruleContext: { generatedPaths: parseGeneratedPaths(gitattributes ?? '') },
-        transport: deps.transport,
+        transport: this.meter.transport('abridge', deps.transport),
         cache: deps.meatCache,
         model: deps.config.meatModel,
         prTitle: pr.title,
@@ -312,7 +318,7 @@ export class ReviewSession {
     const commits = await this.deps.client.listCommitSubjects(owner, repo, number);
     const result = await runGrouping({
       prTitle: pr.title, prBody: pr.body, commits, meat,
-      transport: this.deps.transport,
+      transport: this.meter.transport('group', this.deps.transport),
       model: this.deps.config.meatModel,
       cache: this.deps.groupCache,
       cwd: this.source.access.cwd,
@@ -340,7 +346,7 @@ export class ReviewSession {
     const conventions = await readConventions((path) =>
       readContent(deps.contents, owner, repo, path, pr.baseSha || pr.baseRef));
     let failure: unknown = null;
-    const found = await runFindings(deps.transport, deps.config.model, {
+    const found = await runFindings(this.meter.transport('find', deps.transport), deps.config.model, {
       prTitle: pr.title,
       prBody: pr.body,
       meat,
@@ -372,7 +378,7 @@ export class ReviewSession {
     }
 
     this.step('verify', 'running');
-    const verified = await runVerify(deps.transport, deps.config.model, found, source.access);
+    const verified = await runVerify(this.meter.transport('verify', deps.transport), deps.config.model, found, source.access);
     if (run !== this.findingsRun) return;
     const items = mergeTriage(this.state.findings.items, verified);
     this.patch({ findings: { status: 'done', items, error: null } });
@@ -428,7 +434,7 @@ export class ReviewSession {
     const run = ++this.chatRun;
     const session: ChatSession = fresh ? { id: null, turns: [] } : this.state.chat.session;
     this.patch({ chat: { session: { ...session, turns: [...session.turns, { role: 'user', text: question }] }, pending: true } });
-    const answered = await askAgent(this.deps.transport, this.deps.config.model, session, question, this.source.access, context);
+    const answered = await askAgent(this.meter.transport('chat', this.deps.transport), this.deps.config.model, session, question, this.source.access, context);
     // A newer question replaced this one; its answer would land in the wrong conversation.
     if (run !== this.chatRun) return;
     this.patch({ chat: { session: answered, pending: false } });

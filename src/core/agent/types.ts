@@ -1,7 +1,23 @@
 export interface UsageSummary {
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** The SDK's API-equivalent estimate; a subscription is not billed per token. */
+  costUsd: number;
+  durationMs: number;
   numTurns: number;
+}
+
+export const EMPTY_USAGE: UsageSummary = {
+  inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, costUsd: 0, durationMs: 0, numTurns: 0,
+};
+
+/** A run that failed after spending tokens; the spend is still worth counting. */
+export class AgentRunError extends Error {
+  constructor(message: string, readonly usage: UsageSummary) {
+    super(message);
+  }
 }
 
 export interface AgentRequest {

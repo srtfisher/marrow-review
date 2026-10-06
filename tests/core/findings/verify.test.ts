@@ -1,4 +1,5 @@
 import { test, expect, describe } from 'bun:test';
+import { EMPTY_USAGE } from '../../../src/core/agent/types.js';
 import { readOnlyAccess } from '../../../src/core/source/index.js';
 import {
   buildVerifyPrompt, runVerify, scoreVerdict, VERIFY_CONCURRENCY, VERIFY_SCHEMA,
@@ -95,7 +96,7 @@ describe('runVerify', () => {
         inFlight -= 1;
         return {
           text: '', structured: { refuted: false, reasoning: 'r' },
-          sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+          sessionId: 's', usage: { ...EMPTY_USAGE, numTurns: 1 },
           usageWarning: null,
         };
       },
@@ -118,7 +119,7 @@ describe('runVerify', () => {
         await new Promise((resolve) => setTimeout(resolve, slow ? 12 : 1));
         return {
           text: '', structured: { refuted: false, reasoning: slow ? 'reach' : 'repro' },
-          sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+          sessionId: 's', usage: { ...EMPTY_USAGE, numTurns: 1 },
           usageWarning: null,
         };
       },
@@ -141,7 +142,7 @@ describe('runVerify', () => {
         if (call === 1) throw new Error('lens died');
         return {
           text: '', structured: { refuted: true, reasoning: 'cannot occur' },
-          sessionId: 's', usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+          sessionId: 's', usage: { ...EMPTY_USAGE, numTurns: 1 },
           usageWarning: null,
         };
       },

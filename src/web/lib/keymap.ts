@@ -2,7 +2,7 @@ export type Action =
   | 'down' | 'up' | 'nextFile' | 'prevFile' | 'nextGroup' | 'prevGroup' | 'nextFinding' | 'prevFinding'
   | 'comment' | 'range' | 'suggest' | 'accept' | 'edit' | 'drop'
   | 'reveal' | 'revealAll' | 'fullDiff' | 'sidebar' | 'threads' | 'refuted' | 'viewed'
-  | 'ask' | 'openGithub' | 'help' | 'submit' | 'retry' | 'escape';
+  | 'ask' | 'openGithub' | 'help' | 'submit' | 'retry' | 'usage' | 'escape';
 
 export interface Shortcut {
   key: string;
@@ -39,6 +39,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { key: 'w', label: 'w', action: 'viewed', description: 'Mark the file viewed', group: 'View' },
   { key: 'i', label: 'i', action: 'ask', description: 'Ask Claude about this code', group: 'Review' },
   { key: 'o', label: 'o', action: 'openGithub', description: 'Open on GitHub', group: 'Review' },
+  { key: 'u', label: 'u', action: 'usage', description: 'Token usage by pass', group: 'Review' },
   { key: '?', label: '?', action: 'help', description: 'Keyboard shortcuts', group: 'Review' },
   { key: '!', label: '!', action: 'submit', description: 'Review changes', group: 'Review' },
 ];

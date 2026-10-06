@@ -58,6 +58,7 @@ export function Review({
   const [askOpen, setAskOpen] = useState(false);
   const [askScope, setAskScope] = useState<{ label: string; context: string } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [submitted, setSubmitted] = useState<{ url: string; demoted: number } | null>(null);
   const [editNonce, setEditNonce] = useState(0);
@@ -162,10 +163,11 @@ export function Review({
   }, [currentAnchor, cursorRow, rows, selected, snapshot?.meat]);
 
   const jumpSection = useCallback((key: string) => {
-    const i = rows.findIndex((r) => r.sectionKey === key);
-    if (i >= 0) moveTo(i, 'start');
+    const row = rows.find((r) => r.sectionKey === key);
+    // Not moveTo: its deferred row scroll would land after this one and bury the heading under the sticky file header.
+    if (row) setCursorKey(row.key);
     document.getElementById(`section-${key}`)?.scrollIntoView({ block: 'start' });
-  }, [rows, moveTo]);
+  }, [rows]);
 
   const jumpFile = useCallback((fileIndex: number) => {
     const i = rows.findIndex((r) => r.fileIndex === fileIndex);
@@ -232,15 +234,17 @@ export function Review({
       case 'ask': return ask();
       case 'openGithub': if (snapshot.pr?.htmlUrl) window.open(`${snapshot.pr.htmlUrl}/files`, '_blank', 'noopener'); return;
       case 'help': return setHelpOpen(true);
+      case 'usage': return setUsageOpen((o) => !o);
       case 'submit': return setSubmitOpen(true);
       case 'retry': if (snapshot.findings.status === 'failed' || snapshot.findings.status === 'done') void api.retry(sessionId); return;
       case 'escape':
         if (composer) setComposer(null);
         else if (askOpen) setAskOpen(false);
+        else if (usageOpen) setUsageOpen(false);
         else { setSelection(null); setRangeMode(false); }
         return;
     }
-  }, [snapshot, cursorIndex, rows, moveTo, marked, openComposer, rangeMode, cursorKey, focusedFinding, triage, cursorRow, toggleViewed, ask, sessionId, composer, askOpen]);
+  }, [snapshot, cursorIndex, rows, moveTo, marked, openComposer, rangeMode, cursorKey, focusedFinding, triage, cursorRow, toggleViewed, ask, sessionId, composer, askOpen, usageOpen]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -396,6 +400,8 @@ export function Review({
           onSubmit={() => setSubmitOpen(true)}
           pending={pending}
           onHome={onHome}
+          usageOpen={usageOpen}
+          onUsage={setUsageOpen}
         />
         {(snapshot.notes.length > 0 || dropped) && (
           <div className="space-y-1 border-b border-border bg-canvas-subtle px-4 py-1.5 text-xs">

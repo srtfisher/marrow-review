@@ -166,3 +166,20 @@ describe('fullDraft and absorbAccepted', () => {
     expect(absorbAccepted([{ ...base, state: 'pending' }], draft).draft.comments).toHaveLength(0);
   });
 });
+
+describe('usage', () => {
+  test('each pass reports what it spent, under its own name', async () => {
+    const session = new ReviewSession('s1', 'o', 'r', 42, deps());
+    const patched: string[] = [];
+    session.subscribe((p) => { if (p.usage) patched.push(...Object.keys(p.usage)); });
+    await session.load();
+    await settle(session);
+    const usage = session.snapshot().usage;
+    expect(usage.abridge?.runs).toBe(1);
+    expect(usage.find?.runs).toBe(1);
+    expect(usage.verify?.runs).toBe(2);
+    // A one-file change is grouped without a model call, so it spends nothing.
+    expect(usage.group).toBeUndefined();
+    expect(patched).toContain('verify');
+  });
+});

@@ -1,10 +1,10 @@
-import type { AgentRequest, AgentRun, AgentTransport } from './types.js';
+import { EMPTY_USAGE, type AgentRequest, type AgentRun, type AgentTransport } from './types.js';
 
 const EMPTY_RUN: AgentRun = {
   text: '',
   structured: null,
   sessionId: 'fake-session',
-  usage: { inputTokens: 0, outputTokens: 0, numTurns: 1 },
+  usage: { ...EMPTY_USAGE, numTurns: 1 },
   usageWarning: null,
 };
 
