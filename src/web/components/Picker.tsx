@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type AppInfo } from '../api.js';
 import { parseTarget, relativeTime } from '../lib/format.js';
+import { type Reviewed, withoutReviewed } from '../lib/reviewed.js';
 import type { PullFilter, PullRequestSummary, RequestedPull } from '../lib/types.js';
 import type { SubmittedReview } from './Review.js';
 import { Settings } from './Settings.js';
@@ -13,10 +14,13 @@ const FILTERS: Array<{ id: PullFilter; label: string }> = [
   { id: 'all', label: 'All' },
 ];
 
-export function Picker({ app, repo, submitted, onDismiss, onOpen, onRepo }: {
+const REFRESH_MS = 3 * 60_000;
+
+export function Picker({ app, repo, submitted, reviewed, onDismiss, onOpen, onRepo }: {
   app: AppInfo;
   repo: { owner: string; repo: string } | null;
   submitted: SubmittedReview | null;
+  reviewed: Reviewed;
   onDismiss: () => void;
   onOpen: (owner: string, repo: string, number: number) => void;
   onRepo: (owner: string, repo: string) => void;
@@ -38,16 +42,33 @@ export function Picker({ app, repo, submitted, onDismiss, onOpen, onRepo }: {
   useEffect(() => { input.current?.focus(); }, []);
   // An inbox that fails to load is simply not shown; the picker works without it.
   useEffect(() => { api.reviewRequests().then(setRequested, () => setRequested([])); }, []);
+  // A background refresh that fails keeps the list it has rather than replacing it with an error.
+  useEffect(() => {
+    let live = true;
+    const refresh = () => {
+      if (document.hidden) return;
+      if (repo) api.pulls(filter, repo.owner, repo.repo).then((p) => live && setPulls(p), () => {});
+      api.reviewRequests().then((p) => live && setRequested(p), () => {});
+    };
+    const timer = setInterval(refresh, REFRESH_MS);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { live = false; clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
+  }, [filter, repo?.owner, repo?.repo]);
 
   const target = parseTarget(query);
   const q = target?.owner ? '' : query.trim().toLowerCase().replace(/^#/, '');
   const shown = useMemo(
-    () => (pulls ?? []).filter((p) => `${p.number} ${p.title} ${p.author}`.toLowerCase().includes(q)),
-    [pulls, q],
+    () => {
+      const listed = pulls ?? [];
+      const fresh = filter === 'review-requested' && repo ? withoutReviewed(listed, () => repo, reviewed) : listed;
+      return fresh.filter((p) => `${p.number} ${p.title} ${p.author}`.toLowerCase().includes(q));
+    },
+    [pulls, q, filter, repo, reviewed],
   );
   const inbox = useMemo(
-    () => requested.filter((p) => `${p.number} ${p.title} ${p.author} ${p.owner}/${p.repo}`.toLowerCase().includes(q)),
-    [requested, q],
+    () => withoutReviewed(requested, (p) => p, reviewed)
+      .filter((p) => `${p.number} ${p.title} ${p.author} ${p.owner}/${p.repo}`.toLowerCase().includes(q)),
+    [requested, q, reviewed],
   );
   // One cursor runs down the repository's list and on into the review requests.
   const rows = useMemo(() => [

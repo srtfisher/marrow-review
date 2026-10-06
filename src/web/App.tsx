@@ -4,6 +4,7 @@ import { Picker } from './components/Picker.js';
 import { Review, type SubmittedReview } from './components/Review.js';
 import { useTheme } from './hooks.js';
 import { parseRoute } from './lib/format.js';
+import { pullKey, type Reviewed } from './lib/reviewed.js';
 
 export function App() {
   const [theme, cycleTheme] = useTheme();
@@ -13,6 +14,7 @@ export function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [repo, setRepo] = useState<{ owner: string; repo: string } | null>(null);
   const [submitted, setSubmitted] = useState<SubmittedReview | null>(null);
+  const [reviewed, setReviewed] = useState<Reviewed>(new Map());
 
   useEffect(() => {
     api.app().then((info) => {
@@ -53,7 +55,7 @@ export function App() {
   const home = () => { window.location.hash = repo ? `#/${repo.owner}/${repo.repo}` : '#/'; };
 
   if (route.number !== null && sessionId) {
-    return <Review key={sessionId} sessionId={sessionId} viewer={app.viewer} theme={theme} onTheme={cycleTheme} onHome={home} onSubmitted={(r) => { setSubmitted(r); home(); }} />;
+    return <Review key={sessionId} sessionId={sessionId} viewer={app.viewer} theme={theme} onTheme={cycleTheme} onHome={home} onReviewed={(owner, name, number) => setReviewed((m) => new Map(m).set(pullKey(owner, name, number), Date.now()))} onSubmitted={(r) => { setSubmitted(r); home(); }} />;
   }
   if (route.number !== null) return <div className="flex h-full items-center justify-center text-fg-muted">Opening #{route.number}…</div>;
 
@@ -62,6 +64,7 @@ export function App() {
       app={app}
       repo={repo}
       submitted={submitted}
+      reviewed={reviewed}
       onDismiss={() => setSubmitted(null)}
       onOpen={(owner, name, number) => { setSubmitted(null); window.location.hash = `#/${owner}/${name}/${number}`; }}
       onRepo={(owner, name) => { window.location.hash = `#/${owner}/${name}`; }}

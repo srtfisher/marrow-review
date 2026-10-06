@@ -22,7 +22,7 @@ test('review requests from any repository are listed under the picker and the cu
   await expect(inbox.getByText('acme/api')).toBeVisible();
 
   await page.getByLabel('Filter pull requests').press('ArrowDown');
-  await expect(inbox.getByRole('option')).toHaveAttribute('aria-selected', 'true');
+  await expect(inbox.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
   await page.getByLabel('Filter pull requests').press('Enter');
   await expect(page.getByRole('heading', { name: /Handle server errors/ })).toBeVisible();
 });
@@ -73,6 +73,8 @@ test('in the Mac app a submitted review returns to the picker with a notice', as
     (globalThis as { marrowDesktop?: unknown }).marrowDesktop = { notify: () => {}, savePasses: () => {} };
   });
   await page.goto(fixture.url);
+  const inbox = page.getByRole('listbox', { name: 'Review requested' });
+  await expect(inbox.getByText('Awaiting your review')).toBeVisible();
   await page.getByText('Handle server errors').click();
   await expect(page.getByText('Errors reach nothing').first()).toBeVisible();
 
@@ -82,6 +84,8 @@ test('in the Mac app a submitted review returns to the picker with a notice', as
 
   await expect(page.getByRole('status')).toContainText(/Review submitted on #\d+/);
   await expect(page.getByLabel('Filter pull requests')).toBeVisible();
+  await expect(inbox.getByText('Retry flaky uploads')).toBeVisible();
+  await expect(inbox.getByText('Awaiting your review')).toHaveCount(0);
   await page.getByRole('button', { name: 'Dismiss' }).click();
   await expect(page.getByRole('status')).toHaveCount(0);
 });

@@ -41,13 +41,14 @@ function scrollToRow(key: string, block: ScrollLogicalPosition = 'nearest'): voi
 export interface SubmittedReview { number: number; title: string; url: string; demoted: number }
 
 export function Review({
-  sessionId, viewer, theme, onTheme, onHome, onSubmitted,
+  sessionId, viewer, theme, onTheme, onHome, onReviewed, onSubmitted,
 }: {
   sessionId: string;
   viewer: string;
   theme: Theme;
   onTheme: () => void;
   onHome: () => void;
+  onReviewed: (owner: string, repo: string, number: number) => void;
   onSubmitted: (review: SubmittedReview) => void;
 }) {
   const { snapshot, dropped } = useSession(sessionId);
@@ -508,6 +509,7 @@ export function Review({
           onSubmit={async (verdict: Verdict, body: string) => {
             const result = await api.submit(sessionId, verdict, body);
             setSubmitOpen(false);
+            onReviewed(snapshot.owner, snapshot.repo, snapshot.number);
             // The Mac app goes straight back to the picker; a browser tab keeps a page to land on.
             if (window.marrowDesktop) onSubmitted({ number: snapshot.number, title: snapshot.pr?.title ?? '', url: result.url, demoted: result.demoted.length });
             else setSubmitted({ url: result.url, demoted: result.demoted.length });
