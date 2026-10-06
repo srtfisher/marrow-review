@@ -86,12 +86,19 @@ header says so rather than letting you trust a half-evidenced review.
 
 There is also an optional Mac app: the same page in a window of its own, with a Dock icon
 and a notification when Claude's review lands, so you can switch away while it runs.
-Download `marrow-<version>-mac-arm64.zip` (Apple silicon) or `-mac-x64.zip` (Intel) from
-[Releases](https://github.com/srtfisher/marrow-review/releases), unzip it, and move
-`marrow.app` to Applications.
+Install it with Homebrew:
 
-The app is not signed with an Apple Developer ID, so macOS blocks it the first time. Either
-clear the download quarantine once:
+```bash
+brew install --cask srtfisher/marrow/marrow
+```
+
+`brew upgrade` picks up new releases. The cask clears macOS's download quarantine for you,
+since the app is not signed with an Apple Developer ID.
+
+To install by hand instead, download `marrow-<version>-mac-arm64.zip` (Apple silicon) or
+`-mac-x64.zip` (Intel) from [Releases](https://github.com/srtfisher/marrow-review/releases),
+unzip it, and move `marrow.app` to Applications. Because of the missing Developer ID, macOS
+blocks it the first time. Either clear the download quarantine once:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/marrow.app

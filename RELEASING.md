@@ -26,6 +26,13 @@ Trusted publishing is configured per-package, so the package must exist first.
    - Repository: `srtfisher/marrow-review`
    - Workflow filename: `release.yml`
 
+3. **Homebrew tap token.** The release also bumps the cask in
+   [`srtfisher/homebrew-marrow`](https://github.com/srtfisher/homebrew-marrow).
+   Create a fine-grained PAT scoped to that repository only, with
+   _Contents: Read and write_, and save it as the `HOMEBREW_TAP_TOKEN` secret on
+   this repository. When the token expires, the tap step fails and the cask
+   stays on the previous version until it is renewed and the job re-run.
+
 That's it — no `NPM_TOKEN` secret. The release workflow already requests the
 `id-token: write` permission OIDC needs, and GitHub's built-in token creates the
 release.
