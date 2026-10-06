@@ -1,4 +1,5 @@
 import { test, expect, describe } from 'bun:test';
+import { readOnlyAccess } from '../../../src/core/source/index.js';
 import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { SdkTransport, buildQueryOptions } from '../../../src/core/agent/sdk.js';
 import { DENIED_TOOLS, READ_ONLY_TOOLS } from '../../../src/core/findings/find.js';
@@ -69,15 +70,15 @@ describe('SdkTransport isolation', () => {
     const transport = new SdkTransport({ env: {}, query: recordingQuery(seen) });
     const finding = {
       id: 'f1', path: 'a.ts', line: 1, side: 'RIGHT' as const, startLine: null,
-      severity: 'minor' as const, title: 't', body: 'b',
+      severity: 'non-blocking' as const, type: 'Correctness' as const, kind: 'issue' as const, failureScenario: 'x', title: 't', body: 'b',
       confidence: 'low' as const, suggestion: null,
     };
 
     await runFindings(transport, 'opus', {
-      prTitle: 't', prBody: '', meat, threads: [], failingChecks: [],
-    }, '/tmp/w');
-    await runVerify(transport, 'opus', [finding], '/tmp/w');
-    await ask(transport, 'opus', { id: null, turns: [] }, 'why?', '/tmp/w');
+      prTitle: 't', prBody: '', meat, threads: [], failingChecks: [], effort: 'medium', standards: '', conventions: '',
+    }, readOnlyAccess('/tmp/w'));
+    await runVerify(transport, 'opus', [finding], readOnlyAccess('/tmp/w'));
+    await ask(transport, 'opus', { id: null, turns: [] }, 'why?', readOnlyAccess('/tmp/w'));
 
     expect(seen.length).toBeGreaterThanOrEqual(4);
     for (const options of seen) expect(options.settingSources).toEqual([]);

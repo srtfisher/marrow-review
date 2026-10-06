@@ -18,6 +18,35 @@ export interface AgentRequest {
   /** Session id to resume, for follow-up turns. */
   resume?: string;
   maxTurns?: number;
+  /**
+   * In-process tools served to this run only. Their names reach the model as
+   * `toolName(name)`, which is also what `allowedTools` must list to permit them.
+   */
+  tools?: AgentTool[];
+}
+
+export interface AgentToolParam {
+  type: 'string' | 'string[]';
+  description: string;
+}
+
+/**
+ * A read-only capability handed to one run — reading a file through the GitHub
+ * API, or fetching hunks by id. Deliberately narrow: every parameter is a
+ * string or a list of strings, and the answer is text.
+ */
+export interface AgentTool {
+  name: string;
+  description: string;
+  params: Record<string, AgentToolParam>;
+  handler(args: Record<string, string | string[]>): Promise<string>;
+}
+
+export const AGENT_TOOL_SERVER = 'marrow';
+
+/** The name the model and `allowedTools` see for an in-process tool. */
+export function toolName(name: string): string {
+  return `mcp__${AGENT_TOOL_SERVER}__${name}`;
 }
 
 export interface AgentRun {

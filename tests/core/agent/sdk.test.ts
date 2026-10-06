@@ -44,3 +44,26 @@ test('a failure with no schema rejection is reported by its subtype alone', asyn
     /^Agent run failed: error_max_turns$/,
   );
 });
+
+test('in-process tools are served under the marrow MCP server', async () => {
+  const { buildQueryOptions } = await import('../../../src/core/agent/sdk.js');
+  const { toolName } = await import('../../../src/core/agent/types.js');
+  const options = buildQueryOptions({
+    model: 'haiku',
+    prompt: 'x',
+    tools: [{
+      name: 'read_file',
+      description: 'Reads a file.',
+      params: { path: { type: 'string', description: 'Repository path.' } },
+      handler: async () => 'contents',
+    }],
+  }, {});
+
+  expect(Object.keys(options.mcpServers ?? {})).toEqual(['marrow']);
+  expect(toolName('read_file')).toBe('mcp__marrow__read_file');
+});
+
+test('a run without tools starts no MCP server', async () => {
+  const { buildQueryOptions } = await import('../../../src/core/agent/sdk.js');
+  expect(buildQueryOptions({ model: 'haiku', prompt: 'x' }, {}).mcpServers).toBeUndefined();
+});

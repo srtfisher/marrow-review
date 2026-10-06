@@ -1,6 +1,6 @@
 import { describeAgentFailure } from '../agent/errors.js';
 import type { AgentTransport } from '../agent/types.js';
-import { DENIED_TOOLS, READ_ONLY_TOOLS } from './find.js';
+import { DENIED_TOOLS, type AgentAccess } from '../source/index.js';
 
 export interface ChatTurn {
   role: 'user' | 'agent';
@@ -39,18 +39,21 @@ export async function ask(
   model: string,
   session: ChatSession,
   question: string,
-  cwd: string,
+  access: AgentAccess,
+  /** The code the question is about; sent with the first question only. */
+  context?: string,
 ): Promise<ChatSession> {
   const turns: ChatTurn[] = [...session.turns, { role: 'user', text: question }];
 
   try {
     const run = await transport.run({
       model,
-      cwd,
+      cwd: access.cwd,
       systemPrompt: CHAT_SYSTEM_PROMPT,
-      prompt: question,
-      allowedTools: [...READ_ONLY_TOOLS],
+      prompt: context && !session.id ? `${context}\n\nQuestion: ${question}` : question,
+      allowedTools: access.allowedTools,
       disallowedTools: [...DENIED_TOOLS],
+      tools: access.tools,
       ...(session.id ? { resume: session.id } : {}),
     });
     return { id: run.sessionId, turns: [...turns, { role: 'agent', text: run.text }] };

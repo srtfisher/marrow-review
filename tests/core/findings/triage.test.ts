@@ -7,7 +7,7 @@ import type { VerifiedFinding } from '../../../src/core/findings/verify.js';
 function vf(id: string, over: Partial<VerifiedFinding> = {}): VerifiedFinding {
   return {
     id, path: 'a.ts', line: 10, side: 'RIGHT', startLine: null,
-    severity: 'important', title: `t-${id}`, body: `b-${id}`,
+    severity: 'blocking', type: 'Correctness', kind: 'issue', failureScenario: null, title: `t-${id}`, body: `b-${id}`,
     confidence: 'high', suggestion: null, verdict: 'confirmed', refutations: [], ...over,
   };
 }

@@ -1,4 +1,5 @@
 import { test, expect, describe } from 'bun:test';
+import { readOnlyAccess } from '../../../src/core/source/index.js';
 import { ask, buildChatContext } from '../../../src/core/findings/chat.js';
 import { FakeTransport } from '../../../src/core/agent/fake.js';
 
@@ -25,7 +26,7 @@ describe('ask', () => {
     const transport = new FakeTransport();
     transport.queue({ text: 'Because sleep(0) resolves immediately.', sessionId: 's1' });
 
-    const session = await ask(transport, 'opus', { id: null, turns: [] }, 'why?', '/tmp/wt');
+    const session = await ask(transport, 'opus', { id: null, turns: [] }, 'why?', readOnlyAccess('/tmp/wt'));
     expect(session.id).toBe('s1');
     expect(session.turns).toEqual([
       { role: 'user', text: 'why?' },
@@ -38,13 +39,13 @@ describe('ask', () => {
     const transport = new FakeTransport();
     transport.queue({ text: 'second', sessionId: 's1' });
 
-    await ask(transport, 'opus', { id: 's1', turns: [{ role: 'user', text: 'first' }] }, 'more?', '/tmp/wt');
+    await ask(transport, 'opus', { id: 's1', turns: [{ role: 'user', text: 'first' }] }, 'more?', readOnlyAccess('/tmp/wt'));
     expect(transport.requests[0]!.resume).toBe('s1');
   });
 
   test('a failure appends an error turn instead of throwing', async () => {
     const transport = { async run() { throw new Error('SDK died'); } };
-    const session = await ask(transport as never, 'opus', { id: null, turns: [] }, 'why?', '/tmp/wt');
+    const session = await ask(transport as never, 'opus', { id: null, turns: [] }, 'why?', readOnlyAccess('/tmp/wt'));
     expect(session.turns).toHaveLength(2);
     expect(session.turns[1]!.role).toBe('agent');
     // The failure's own words, not "could not reach the model": this pane is
@@ -55,7 +56,7 @@ describe('ask', () => {
 
   test('a Claude Code that never started says so, and says what to do', async () => {
     const transport = { async run() { throw new Error('spawn claude ENOENT'); } };
-    const session = await ask(transport as never, 'opus', { id: null, turns: [] }, 'why?', '/tmp/wt');
+    const session = await ask(transport as never, 'opus', { id: null, turns: [] }, 'why?', readOnlyAccess('/tmp/wt'));
     expect(session.turns[1]!.text).toMatch(/reinstall marrow/i);
     // The pane wraps, so the failure's own words fit under the remedy.
     expect(session.turns[1]!.text).toContain('spawn claude ENOENT');
@@ -64,7 +65,7 @@ describe('ask', () => {
   test('chat is read-only too', async () => {
     const transport = new FakeTransport();
     transport.queue({ text: 'x', sessionId: 's1' });
-    await ask(transport, 'opus', { id: null, turns: [] }, 'q', '/tmp/wt');
+    await ask(transport, 'opus', { id: null, turns: [] }, 'q', readOnlyAccess('/tmp/wt'));
     expect(transport.requests[0]!.disallowedTools).toContain('Bash');
   });
 });

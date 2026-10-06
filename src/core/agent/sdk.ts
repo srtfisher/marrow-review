@@ -1,12 +1,18 @@
 import {
+  createSdkMcpServer,
   query,
+  tool,
   USAGE_LIMIT_ERROR_PREFIXES,
   USAGE_WARNING_PREFIXES,
+  type McpServerConfig,
   type Options,
   type SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk';
+import { z } from 'zod/v4';
 import { MARROW_VERSION } from '../version.js';
-import type { AgentRequest, AgentRun, AgentTransport } from './types.js';
+import {
+  AGENT_TOOL_SERVER, type AgentRequest, type AgentRun, type AgentTool, type AgentTransport,
+} from './types.js';
 
 /**
  * Builds the environment for the Claude Code subprocess.
@@ -68,11 +74,39 @@ export interface SdkTransportOptions {
  */
 const ISOLATED_SETTINGS: Options['settingSources'] = [];
 
+function toolServer(tools: AgentTool[]): McpServerConfig {
+  return createSdkMcpServer({
+    name: AGENT_TOOL_SERVER,
+    tools: tools.map((t) => {
+      const shape = Object.fromEntries(
+        Object.entries(t.params).map(([key, p]) => [
+          key,
+          (p.type === 'string' ? z.string() : z.array(z.string())).describe(p.description),
+        ]),
+      );
+      return tool(t.name, t.description, shape, async (args) => {
+        // A thrown handler would end the whole run; the model can recover from
+        // an error it is told about, so it is told.
+        try {
+          const text = await t.handler(args as Record<string, string | string[]>);
+          return { content: [{ type: 'text' as const, text }] };
+        } catch (error) {
+          const text = error instanceof Error ? error.message : String(error);
+          return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
+        }
+      });
+    }),
+  });
+}
+
 export function buildQueryOptions(
   req: AgentRequest,
   env: Record<string, string | undefined>,
 ): Options {
   return {
+    ...(req.tools && req.tools.length > 0
+      ? { mcpServers: { [AGENT_TOOL_SERVER]: toolServer(req.tools) } }
+      : {}),
     model: req.model,
     cwd: req.cwd,
     systemPrompt: req.systemPrompt,

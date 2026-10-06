@@ -1,5 +1,5 @@
 import type { AgentTransport } from '../agent/types.js';
-import { DENIED_TOOLS, READ_ONLY_TOOLS } from './find.js';
+import { DENIED_TOOLS, type AgentAccess } from '../source/index.js';
 import type { Finding } from './types.js';
 
 export type Lens = 'reachability' | 'reproduction';
@@ -42,6 +42,7 @@ export function buildVerifyPrompt(finding: Finding, lens: Lens): string {
     `Claim: ${finding.title}`,
     `Location: ${finding.path}:${finding.line} (${finding.side})`,
     `Detail: ${finding.body}`,
+    ...(finding.failureScenario ? [`Failure scenario: ${finding.failureScenario}`] : []),
     '',
     LENS_INSTRUCTION[lens],
     '',
@@ -92,31 +93,42 @@ async function pooled<T, R>(
 }
 
 /**
- * Runs both lenses against every finding, at most `VERIFY_CONCURRENCY` model
- * calls at a time. Never throws: a per-lens failure yields no refutation for
- * that lens, and the finding survives with whatever verdict the remaining
- * evidence supports.
+ * Both lenses ask whether a failure is reachable and whether it reproduces.
+ * Neither question means anything for "this duplicates formatDate" or for a
+ * question, and a lens asked to refute a failure that was never claimed always
+ * succeeds — so verifying a cleanup would hide every one of them as refuted.
+ */
+export function isVerifiable(finding: Finding): boolean {
+  return finding.kind === 'issue' && finding.failureScenario !== null;
+}
+
+/**
+ * Runs both lenses against every verifiable finding, at most
+ * `VERIFY_CONCURRENCY` model calls at a time. Never throws: a per-lens failure
+ * yields no refutation for that lens, and the finding survives with whatever
+ * verdict the remaining evidence supports.
  */
 export async function runVerify(
   transport: AgentTransport,
   model: string,
   findings: Finding[],
-  cwd: string,
+  access: AgentAccess,
   onError?: (error: unknown) => void,
 ): Promise<VerifiedFinding[]> {
   const tasks = findings.flatMap((finding, index) =>
-    LENSES.map((lens) => ({ finding, index, lens })),
+    isVerifiable(finding) ? LENSES.map((lens) => ({ finding, index, lens })) : [],
   );
 
   const results = await pooled(tasks, VERIFY_CONCURRENCY, async ({ finding, lens }) => {
     try {
       const run = await transport.run({
         model,
-        cwd,
+        cwd: access.cwd,
         prompt: buildVerifyPrompt(finding, lens),
         schema: VERIFY_SCHEMA,
-        allowedTools: [...READ_ONLY_TOOLS],
+        allowedTools: access.allowedTools,
         disallowedTools: [...DENIED_TOOLS],
+        tools: access.tools,
       });
       const s = run.structured as { refuted?: boolean; reasoning?: string } | null;
       if (!s) return null;

@@ -1,4 +1,5 @@
 import { test, expect, describe } from 'bun:test';
+import { readOnlyAccess } from '../../../src/core/source/index.js';
 import {
   buildFindingsPrompt, findingId, runFindings,
   DENIED_TOOLS, FINDINGS_SCHEMA, READ_ONLY_TOOLS,
@@ -31,7 +32,10 @@ function meat(): MeatResult {
   };
 }
 
-const input = { prTitle: 'Add retries', prBody: 'Retries on 5xx.', meat: meat(), threads: [], failingChecks: [] };
+const input = {
+  prTitle: 'Add retries', prBody: 'Retries on 5xx.', meat: meat(), threads: [], failingChecks: [],
+  effort: 'medium' as const, standards: '', conventions: '',
+};
 
 describe('tool policy', () => {
   test('the agent may read but never write or execute', () => {
@@ -80,13 +84,13 @@ describe('buildFindingsPrompt', () => {
 describe('findingId', () => {
   test('is stable for the same finding', () => {
     const raw = { path: 'a.ts', line: 1, side: 'RIGHT' as const, title: 't', body: 'b',
-                  severity: 'minor' as const, confidence: 'low' as const, startLine: null, suggestion: null };
+                  severity: 'non-blocking' as const, type: 'Correctness' as const, kind: 'issue' as const, failureScenario: 'x', confidence: 'low' as const, startLine: null, suggestion: null };
     expect(findingId(raw)).toBe(findingId({ ...raw }));
   });
 
   test('differs when the anchor or title differs', () => {
     const raw = { path: 'a.ts', line: 1, side: 'RIGHT' as const, title: 't', body: 'b',
-                  severity: 'minor' as const, confidence: 'low' as const, startLine: null, suggestion: null };
+                  severity: 'non-blocking' as const, type: 'Correctness' as const, kind: 'issue' as const, failureScenario: 'x', confidence: 'low' as const, startLine: null, suggestion: null };
     expect(findingId(raw)).not.toBe(findingId({ ...raw, line: 2 }));
     expect(findingId(raw)).not.toBe(findingId({ ...raw, title: 'other' }));
   });
@@ -96,7 +100,7 @@ describe('runFindings', () => {
   test('sends a read-only tool policy and the schema', async () => {
     const transport = new FakeTransport();
     transport.queue({ structured: { findings: [] } });
-    await runFindings(transport, 'opus', input, '/tmp/wt');
+    await runFindings(transport, 'opus', input, readOnlyAccess('/tmp/wt'));
 
     const req = transport.requests[0]!;
     expect(req.model).toBe('opus');
@@ -109,11 +113,11 @@ describe('runFindings', () => {
   test('maps raw findings and assigns stable ids', async () => {
     const transport = new FakeTransport();
     transport.queue({ structured: { findings: [
-      { path: 'src/api.ts', line: 11, side: 'RIGHT', startLine: null, severity: 'important',
+      { path: 'src/api.ts', line: 11, side: 'RIGHT', startLine: null, severity: 'blocking', type: 'Correctness', kind: 'issue', failureScenario: 'A 5xx makes retry() spin.',
         title: 'Busy-wait', body: 'sleep(0) does not yield.', confidence: 'high', suggestion: null },
     ] } });
 
-    const found = await runFindings(transport, 'opus', input, '/tmp/wt');
+    const found = await runFindings(transport, 'opus', input, readOnlyAccess('/tmp/wt'));
     expect(found).toHaveLength(1);
     expect(found[0]!.title).toBe('Busy-wait');
     expect(found[0]!.id.length).toBeGreaterThan(0);
@@ -122,11 +126,42 @@ describe('runFindings', () => {
   test('returns an empty list rather than throwing when the model returns nothing', async () => {
     const transport = new FakeTransport();
     transport.queue({ structured: null });
-    expect(await runFindings(transport, 'opus', input, '/tmp/wt')).toEqual([]);
+    expect(await runFindings(transport, 'opus', input, readOnlyAccess('/tmp/wt'))).toEqual([]);
   });
 
   test('a transport failure yields no findings instead of killing the review', async () => {
     const transport = { async run() { throw new Error('SDK died'); } };
-    expect(await runFindings(transport as never, 'opus', input, '/tmp/wt')).toEqual([]);
+    expect(await runFindings(transport as never, 'opus', input, readOnlyAccess('/tmp/wt'))).toEqual([]);
+  });
+});
+
+describe('the rubric reaches the model', () => {
+  test('the system prompt is the rubric, with the effort applied', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [] } });
+    await runFindings(transport, 'opus', { ...input, effort: 'low', conventions: 'Tabs.' }, readOnlyAccess('/tmp/wt'));
+    const system = transport.requests[0]!.systemPrompt!;
+    expect(system).toContain('blocking: must change before merge');
+    expect(system).toContain('Tabs.');
+  });
+
+  test('a question the model marked blocking comes back non-blocking', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [
+      { path: 'src/api.ts', line: 11, side: 'RIGHT', startLine: null, severity: 'blocking',
+        type: 'Performance', kind: 'question', failureScenario: null, title: 'Tested at scale?',
+        body: 'Was this tried on a large table?', confidence: 'low', suggestion: null },
+    ] } });
+    const [found] = await runFindings(transport, 'opus', input, readOnlyAccess('/tmp/wt'));
+    expect(found!.severity).toBe('non-blocking');
+  });
+
+  test('in-process tools and their names pass through to the run', async () => {
+    const transport = new FakeTransport();
+    transport.queue({ structured: { findings: [] } });
+    const tool = { name: 'read_file', description: 'r', params: {}, handler: async () => '' };
+    await runFindings(transport, 'opus', input, { cwd: '/tmp/x', allowedTools: ['mcp__marrow__read_file'], tools: [tool] });
+    expect(transport.requests[0]!.allowedTools).toEqual(['mcp__marrow__read_file']);
+    expect(transport.requests[0]!.tools).toEqual([tool]);
   });
 });

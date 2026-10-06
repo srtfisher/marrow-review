@@ -1,4 +1,5 @@
 import { test, expect, describe } from 'bun:test';
+import { readOnlyAccess } from '../../../src/core/source/index.js';
 import {
   buildVerifyPrompt, runVerify, scoreVerdict, VERIFY_CONCURRENCY, VERIFY_SCHEMA,
 } from '../../../src/core/findings/verify.js';
@@ -8,7 +9,7 @@ import type { Finding } from '../../../src/core/findings/types.js';
 
 const finding: Finding = {
   id: 'f1', path: 'src/api.ts', line: 11, side: 'RIGHT', startLine: null,
-  severity: 'important', title: 'Busy-wait', body: 'sleep(0) does not yield.',
+  severity: 'blocking', type: 'Correctness', kind: 'issue', failureScenario: 'A 5xx makes retry() spin.', title: 'Busy-wait', body: 'sleep(0) does not yield.',
   confidence: 'high', suggestion: null,
 };
 
@@ -59,7 +60,7 @@ describe('runVerify', () => {
     transport.queue({ structured: { refuted: false, reasoning: 'path is reachable' } });
     transport.queue({ structured: { refuted: false, reasoning: 'reproduces' } });
 
-    const [verified] = await runVerify(transport, 'opus', [finding], '/tmp/wt');
+    const [verified] = await runVerify(transport, 'opus', [finding], readOnlyAccess('/tmp/wt'));
     expect(transport.requests).toHaveLength(2);
     expect(verified!.verdict).toBe('confirmed');
     expect(verified!.refutations.map((r) => r.lens)).toEqual(['reachability', 'reproduction']);
@@ -70,13 +71,13 @@ describe('runVerify', () => {
     transport.queue({ structured: { refuted: true, reasoning: 'dead code' } });
     transport.queue({ structured: { refuted: true, reasoning: 'cannot occur' } });
 
-    const [verified] = await runVerify(transport, 'opus', [finding], '/tmp/wt');
+    const [verified] = await runVerify(transport, 'opus', [finding], readOnlyAccess('/tmp/wt'));
     expect(verified!.verdict).toBe('refuted');
   });
 
   test('keeps the finding when verification fails entirely', async () => {
     const transport = { async run() { throw new Error('SDK died'); } };
-    const [verified] = await runVerify(transport as never, 'opus', [finding], '/tmp/wt');
+    const [verified] = await runVerify(transport as never, 'opus', [finding], readOnlyAccess('/tmp/wt'));
     expect(verified!.verdict).toBe('plausible');
     expect(verified!.refutations).toEqual([]);
   });
@@ -101,7 +102,7 @@ describe('runVerify', () => {
     };
 
     const findings = Array.from({ length: 20 }, (_, i) => ({ ...finding, id: `f${i}` }));
-    const verified = await runVerify(transport, 'opus', findings, '/tmp/wt');
+    const verified = await runVerify(transport, 'opus', findings, readOnlyAccess('/tmp/wt'));
 
     expect(peak).toBeLessThanOrEqual(VERIFY_CONCURRENCY);
     expect(peak).toBeGreaterThan(1);
@@ -124,7 +125,7 @@ describe('runVerify', () => {
     };
 
     const findings = [{ ...finding, id: 'a' }, { ...finding, id: 'b' }];
-    const verified = await runVerify(transport, 'opus', findings, '/tmp/wt');
+    const verified = await runVerify(transport, 'opus', findings, readOnlyAccess('/tmp/wt'));
 
     expect(verified.map((f) => f.id)).toEqual(['a', 'b']);
     for (const f of verified) {
@@ -147,7 +148,7 @@ describe('runVerify', () => {
     };
 
     const errors: unknown[] = [];
-    const [verified] = await runVerify(transport, 'opus', [finding], '/tmp/wt', (e) => errors.push(e));
+    const [verified] = await runVerify(transport, 'opus', [finding], readOnlyAccess('/tmp/wt'), (e) => errors.push(e));
     expect(verified!.refutations).toHaveLength(1);
     expect(verified!.verdict).toBe('refuted');
     expect(errors).toHaveLength(1);
@@ -157,12 +158,33 @@ describe('runVerify', () => {
     const transport = new FakeTransport();
     transport.queue({ structured: { refuted: false, reasoning: 'x' } });
     transport.queue({ structured: { refuted: false, reasoning: 'y' } });
-    await runVerify(transport, 'opus', [finding], '/tmp/wt');
+    await runVerify(transport, 'opus', [finding], readOnlyAccess('/tmp/wt'));
 
     for (const req of transport.requests) {
       expect(req.schema).toBe(VERIFY_SCHEMA);
       expect(req.disallowedTools).toContain('Bash');
       expect(req.cwd).toBe('/tmp/wt');
     }
+  });
+});
+
+describe('what gets verified', () => {
+  test('a cleanup with no failure scenario is not put to the lenses', async () => {
+    const transport = new FakeTransport();
+    const cleanup = { ...finding, id: 'c', type: 'Maintainability' as const, failureScenario: null };
+    const [verified] = await runVerify(transport, 'opus', [cleanup], readOnlyAccess('/tmp/wt'));
+    expect(transport.requests).toHaveLength(0);
+    expect(verified!.verdict).toBe('plausible');
+  });
+
+  test('a question is not put to the lenses', async () => {
+    const transport = new FakeTransport();
+    const question = { ...finding, id: 'q', kind: 'question' as const };
+    await runVerify(transport, 'opus', [question], readOnlyAccess('/tmp/wt'));
+    expect(transport.requests).toHaveLength(0);
+  });
+
+  test('the failure scenario reaches the verifier', () => {
+    expect(buildVerifyPrompt(finding, 'reproduction')).toContain(finding.failureScenario!);
   });
 });

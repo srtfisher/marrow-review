@@ -2,37 +2,16 @@ import { createHash } from 'node:crypto';
 import type { AgentTransport } from '../agent/types.js';
 import type { CheckRun, ReviewThread } from '../github/types.js';
 import type { MeatResult } from '../meat/index.js';
+import { buildRubric, type Effort } from '../review/rubric.js';
+import { DENIED_TOOLS, READ_ONLY_TOOLS, type AgentAccess } from '../source/index.js';
 import { FINDINGS_SCHEMA } from './schema.js';
 import type { Finding, RawFinding } from './types.js';
 
 export { FINDINGS_SCHEMA };
 export type { Finding, RawFinding };
-
-/** The agent may read the worktree. It may not change it or run commands in it. */
-export const READ_ONLY_TOOLS = ['Read', 'Grep', 'Glob'] as const;
-/**
- * Named explicitly rather than left to the SDK's default-deny for tools absent
- * from `allowedTools`: the deny list is the thing a reader audits, and a future
- * default that opens up — or a subagent that inherits a wider set — must not be
- * able to quietly hand untrusted code a shell (`Bash`), a way to spawn an agent
- * outside these limits (`Task`), or a way to exfiltrate what it read
- * (`WebFetch`, `WebSearch`).
- */
-export const DENIED_TOOLS = [
-  'Write', 'Edit', 'NotebookEdit', 'Bash', 'Task', 'WebFetch', 'WebSearch',
-] as const;
-
-export const FINDINGS_SYSTEM_PROMPT = `You are reviewing a pull request for a senior engineer who will decide what to do with each of your findings.
-
-You have read-only access to the repository at the pull request's head commit. Use it: open the whole file when a hunk is not self-explanatory, grep for other callers before claiming a signature change is safe, and read the tests.
-
-Report a finding only when you can name a concrete consequence — wrong output, a crash, a security hole, data loss, a broken contract for an existing caller. "Consider extracting this" is not a finding.
-
-Anchor every finding to a line that appears in the diff you were given. A concern about code the diff does not touch still belongs in the report; anchor it to the nearest changed line and say so in the body.
-
-Do not repeat a point an existing review thread already makes.
-
-Be honest about confidence. A high-confidence finding you cannot substantiate costs the reviewer more than a low-confidence one you flag as uncertain.`;
+// Defined with the sources, which own what an agent may read; re-exported here
+// because find is where a reader auditing the tool policy looks first.
+export { DENIED_TOOLS, READ_ONLY_TOOLS };
 
 export interface FindingsInput {
   prTitle: string;
@@ -40,6 +19,9 @@ export interface FindingsInput {
   meat: MeatResult;
   threads: ReviewThread[];
   failingChecks: CheckRun[];
+  effort: Effort;
+  standards: string;
+  conventions: string;
 }
 
 export function buildFindingsPrompt(input: FindingsInput): string {
@@ -100,19 +82,20 @@ export async function runFindings(
   transport: AgentTransport,
   model: string,
   input: FindingsInput,
-  cwd: string,
+  access: AgentAccess,
   onError?: (error: unknown) => void,
 ): Promise<Finding[]> {
   let structured: unknown;
   try {
     const run = await transport.run({
       model,
-      cwd,
-      systemPrompt: FINDINGS_SYSTEM_PROMPT,
+      cwd: access.cwd,
+      systemPrompt: buildRubric(input),
       prompt: buildFindingsPrompt(input),
       schema: FINDINGS_SCHEMA,
-      allowedTools: [...READ_ONLY_TOOLS],
+      allowedTools: access.allowedTools,
       disallowedTools: [...DENIED_TOOLS],
+      tools: access.tools,
     });
     structured = run.structured;
   } catch (error) {
@@ -121,5 +104,13 @@ export async function runFindings(
   }
 
   const raw = (structured as { findings?: RawFinding[] } | null)?.findings ?? [];
-  return raw.map((f) => ({ ...f, id: findingId(f) }));
+  return raw.map((f) => ({
+    ...f,
+    startLine: f.startLine ?? null,
+    suggestion: f.suggestion ?? null,
+    failureScenario: f.failureScenario ?? null,
+    // The schema allows a blocking question; the rubric does not.
+    severity: f.kind === 'question' ? 'non-blocking' : f.severity,
+    id: findingId(f),
+  }));
 }
