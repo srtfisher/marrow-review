@@ -120,15 +120,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" desktop/out/*.zip --clobber
 
-      # github.token cannot push to another repository, hence the PAT.
+      # github.token cannot push to another repository, hence a write deploy key
+      # on the tap, whose private half is this secret.
       - name: Update the Homebrew tap
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           arm=$(shasum -a 256 "desktop/out/marrow-$version-mac-arm64.zip" | cut -d' ' -f1)
           intel=$(shasum -a 256 "desktop/out/marrow-$version-mac-x64.zip" | cut -d' ' -f1)
-          git clone --depth 1 "https://x-access-token:$TAP_TOKEN@github.com/srtfisher/homebrew-marrow.git" tap
+          key="$RUNNER_TEMP/tap_key"
+          printf '%s\n' "$TAP_DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 git@github.com:srtfisher/homebrew-marrow.git tap
           perl -0pi -e "s/version \"[^\"]+\"/version \"$version\"/; s/arm:(\s+)\"[0-9a-f]{64}\"/arm:\$1\"$arm\"/; s/intel:(\s+)\"[0-9a-f]{64}\"/intel:\$1\"$intel\"/" tap/Casks/marrow.rb
           cd tap
           # A re-run of a release that already updated the tap has nothing to commit.
