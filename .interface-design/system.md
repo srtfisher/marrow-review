@@ -526,6 +526,23 @@ reads as a bug.
 ("Review · 3/5 reviewers done"); the overview line and the steps popover carry the rest
 ("waiting on history"). A path once ran the header row into the controls beside it.
 
+## Revision: the Mac app (0.5)
+
+**The icon is the favicon at Dock size.** The purple `M` on a macOS squircle, the purple
+deepened top to bottom (`#9a6cf2` → `#5a32a8`) so it is not a flat swatch among other
+apps, and faint diff rows behind it with green and red gutter marks so it reads as a code
+tool. Full-width green and red row tints were tried and went muddy on purple; only the
+gutter marks kept their color. At 32 px the rows vanish and the `M` carries it, which is
+the point. Purple here is the brand, as in the favicon, not the model token.
+
+**The notification is the page's own vocabulary.** Title: `#123 <title>`. Body: `3
+findings · 2 low confidence`, counted against the same score line as the Low confidence
+button; `No findings`; `Review failed: <summary>`. It fires only when the window is not
+focused, and the Dock badge stays until you come back.
+
+**The loading and error page borrows the Primer tokens** and the purple dot, and shows the
+CLI's stderr verbatim in a monospace well — the CLI already says what to do.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme. The one

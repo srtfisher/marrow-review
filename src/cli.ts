@@ -55,6 +55,7 @@ Options:
   --no-verify           keep findings unscored: skip the 0-100 confidence scoring
                         (all four can be changed for the next review in the page)
   --no-open             print the URL instead of opening a browser
+  --claude-path <p>     use this Claude Code instead of the one bundled with marrow
   --use-api-key         allow ANTHROPIC_API_KEY; otherwise the Claude Code
                         subscription is used and the key is stripped
   -h, --help            show this help
@@ -104,7 +105,7 @@ async function dryRun(args: CliArgs, client: GitHubClient, octokit: Octokit, own
   const result = await computeMeat({
     files: parseUnifiedDiff(pr.diff),
     ruleContext: { generatedPaths: parseGeneratedPaths(gitattributes ?? '') },
-    transport: new SdkTransport({ useApiKey: args.useApiKey }),
+    transport: new SdkTransport({ useApiKey: args.useApiKey, claudePath: args.claudePath }),
     cache: new FileVerdictCache(`${owner}/${repo}`),
     model: args.meatModel,
     prTitle: pr.title,
@@ -158,7 +159,7 @@ async function main(): Promise<number> {
 
   noteApiKeyWithheld(args);
   const standards = args.standards ? await loadStandards(args.standards) : '';
-  const transport = new SdkTransport({ useApiKey: args.useApiKey });
+  const transport = new SdkTransport({ useApiKey: args.useApiKey, claudePath: args.claudePath });
   const store = new ReviewStore();
 
   const server = await startServer({

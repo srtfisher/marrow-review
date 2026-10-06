@@ -1,6 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
-import type { SessionSnapshot } from './lib/types.js';
+import { reviewArrived, type ReviewNotice } from './lib/notify.js';
+import type { PassSettings, SessionSnapshot } from './lib/types.js';
+
+declare global {
+  interface Window {
+    /** Set by the Mac app's preload; absent in a browser. */
+    marrowDesktop?: {
+      notify(notice: ReviewNotice): void;
+      /** The app starts its next server with these, so they outlive a relaunch. */
+      savePasses(passes: PassSettings): void;
+    };
+  }
+}
 
 export function useSession(id: string | null): { snapshot: SessionSnapshot | null; dropped: boolean } {
   const [snapshot, setSnapshot] = useState<SessionSnapshot | null>(null);
@@ -17,6 +29,17 @@ export function useSession(id: string | null): { snapshot: SessionSnapshot | nul
     );
   }, [id]);
   return { snapshot, dropped };
+}
+
+/** Tells the Mac app when a review lands; does nothing in a browser. */
+export function useReviewNotice(snapshot: SessionSnapshot | null): void {
+  const prev = useRef<SessionSnapshot | null>(null);
+  useEffect(() => {
+    if (!snapshot) return;
+    const notice = reviewArrived(prev.current, snapshot);
+    prev.current = snapshot;
+    if (notice) window.marrowDesktop?.notify(notice);
+  }, [snapshot]);
 }
 
 export type Theme = 'system' | 'light' | 'dark';

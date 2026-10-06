@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2023", "DOM"],
+    "rootDir": ".",
+    "types": ["bun"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.cts", "tests/**/*.ts", "e2e/**/*.ts", "playwright.config.ts"]
+}

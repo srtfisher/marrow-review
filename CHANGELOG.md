@@ -39,6 +39,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--source auto|checkout|worktree|api`, `--effort low|medium|high`, `--standards <dir>`,
   `--port`, `--no-open`, and `owner/repo#n` targets.
 - A Claude Code plugin with a `marrow` skill that launches the app.
+- **An optional Mac app**, attached to each GitHub release: the page in its own window,
+  a notification and Dock badge when the review lands, File › Open Local Checkout, and
+  passes remembered between launches. It uses the Claude Code on your machine, and says
+  so when `gh` or Claude Code is missing. Not signed with a Developer ID; see the README.
+- `--claude-path <path>` to use an installed Claude Code instead of the bundled one.
 
 ### Removed
 

@@ -34,7 +34,10 @@ export function Settings({ open: controlled, onOpen, shortcut = true }: { open?:
     const next = { ...passes, [pass]: !passes[pass] };
     setPasses(next);
     setError(null);
-    api.settings(next).then(setPasses, (e: Error) => { setPasses(previous); setError(e.message); });
+    api.settings(next).then(
+      (saved) => { setPasses(saved); window.marrowDesktop?.savePasses(saved); },
+      (e: Error) => { setPasses(previous); setError(e.message); },
+    );
   };
 
   return (

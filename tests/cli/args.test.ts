@@ -105,3 +105,9 @@ test('a full model id still steps down a tier for the cheaper passes', () => {
 test('a model from no known family is used as given', () => {
   expect(tierBelow('my-gateway-model')).toBe('my-gateway-model');
 });
+
+test('--claude-path names a Claude Code to use instead of the bundled one', () => {
+  expect(parseArgs([]).claudePath).toBeNull();
+  expect(parseArgs(['--claude-path', '/opt/claude']).claudePath).toBe('/opt/claude');
+  expect(() => parseArgs(['--claude-path'])).toThrow(/--claude-path/);
+});

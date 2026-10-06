@@ -27,7 +27,8 @@
     "release:patch": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags",
-    "dev:web": "vite build --watch"
+    "dev:web": "vite build --watch",
+    "e2e": "bun run build && playwright test"
   },
   "repository": {
     "type": "git",
@@ -55,6 +56,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "^1.3.14",
     "@types/node": "^24.0.0",

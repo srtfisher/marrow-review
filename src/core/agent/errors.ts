@@ -6,10 +6,10 @@
  * started, and a reviewer pressing R forever is worse served than one told to
  * reinstall. Hence `retryable`: the offer is made only when it means something.
  *
- * Claude Code is not a separate install. It ships with marrow as a platform
- * package of the agent SDK, so "not installed" here means an install that
- * skipped optional dependencies, or a platform the SDK has no binary for —
- * which is why the remedy is reinstalling marrow rather than installing Claude.
+ * Claude Code usually ships with marrow as a platform package of the agent
+ * SDK, so "not found" means an install that skipped optional dependencies, or
+ * a platform the SDK has no binary for — the remedy is reinstalling marrow.
+ * The exception is `--claude-path` (the Mac app), where it is the user's own.
  */
 export interface AgentFailure {
   /** One line, remedy first, for a note that may be truncated at the end. */
@@ -32,6 +32,9 @@ export interface AgentFailure {
 const NOT_INSTALLED =
   /(binary|executable)[^.]{0,80}?not found|failed to launch|ENOENT|EACCES/i;
 
+/** SdkTransport's own wording when `--claude-path` points at nothing. */
+const NOT_INSTALLED_AT = /^Claude Code is not installed at /;
+
 /** Claude Code exits rather than prompting, so this arrives as a message. */
 const NOT_AUTHENTICATED =
   /not authenticated|not logged in|no credentials|invalid api key|authentication_error|unauthorized|\b401\b|please run \/login/i;
@@ -44,6 +47,14 @@ export function agentErrorMessage(error: unknown): string {
 
 export function describeAgentFailure(error: unknown): AgentFailure {
   const detail = agentErrorMessage(error);
+
+  if (NOT_INSTALLED_AT.test(detail)) {
+    return {
+      summary: 'Claude Code is not installed — install Claude Code (https://claude.com/claude-code), then restart marrow.',
+      detail,
+      retryable: false,
+    };
+  }
 
   if (NOT_INSTALLED.test(detail)) {
     return {

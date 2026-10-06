@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../api.js';
-import { useSession, type Theme } from '../hooks.js';
+import { useReviewNotice, useSession, type Theme } from '../hooks.js';
 import { placeByRow, rangeAnchor, suggestionText, type Anchor } from '../lib/anchor.js';
 import { isLow, isShown } from '../lib/findings.js';
 import { insertSuggestion } from '../lib/autocomplete.js';
@@ -48,6 +48,7 @@ export function Review({
   onHome: () => void;
 }) {
   const { snapshot, dropped } = useSession(sessionId);
+  useReviewNotice(snapshot);
   const [view, setView] = useState<ViewOptions>({ fullDiff: false, revealAll: false, revealed: new Set(), collapsed: new Set() });
   const [cursorKey, setCursorKey] = useState<string | null>(null);
   const [selection, setSelection] = useState<{ from: string; to: string } | null>(null);

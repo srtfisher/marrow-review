@@ -63,3 +63,10 @@ test('takes the first line of a failure that quotes a whole stderr dump', () => 
     'the reason',
   );
 });
+
+test('a missing Claude Code that marrow was pointed at is installed, not reinstalled', () => {
+  const failure = describeAgentFailure(new Error('Claude Code is not installed at /Users/me/.local/bin/claude.'));
+  expect(failure.summary).toMatch(/install Claude Code/i);
+  expect(failure.summary).not.toMatch(/reinstall marrow/i);
+  expect(failure.retryable).toBe(false);
+});

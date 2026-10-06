@@ -82,6 +82,32 @@ or with `--source api` — the agent reads files through the GitHub API at the h
 That mode cannot search the repository (GitHub only indexes the default branch), and the
 header says so rather than letting you trust a half-evidenced review.
 
+### The Mac app
+
+There is also an optional Mac app: the same page in a window of its own, with a Dock icon
+and a notification when Claude's review lands, so you can switch away while it runs.
+Download `marrow-<version>-mac-arm64.zip` (Apple silicon) or `-mac-x64.zip` (Intel) from
+[Releases](https://github.com/srtfisher/marrow-review/releases), unzip it, and move
+`marrow.app` to Applications.
+
+The app is not signed with an Apple Developer ID, so macOS blocks it the first time. Either
+clear the download quarantine once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/marrow.app
+```
+
+or open it, dismiss the warning, and choose **Open Anyway** under System Settings › Privacy
+& Security. Allow notifications when macOS asks.
+
+It needs the same things as the command: `gh` signed in, and Claude Code installed and
+signed in — the app uses the `claude` on your machine rather than bundling its own. If
+`gh` is missing or signed out, the window says so and how to fix it; if Claude Code is
+missing, the app says so once and still opens: the diff, your comments, and submitting
+all work without it. **File › Open Local Checkout…** (`⌘O`) points it at a clone of the repository you
+review, so Claude can search it, as running `marrow` inside a clone does; without one it
+reads through the GitHub API. The passes you choose are remembered between launches.
+
 ## Reviewing
 
 The page is GitHub's files view with two additions: a sidebar of groups, and Claude.
@@ -136,6 +162,7 @@ where you left it, and carries comments over to a new head commit when they stil
 --no-find             skip Claude's review (and so its scoring)
 --no-verify           skip scoring: findings arrive unscored, and all are shown
 --no-open             print the URL instead of opening a browser
+--claude-path <p>     use this Claude Code instead of the one bundled with marrow
 --use-api-key         allow ANTHROPIC_API_KEY instead of the subscription
 --dry-run             print, submit nothing
 ```
@@ -337,6 +364,7 @@ bun test              # the whole suite
 bun run typecheck     # tsc over src and tests, then over the web page
 bun run lint:boundary # core imports no UI; the page imports core types only
 bun run build         # tsc -> dist/, vite -> dist/web
+bun run e2e           # the built page in Chromium, over a fixture server (no GitHub, no model)
 ```
 
 The suite needs [bun](https://bun.sh): tests import `bun:test`. The package itself runs on
@@ -347,6 +375,17 @@ plain Node 24+ — bun is a development dependency of the repository, not of the
 function so a desktop shell can host the same thing. `src/web/**` is the React page; the
 arithmetic it draws from lives in pure modules under `src/web/lib` and is unit-tested
 directly, so the renderer and the keyboard read one model of the page.
+
+The Mac app is `desktop/`, its own package, and never part of the npm package:
+
+```bash
+cd desktop && npm install
+npm start                 # Electron over the repo's dist/ (run the root build first)
+bun test                  # the shell's pure helpers
+npm run e2e               # the app itself, driven by Playwright, over the same fixture server
+scripts/package.sh        # out/marrow-<version>-mac-<arch>.zip; pass arm64 or x64
+scripts/icon.sh           # assets/icon.svg -> assets/icon.icns (needs librsvg)
+```
 
 Interface decisions and the reasoning behind them live in `.interface-design/system.md`.
 The design documents behind each feature are in `docs/design/`, and `RELEASING.md` covers

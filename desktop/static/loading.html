@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>marrow</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0; --inset: #f6f8fa; --danger: #d1242f; --accent: #8250df;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d; --inset: #151b23; --danger: #f85149; --accent: #ab7df8; }
+  }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg); }
+  main { width: min(640px, calc(100vw - 48px)); }
+  .starting { display: flex; align-items: center; gap: 10px; justify-content: center; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; color: var(--danger); }
+  pre { margin: 0 0 12px; padding: 12px; background: var(--inset); border: 1px solid var(--border); border-radius: 6px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  p { margin: 0; color: var(--muted); }
+  a { color: var(--accent); }
+  kbd { font: 11px ui-monospace, Menlo, monospace; padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <div class="starting" id="starting"><span class="dot"></span>Starting marrow…</div>
+  <div id="error" hidden>
+    <h1>marrow could not start</h1>
+    <pre id="detail"></pre>
+    <p>Fix the cause, then File › Restart Server, or open a local checkout with <kbd>⌘O</kbd>.</p>
+  </div>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  if (params.get('state') === 'error') {
+    document.getElementById('starting').hidden = true;
+    document.getElementById('error').hidden = false;
+    const detail = document.getElementById('detail');
+    for (const part of (params.get('detail') || 'No output.').split(/(https?:\/\/[^\s)]+)/)) {
+      if (/^https?:\/\//.test(part)) {
+        const link = document.createElement('a');
+        link.href = part;
+        link.textContent = part;
+        detail.append(link);
+      } else {
+        detail.append(part);
+      }
+    }
+  }
+</script>
+</body>
+</html>
