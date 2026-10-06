@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findExecutable, loginShellPath, parseServerUrl, passFlags, tail, toNotice, toPasses, type Passes } from './child.js';
+import { findExecutable, loginShellPath, osascriptNotice, parseServerUrl, passFlags, tail, toNotice, toPasses, type Passes } from './child.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Packaged, marrow is staged into Resources outside the asar: the Claude SDK
@@ -295,7 +295,14 @@ ipcMain.on('marrow:notify', (event, raw: unknown) => {
     win.show();
     win.focus();
   });
-  note.on('failed', (_event, error) => process.stderr.write(`marrow: notification failed: ${error}\n`));
+  // Ad-hoc signed, this is every time: "Notifications are not allowed for this application".
+  note.on('failed', (_event, error) => {
+    process.stderr.write(`marrow: notification failed: ${error}\n`);
+    app.dock?.bounce('informational');
+    execFile('osascript', osascriptNotice(notice), (fallback) => {
+      if (fallback) process.stderr.write(`marrow: osascript notification failed: ${fallback.message}\n`);
+    });
+  });
   note.show();
 });
 

@@ -49,6 +49,16 @@ export function toNotice(raw: unknown): Notice | null {
   return { title: title.slice(0, 200), body: body.slice(0, 500) };
 }
 
+/**
+ * Arguments for `osascript` to post a notice. macOS refuses notifications from
+ * an ad-hoc signed app, but not from osascript. The text goes in as argv so the
+ * page's strings never become AppleScript source. macOS shows it as Script
+ * Editor's, so the title says who it is from.
+ */
+export function osascriptNotice(notice: Notice): string[] {
+  return ['-e', 'on run argv', '-e', 'display notification (item 2 of argv) with title "marrow" subtitle (item 1 of argv)', '-e', 'end run', notice.title, notice.body];
+}
+
 /** Mirrors the core's PassSettings; the shell imports nothing from marrow. */
 export interface Passes {
   abridge: boolean;

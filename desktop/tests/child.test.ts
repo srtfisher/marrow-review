@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { findExecutable, loginShellPath, parseServerUrl, passFlags, tail, toNotice, toPasses } from '../src/child.js';
+import { findExecutable, loginShellPath, osascriptNotice, parseServerUrl, passFlags, tail, toNotice, toPasses } from '../src/child.js';
 
 describe('parseServerUrl', () => {
   test('reads the URL from the line the CLI prints', () => {
@@ -44,6 +44,15 @@ describe('toNotice', () => {
     expect(toNotice(null)).toBeNull();
     expect(toNotice({ title: 1, body: 'x' })).toBeNull();
     expect(toNotice('hi')).toBeNull();
+  });
+});
+
+describe('osascriptNotice', () => {
+  test('passes the text as arguments, never as script source', () => {
+    const args = osascriptNotice({ title: '#1 "x" end run', body: 'say "hi"' });
+    expect(args.slice(-2)).toEqual(['#1 "x" end run', 'say "hi"']);
+    expect(args.filter((_, i) => args[i - 1] === '-e').join('\n')).not.toContain('hi');
+    expect(args.join(' ')).toContain('with title "marrow"');
   });
 });
 
