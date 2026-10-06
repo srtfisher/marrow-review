@@ -1,6 +1,7 @@
 import { createContext, Fragment, memo, useContext, useState, type ReactNode } from 'react';
 import { api } from '../api.js';
 import { useHighlight, type Token } from '../highlight.js';
+import { ariaKey, keyLabel } from '../lib/keymap.js';
 import type { Block, FileView, LineRow } from '../lib/rows.js';
 import type { DiffLine, TriagedFinding } from '../lib/types.js';
 import { Icon } from './icons.js';
@@ -238,8 +239,8 @@ export function DiffFile({ file }: { file: FileView }) {
           <a href={`${ctx.htmlUrl}/files`} target="_blank" rel="noreferrer" className="text-xs text-fg-muted hover:text-accent" title="Open on GitHub">GitHub</a>
         )}
         <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border bg-btn px-2 py-0.5 text-xs hover:bg-btn-hover">
-          <input type="checkbox" checked={isViewed} onChange={(e) => ctx.onViewed(f.path, e.target.checked)} className="accent-[var(--gh-accent-emphasis)]" />
-          Viewed
+          <input type="checkbox" checked={isViewed} onChange={(e) => ctx.onViewed(f.path, e.target.checked)} aria-keyshortcuts={ariaKey('viewed')} className="accent-[var(--gh-accent-emphasis)]" />
+          Viewed<Kbd>{keyLabel('viewed')}</Kbd>
         </label>
       </div>
       {!file.collapsed && (
