@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-06
+
+### Added
+
+- **Pick a verdict from the keyboard.** The finish dialog opens with the cursor in the
+  summary, and ⌥1, ⌥2, and ⌥3 choose Comment, Approve, or Request changes from anywhere in
+  it, each shown beside its option.
+
+### Changed
+
+- In the Mac app a submitted review returns straight to the pull request list, with a
+  notice bar linking the review on GitHub. In a browser the "Review submitted" page stays.
+
+### Fixed
+
+- **The Mac app's review notifications never appeared.** macOS refuses notifications from
+  an ad-hoc signed app; the app now bounces its Dock icon and posts the notice through
+  `osascript` instead.
+
 ## [0.4.2] - 2026-10-06
 
 ### Changed
