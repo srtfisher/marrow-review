@@ -21,6 +21,12 @@ export interface PullRequestSummary {
   htmlUrl: string;
 }
 
+/** A pull request found by search rather than listed from one repository, so it names its own. */
+export interface RequestedPull extends PullRequestSummary {
+  owner: string;
+  repo: string;
+}
+
 export interface PullRequestDetail extends PullRequestSummary {
   owner: string;
   repo: string;

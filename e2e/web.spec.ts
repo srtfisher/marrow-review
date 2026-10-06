@@ -15,6 +15,18 @@ test('opens a pull request from the picker and shows its diff and findings', asy
   await expect(page.getByText('score 90').first()).toBeVisible();
 });
 
+test('review requests from any repository are listed under the picker and the cursor reaches them', async ({ page }) => {
+  await page.goto(fixture.url);
+  const inbox = page.getByRole('listbox', { name: 'Review requested' });
+  await expect(inbox.getByText('Retry flaky uploads')).toBeVisible();
+  await expect(inbox.getByText('acme/api')).toBeVisible();
+
+  await page.getByLabel('Filter pull requests').press('ArrowDown');
+  await expect(inbox.getByRole('option')).toHaveAttribute('aria-selected', 'true');
+  await page.getByLabel('Filter pull requests').press('Enter');
+  await expect(page.getByRole('heading', { name: /Handle server errors/ })).toBeVisible();
+});
+
 test('a pass switched off reaches the server and survives a reload', async ({ page }) => {
   await page.goto(fixture.url);
   await page.getByRole('button', { name: 'Passes' }).click();

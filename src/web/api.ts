@@ -1,5 +1,5 @@
 import type {
-  PassSettings, PullFilter, PullRequestSummary, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
+  PassSettings, PullFilter, PullRequestSummary, RequestedPull, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
 } from './lib/types.js';
 
 const params = new URLSearchParams(window.location.search);
@@ -42,6 +42,7 @@ export const api = {
   settings: (passes: PassSettings) => call<{ passes: PassSettings }>('PUT', '/settings', { passes }).then((r) => r.passes),
   pulls: (filter: PullFilter, owner?: string, repo?: string) =>
     call<{ pulls: PullRequestSummary[] }>('GET', `/pulls?${qs({ filter, owner, repo })}`).then((r) => r.pulls),
+  reviewRequests: () => call<{ pulls: RequestedPull[] }>('GET', '/review-requests').then((r) => r.pulls),
   open: (owner: string, repo: string, number: number) => call<{ id: string }>('POST', '/sessions', { owner, repo, number }),
   draft: (id: string, draft: ReviewDraft) => call('PUT', `/sessions/${id}/draft`, draft),
   triage: (id: string, findingId: string, action: TriageAction, body?: string) =>

@@ -543,6 +543,15 @@ focused, and the Dock badge stays until you come back.
 **The loading and error page borrows the Primer tokens** and the purple dot, and shows the
 CLI's stderr verbatim in a monospace well — the CLI already says what to do.
 
+## Revision: review requests on the picker (0.4.1)
+
+**What waits on you is listed under the picker, from every repository.** A second bordered
+list, "Review requested" with a count, drawn only when there is something in it — an empty
+inbox and a failed search look the same, because the picker works without either. Each row
+names its `owner/repo` in front of the number, since the rest of the picker is one
+repository. The filter narrows both lists, and the one cursor runs from the repository's
+list on into this one, so `↓` and `⏎` reach it without the mouse.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme. The one

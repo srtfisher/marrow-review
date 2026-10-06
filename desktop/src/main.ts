@@ -270,6 +270,7 @@ function buildMenu(): void {
     { role: 'editMenu' },
     { role: 'viewMenu' },
     { role: 'windowMenu' },
+    { role: 'help', submenu: [{ label: 'marrow on GitHub', click: () => openExternal(REPO_URL) }] },
   ]));
 }
 
@@ -298,7 +299,11 @@ ipcMain.on('marrow:notify', (event, raw: unknown) => {
   note.show();
 });
 
+const REPO_URL = 'https://github.com/srtfisher/marrow-review';
+
 app.setName('marrow');
+// macOS draws the credits as plain text, so the link is also a Help menu item.
+app.setAboutPanelOptions({ credits: `By Sean Fisher\n${REPO_URL}`, copyright: '© Sean Fisher · MIT License' });
 app.whenReady().then(() => {
   buildMenu();
   createWindow();

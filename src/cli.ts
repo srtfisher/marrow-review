@@ -173,6 +173,7 @@ async function main(): Promise<number> {
       initial: target && args.prNumber !== null ? { ...target, number: args.prNumber } : null,
       passes: args.passes,
       listPulls: (owner, repo, filter) => client.listPulls(owner, repo, filter),
+      listReviewRequests: () => client.listReviewRequests(),
       extras: octokit,
       createSession: (id, owner, repo, number, passes) => new ReviewSession(id, owner, repo, number, {
         client,

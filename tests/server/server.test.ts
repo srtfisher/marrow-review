@@ -16,6 +16,7 @@ function app(over: Partial<AppContext> = {}): AppContext & { created: number } {
     repo: { root: '/clone', owner: 'o', repo: 'r' },
     viewer: 'me', version: '0.0.0', filter: 'open' as const, initial: null, passes: ALL_PASSES,
     listPulls: async () => [{ number: 42, title: 'T', author: 'a', state: 'open' as const, isDraft: false, headSha: 's', baseRef: 'main', headRef: 'f', updatedAt: 'now', htmlUrl: '' }],
+    listReviewRequests: async () => [{ number: 7, title: 'R', author: 'b', state: 'open' as const, isDraft: false, headSha: 's', baseRef: 'main', headRef: 'g', updatedAt: 'now', htmlUrl: '', owner: 'x', repo: 'y' }],
     createSession: (id: string, owner: string, repo: string, number: number, passes: PassSettings) => {
       ctx.created += 1;
       return new ReviewSession(id, owner, repo, number, deps({ config: { ...deps().config, passes } }));
@@ -50,6 +51,12 @@ describe('startServer', () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/app?token=${running!.token}`);
     expect(res.status).toBe(200);
+  });
+
+  test('lists review requests across repositories, each naming its own', async () => {
+    const { call } = await start(app({ repo: null }));
+    const body = await (await call('/api/review-requests')).json() as { pulls: Array<{ owner: string; repo: string }> };
+    expect(body.pulls).toEqual([expect.objectContaining({ owner: 'x', repo: 'y' })]);
   });
 
   test('lists pull requests for the clone it was started in', async () => {

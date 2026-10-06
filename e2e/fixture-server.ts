@@ -36,6 +36,7 @@ const server = await startServer({
     initial: null,
     passes: args.passes,
     listPulls: async () => [{ number, title, author, state, isDraft, headSha, baseRef, headRef, updatedAt, htmlUrl }],
+    listReviewRequests: async () => [{ number: 7, title: 'Retry flaky uploads', author, state, isDraft, headSha, baseRef, headRef, updatedAt, htmlUrl, owner: 'acme', repo: 'api' }],
     createSession: (id, owner, repo, number, passes) =>
       new ReviewSession(id, owner, repo, number, deps({ transport: new SlowFindTransport(), config: { ...deps().config, passes } })),
     extras: { request: async (route: string) => ({ data: route === 'GET /emojis' ? {} : '<p>Body.</p>' }) },

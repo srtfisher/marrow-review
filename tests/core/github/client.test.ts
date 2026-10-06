@@ -79,3 +79,47 @@ test('a list summary carries no size figures at all', async () => {
   expect(prs[0]!).not.toHaveProperty('deletions');
   expect(prs[0]!.updatedAt).toBe('2026-08-01T12:00:00Z');
 });
+
+function searchOctokit(nodes: unknown[]) {
+  const queries: string[] = [];
+  return {
+    queries,
+    octokit: {
+      ...fakeOctokit(),
+      graphql: async (_query: string, vars: Record<string, unknown>) => {
+        queries.push(String(vars.q));
+        return { search: { nodes } };
+      },
+    },
+  };
+}
+
+const searchHit = {
+  number: 9, title: 'Add retries', isDraft: false, updatedAt: '2026-10-01T00:00:00Z', url: 'https://github.com/acme/api/pull/9',
+  headRefName: 'retries', headRefOid: 'f00', baseRefName: 'main', author: { login: 'hubot' },
+  repository: { name: 'api', owner: { login: 'acme' } },
+};
+
+test('review requests name the repository each one lives in', async () => {
+  const { octokit } = searchOctokit([searchHit, {}]);
+  const prs = await new GitHubClient('tok', octokit).listReviewRequests();
+  expect(prs).toEqual([expect.objectContaining({ number: 9, owner: 'acme', repo: 'api', headRef: 'retries', headSha: 'f00' })]);
+});
+
+test('review requests search every repository unless one is named', async () => {
+  const { octokit, queries } = searchOctokit([]);
+  const client = new GitHubClient('tok', octokit);
+  await client.listReviewRequests();
+  await client.listPulls('octocat', 'marrow', 'review-requested');
+  expect(queries[0]).toContain('review-requested:@me');
+  expect(queries[0]).not.toContain('repo:');
+  expect(queries[1]).toContain('repo:octocat/marrow');
+});
+
+// The list endpoint cannot filter by reviewer; answering from it showed every
+// open pull request under "Needs my review".
+test('the review-requested filter does not fall back to every open pull request', async () => {
+  const { octokit } = searchOctokit([]);
+  const prs = await new GitHubClient('tok', octokit).listPulls('octocat', 'marrow', 'review-requested');
+  expect(prs).toEqual([]);
+});

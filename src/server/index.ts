@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, relative, resolve } from 'node:path';
 import { listAssignees, listEmoji, renderMarkdown, type ExtrasApi } from '../core/github/extras.js';
-import type { PullFilter, PullRequestSummary } from '../core/github/types.js';
+import type { PullFilter, PullRequestSummary, RequestedPull } from '../core/github/types.js';
 import type { RepoContext } from '../core/git/repo.js';
 import type { Side, StagedComment, Verdict } from '../core/review/types.js';
 import { VERDICTS } from '../core/review/verdicts.js';
@@ -22,6 +22,8 @@ export interface AppContext {
   /** The passes a new review runs, until the page changes them. */
   passes: PassSettings;
   listPulls(owner: string, repo: string, filter: PullFilter): Promise<PullRequestSummary[]>;
+  /** Open pull requests awaiting the viewer's review, in any repository. */
+  listReviewRequests(): Promise<RequestedPull[]>;
   createSession(id: string, owner: string, repo: string, number: number, passes: PassSettings): ReviewSession;
   extras: ExtrasApi;
 }
@@ -206,6 +208,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!FILTERS.includes(filter)) throw new HttpError(400, `filter must be one of ${FILTERS.join(', ')}.`);
         return send(res, 200, { pulls: await app.listPulls(owner, repo, filter) });
       }
+
+      case 'GET /review-requests':
+        return send(res, 200, { pulls: await app.listReviewRequests() });
 
       case 'POST /sessions': {
         const body = await readJson(req);

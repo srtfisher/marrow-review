@@ -1,9 +1,11 @@
 import { Octokit } from '@octokit/rest';
+import type { GraphQlFn } from './graphql.js';
 import type {
   PullFilter,
   PullRequestDetail,
   PullRequestSummary,
   PullState,
+  RequestedPull,
 } from './types.js';
 
 /** The slice of Octokit this client uses, so tests can supply a fake. */
@@ -16,6 +18,7 @@ export interface OctokitLike {
     };
   };
   paginate(fn: unknown, params?: Record<string, unknown>): Promise<unknown[]>;
+  graphql?: GraphQlFn;
 }
 
 interface RawPull {
@@ -57,6 +60,35 @@ function toSummary(raw: RawPull): PullRequestSummary {
   };
 }
 
+// `pulls.list` cannot filter by reviewer, so review requests come from search,
+// which also matches requests made of a team the viewer is on.
+export const REVIEW_REQUESTS_QUERY = `
+query ReviewRequests($q: String!) {
+  search(query: $q, type: ISSUE, first: 50) {
+    nodes {
+      ... on PullRequest {
+        number title isDraft updatedAt url
+        headRefName headRefOid baseRefName
+        author { login }
+        repository { name owner { login } }
+      }
+    }
+  }
+}`;
+
+interface RawSearchPull {
+  number?: number;
+  title: string;
+  isDraft: boolean;
+  updatedAt: string;
+  url: string;
+  headRefName: string;
+  headRefOid: string;
+  baseRefName: string;
+  author: { login: string } | null;
+  repository: { name: string; owner: { login: string } };
+}
+
 export class GitHubClient {
   private readonly octokit: OctokitLike;
 
@@ -69,6 +101,7 @@ export class GitHubClient {
     repo: string,
     filter: PullFilter,
   ): Promise<PullRequestSummary[]> {
+    if (filter === 'review-requested') return this.listReviewRequests({ owner, repo });
     const state = filter === 'all' ? 'all' : 'open';
     const { data } = await this.octokit.rest.pulls.list({
       owner,
@@ -79,6 +112,31 @@ export class GitHubClient {
       direction: 'desc',
     });
     return (data as RawPull[]).map(toSummary);
+  }
+
+  /** Open pull requests awaiting the viewer's review, across every repository unless one is named. */
+  async listReviewRequests(scope?: { owner: string; repo: string }): Promise<RequestedPull[]> {
+    if (!this.octokit.graphql) return [];
+    const q = ['is:pr', 'is:open', 'archived:false', 'review-requested:@me', 'sort:updated-desc'];
+    if (scope) q.push(`repo:${scope.owner}/${scope.repo}`);
+    const raw = (await this.octokit.graphql(REVIEW_REQUESTS_QUERY, { q: q.join(' ') })) as {
+      search?: { nodes?: RawSearchPull[] };
+    };
+    // A search hit that is not a pull request comes back as an empty node.
+    return (raw.search?.nodes ?? []).flatMap((n) => (n.number === undefined ? [] : [{
+      number: n.number,
+      title: n.title,
+      author: n.author?.login ?? 'unknown',
+      state: 'open' as const,
+      isDraft: n.isDraft,
+      headSha: n.headRefOid,
+      baseRef: n.baseRefName,
+      headRef: n.headRefName,
+      updatedAt: n.updatedAt,
+      htmlUrl: n.url,
+      owner: n.repository.owner.login,
+      repo: n.repository.name,
+    }]));
   }
 
   async getPull(
