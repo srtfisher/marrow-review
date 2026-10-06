@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-06
+
+### Added
+
+- **Review requests on the home screen.** Open pull requests waiting on your review, from
+  every repository, are listed under the picker, each naming its repository. The list is
+  hidden when there are none.
+- The Mac app's About panel credits the author and links the repository, which also opens
+  from Help › marrow on GitHub.
+
+### Fixed
+
+- **"Needs my review" listed every open pull request.** The list endpoint cannot filter by
+  reviewer; the tab now searches for review requests, including ones made of your teams.
+
 ## [0.4.0] - 2026-10-06
 
 ### Changed
