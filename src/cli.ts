@@ -127,7 +127,13 @@ async function main(): Promise<number> {
   }
 
   const token = await resolveGitHubToken();
-  const octokit = new Octokit({ auth: token });
+  const octokit = new Octokit({
+    auth: token,
+    // Octokit logs every failed request, including the 404s marrow expects (a
+    // repository with no .gitattributes). Failures still reach the caller and
+    // the page; the log only scribbled over the terminal.
+    log: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+  });
   const client = new GitHubClient(token, octokit as never);
   const viewer = (await octokit.rest.users.getAuthenticated()).data.login;
 

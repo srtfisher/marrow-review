@@ -11,7 +11,11 @@ parts worth reading, groups what is left by what it is for, drafts findings anch
 specific lines, lets you accept, rewrite, or throw each one away, and submits a single
 GitHub review with inline comments and suggestions.
 
-<img width="1440" height="900" alt="marrow reviewing a pull request: groups in the sidebar, a GitHub-styled diff, and one of Claude's findings inline" src="docs/screenshots/review.png" />
+<img width="1440" height="900" alt="marrow reviewing a pull request: changes grouped by intent in the sidebar, an overview with Claude's summary and finding counts, and a syntax-highlighted GitHub-style diff" src="docs/screenshots/review.png" />
+
+```bash
+npx marrow-review 42      # inside a clone: review PR 42 in your browser
+```
 
 ---
 
@@ -84,15 +88,21 @@ The page is GitHub's files view with two additions: a sidebar of groups, and Cla
 
 - **Read.** `j`/`k` move a line cursor; `]`/`[` jump files, `}`/`{` groups. Folded hunks
   name their rule; `z` reveals them, `d` switches to the full diff. Each file has a
-  **Viewed** checkbox that notices if the file changes after you viewed it.
-- **Comment.** Click a line number, or drag or shift-click across the gutter to select a
-  block, then `c` (or the `+` beside the line). The composer previews with GitHub's own
-  renderer, autocompletes `:emoji:` and `@mentions`, and **Suggest change** inserts a
-  suggestion block prefilled with the selected lines.
+  **Viewed** checkbox (`w`) that folds it away and notices if it changes after you viewed it.
 - **Triage Claude.** Findings appear in purple under their line — purple is only ever the
   model — each marked `blocking` or `non-blocking`, with a type and, for bugs, the concrete
   failure it would cause. `a` accepts, `e` rewrites, `s` posts it as a suggestion, `x`
   drops it, `n`/`p` move between them.
+
+  <img width="1440" height="900" alt="A blocking Correctness finding, confirmed by verification, with its failure scenario and Accept, Edit, and Drop buttons showing their keys" src="docs/screenshots/finding.png" />
+
+- **Comment.** Click a line number, or drag or shift-click across the gutter to select a
+  block, then `c` (or the `+` beside the line). The composer previews with GitHub's own
+  renderer, autocompletes `:emoji:` and `@mentions`, and **Suggest change** (`⌘G`) inserts
+  a suggestion block prefilled with the selected lines.
+
+  <img width="1440" height="900" alt="A comment on lines 99 to 101, previewed with GitHub's renderer: an emoji and a suggested change" src="docs/screenshots/comment.png" />
+
 - **Ask.** `i` opens a panel to ask Claude about the code under the cursor.
 - **Submit.** `!` opens the finish dialog: summary, verdict, and what will post.
 
