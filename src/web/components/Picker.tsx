@@ -109,7 +109,7 @@ export function Picker({ app, repo, submitted, reviewed, onDismiss, onOpen, onRe
       )}
       <div className="mb-3 flex items-center gap-2 text-sm">
         <Icon name="pr" className="text-fg-muted" />
-        <span className="font-semibold">{repo ? `${repo.owner}/${repo.repo}` : 'No repository'}</span>
+        <span className="font-semibold">{repo ? `${repo.owner}/${repo.repo}` : window.marrowDesktop ? 'Pick a repository' : 'No repository'}</span>
         {!repo && <span className="text-fg-muted">— type owner/repo, or paste a pull request URL</span>}
       </div>
       <div className="rounded-md border border-border">

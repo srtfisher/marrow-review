@@ -253,9 +253,35 @@ function closeClone(): void {
   void startServer();
 }
 
+async function showAbout(): Promise<void> {
+  const options = {
+    message: `marrow ${app.getVersion()}`,
+    detail: 'By Sean Fisher\n© Sean Fisher · MIT License',
+    buttons: ['OK', 'View on GitHub'],
+    defaultId: 0,
+    cancelId: 0,
+  };
+  const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+  if (response === 1) openExternal(REPO_URL);
+}
+
 function buildMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { role: 'appMenu' },
+    {
+      role: 'appMenu',
+      submenu: [
+        // macOS draws the standard About panel's credits as plain text, so a link there cannot be clicked.
+        { label: 'About marrow', click: () => void showAbout() },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
     {
       label: 'File',
       submenu: [
@@ -309,8 +335,6 @@ ipcMain.on('marrow:notify', (event, raw: unknown) => {
 const REPO_URL = 'https://github.com/srtfisher/marrow-review';
 
 app.setName('marrow');
-// macOS draws the credits as plain text, so the link is also a Help menu item.
-app.setAboutPanelOptions({ credits: `By Sean Fisher\n${REPO_URL}`, copyright: '© Sean Fisher · MIT License' });
 app.whenReady().then(() => {
   buildMenu();
   createWindow();

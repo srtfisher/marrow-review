@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-10-07
+
+### Changed
+
+- In the Mac app, the picker's heading reads "Pick a repository" instead of "No repository",
+  which was always true there.
+- The Mac app's About dialog links to the repository with a "View on GitHub" button; the
+  native panel could only show the address as plain text.
+
 ## [0.4.4] - 2026-10-07
 
 ### Added
