@@ -146,7 +146,11 @@ test('a new tab opens in the same window frame, on the pull requests', async () 
   const { app, page } = await started();
   await page.getByText('Handle server errors').click();
   await page.waitForURL(/#\/o\/r\/\d+$/);
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 60, width: 1000, height: 700 }));
+  // Inside the work area: CI's small display makes macOS pull an overhanging frame back on screen, and it does so for the visible tab only.
+  await app.evaluate(({ BrowserWindow, screen }) => {
+    const area = screen.getPrimaryDisplay().workArea;
+    BrowserWindow.getAllWindows()[0]?.setBounds({ x: area.x + 40, y: area.y + 40, width: 800, height: 500 });
+  });
 
   const opened = app.waitForEvent('window');
   await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('new-tab')?.click());
