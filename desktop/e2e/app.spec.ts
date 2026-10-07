@@ -158,8 +158,12 @@ test('a new tab opens in the same window frame, on the pull requests', async () 
   await expect(tab.getByText('Handle server errors')).toBeVisible();
   expect(new URL(tab.url()).hash).toBe('');
 
-  // A tab takes its group's frame. Off center, so a window opened beside it would not match by chance.
-  const frames = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => JSON.stringify(w.getBounds())));
-  await expect.poll(async () => [...new Set(await frames())]).toHaveLength(1);
+  // A tab takes its group's frame, where a window of its own would be 1440×900. macOS lets a background
+  // tab's frame drift from the visible one by a tab bar's height or so, so this checks within a margin.
+  const spread = () => app.evaluate(({ BrowserWindow }) => {
+    const frames = BrowserWindow.getAllWindows().map((w) => w.getBounds());
+    return Math.max(...(['x', 'y', 'width', 'height'] as const).map((k) => Math.max(...frames.map((f) => f[k])) - Math.min(...frames.map((f) => f[k]))));
+  });
+  await expect.poll(spread, { message: 'the tab and its group should share a frame, within 32px' }).toBeLessThanOrEqual(32);
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.tabbingIdentifier))).toEqual(['marrow', 'marrow']);
 });
