@@ -12,6 +12,7 @@ import { AskPanel } from './AskPanel.js';
 import { FindingCard, PendingComment, ThreadCard } from './Cards.js';
 import { Composer } from './Composer.js';
 import { ShortcutsDialog, SubmitDialog } from './Dialogs.js';
+import { GitHubNotice } from './GitHubNotice.js';
 import { DiffContext, DiffFile, type DiffContextValue } from './DiffFile.js';
 import { Header, StepList } from './Header.js';
 import { Icon } from './icons.js';
@@ -381,7 +382,7 @@ export function Review({
         <Header snapshot={snapshot} theme={theme} onTheme={onTheme} onAsk={() => {}} onSubmit={() => {}} pending={0} onHome={onHome} />
         <div className="mx-auto w-full max-w-lg px-4 py-12">
           {snapshot.loadError
-            ? <p className="rounded-md border border-danger/40 bg-danger-subtle px-4 py-3 text-danger">{snapshot.loadError}</p>
+            ? <GitHubNotice message={snapshot.loadError} github={snapshot.loadProblem} />
             : <div className="rounded-md border border-border p-4"><h2 className="mb-3 font-semibold">Loading #{snapshot.number}</h2><StepList steps={snapshot.steps} /></div>}
         </div>
       </div>

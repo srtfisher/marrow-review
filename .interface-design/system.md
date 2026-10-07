@@ -552,6 +552,15 @@ names its `owner/repo` in front of the number, since the rest of the picker is o
 repository. The filter narrows both lists, and the one cursor runs from the repository's
 list on into this one, so `↓` and `⏎` reach it without the mouse.
 
+**A GitHub failure says whose fault it is, and quotes GitHub when it is GitHub's.** GitHub
+fails often, and a spinner that resets with no message reads as marrow being broken. One
+`danger` box (`GitHubNotice`) serves submit, the picker list and a failed load: the message
+(never blank: Octokit's can be, for an empty body or a dropped connection), then, for a 5xx,
+a 429 or no response at all, githubstatus.com's own description, incident links and degraded
+components, and GitHub's request id in mono. A failed submit says whether anything posted:
+"nothing was posted" only when GitHub answered; with no answer, check the pull request first.
+The submit dialog's actions are a sticky footer so the box can never land below the fold.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme. The one

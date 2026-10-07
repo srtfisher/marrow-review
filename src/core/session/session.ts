@@ -18,6 +18,8 @@ import type { RepoContext } from '../git/repo.js';
 import type { GitHubClient } from '../github/client.js';
 import { readContent, type ContentsApi } from '../github/contents.js';
 import { fetchPullContext, type GraphQlFn } from '../github/graphql.js';
+import { describeGitHubError, explainGitHubFailure, type GitHubProblem } from '../github/errors.js';
+import type { GitHubStatus } from '../github/status.js';
 import { submitReview, type ReviewSubmitter } from '../github/submit.js';
 import type { CheckRun, PullRequestDetail, ReviewThread } from '../github/types.js';
 import type { GroupCache } from '../group/cache.js';
@@ -66,6 +68,8 @@ export interface SessionDeps {
   viewer: string;
   config: SessionConfig;
   resolveSource?: typeof resolveSource;
+  /** githubstatus.com, asked only after a GitHub failure; tests pass a fake. */
+  githubStatus?: () => Promise<GitHubStatus | null>;
   now?: () => number;
 }
 
@@ -108,6 +112,8 @@ export interface SessionSnapshot {
   notes: Note[];
   submitted: { url: string; verdict: Verdict } | null;
   loadError: string | null;
+  /** Why loading failed when GitHub was involved, with githubstatus.com's account if it is GitHub's fault. */
+  loadProblem: GitHubProblem | null;
   /** What each model pass has spent so far. */
   usage: UsageReport;
   /** Results reused from an earlier run instead of paid for again: how many reviewers, and how many scores. */
@@ -213,7 +219,7 @@ export class ReviewSession {
       findings: { status: 'idle', items: [], error: null },
       draft: EMPTY_DRAFT, viewed: {},
       chat: { session: { id: null, turns: [] }, pending: false },
-      notes: [], submitted: null, loadError: null, usage: {}, usageTotal: totalUsage({}),
+      notes: [], submitted: null, loadError: null, loadProblem: null, usage: {}, usageTotal: totalUsage({}),
       fromCache: { find: 0, verify: 0 },
       scoreThreshold: SCORE_THRESHOLD[deps.config.effort],
     };
@@ -308,7 +314,10 @@ export class ReviewSession {
 
       await this.restoreDraft(pr, meat).catch(() => {});
     } catch (error) {
-      this.patch({ loadError: `Could not load #${number}: ${message(error)}` });
+      const failure = describeGitHubError(error);
+      for (const s of this.state.steps) if (s.state === 'running') this.step(s.id, 'failed', failure.message);
+      this.patch({ loadError: `Could not load #${number}: ${failure.message}` });
+      this.patch({ loadProblem: await explainGitHubFailure(failure, deps.githubStatus ?? (async () => null)) });
       return;
     }
 

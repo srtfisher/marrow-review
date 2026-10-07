@@ -12,3 +12,4 @@ export type { TriagedFinding } from '../../core/findings/triage.js';
 export type { ChatSession, ChatTurn } from '../../core/findings/chat.js';
 export type { CheckRun, PullFilter, PullRequestSummary, RequestedPull, ReviewThread } from '../../core/github/types.js';
 export type { PassUsage, UsagePass, UsageReport } from '../../core/agent/meter.js';
+export type { GitHubProblem } from '../../core/github/errors.js';

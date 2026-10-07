@@ -170,3 +170,27 @@ describe('startServer', () => {
   });
 });
 
+
+describe('GitHub failures', () => {
+  const outage = { description: 'Partial System Outage', incidents: [{ name: 'Incident with Pull Requests', url: 'https://stspg.io/x', update: 'Investigating.' }], degraded: ['Pull Requests: major outage'] };
+  const githubDown = () => Object.assign(new Error(''), { status: 502, response: { status: 502, headers: { 'x-github-request-id': 'AB:12' } } });
+
+  test('explain a failed pull list with what githubstatus.com reports', async () => {
+    const { call } = await start(app({ listPulls: async () => { throw githubDown(); }, githubStatus: async () => outage }));
+    const res = await call('/api/pulls');
+    expect(res.status).toBe(502);
+    const body = await res.json() as { error: string; github: { status: number; requestId: string; onGitHubsSide: boolean; report: unknown } };
+    expect(body.error).toBe('GitHub answered HTTP 502 without saying why.');
+    expect(body.github).toMatchObject({ status: 502, requestId: 'AB:12', onGitHubsSide: true, report: outage });
+  });
+
+  test('do not ask githubstatus.com about a failure that is not GitHub\'s fault', async () => {
+    let asked = 0;
+    const notFound = Object.assign(new Error('Not Found'), { status: 404, response: { status: 404, headers: {} } });
+    const { call } = await start(app({ listPulls: async () => { throw notFound; }, githubStatus: async () => { asked += 1; return outage; } }));
+    const body = await (await call('/api/pulls')).json() as { error: string; github: { report: unknown } };
+    expect(body.error).toBe('Not Found');
+    expect(body.github.report).toBeNull();
+    expect(asked).toBe(0);
+  });
+});

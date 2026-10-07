@@ -3,6 +3,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, relative, resolve } from 'node:path';
+import { explainGitHubFailure, GitHubError } from '../core/github/errors.js';
+import type { GitHubStatus } from '../core/github/status.js';
 import { listAssignees, listEmoji, renderMarkdown, type ExtrasApi } from '../core/github/extras.js';
 import type { PullFilter, PullRequestSummary, RequestedPull } from '../core/github/types.js';
 import type { RepoContext } from '../core/git/repo.js';
@@ -26,6 +28,8 @@ export interface AppContext {
   listReviewRequests(): Promise<RequestedPull[]>;
   createSession(id: string, owner: string, repo: string, number: number, passes: PassSettings): ReviewSession;
   extras: ExtrasApi;
+  /** githubstatus.com, asked only after a GitHub call fails; absent means never asked. */
+  githubStatus?: () => Promise<GitHubStatus | null>;
 }
 
 export interface ServerOptions {
@@ -64,6 +68,10 @@ const MIME: Record<string, string> = {
 const MAX_BODY = 2_000_000;
 const FILTERS: readonly PullFilter[] = ['open', 'review-requested', 'all'];
 const ACTIONS: readonly TriageAction[] = ['accept', 'drop', 'edit', 'suggest', 'reset'];
+
+function rethrowGitHub(error: unknown): never {
+  throw new GitHubError(error);
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -206,11 +214,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!owner || !repo) throw new HttpError(400, 'Name a repository: owner and repo.');
         const filter = (url.searchParams.get('filter') ?? app.filter) as PullFilter;
         if (!FILTERS.includes(filter)) throw new HttpError(400, `filter must be one of ${FILTERS.join(', ')}.`);
-        return send(res, 200, { pulls: await app.listPulls(owner, repo, filter) });
+        return send(res, 200, { pulls: await app.listPulls(owner, repo, filter).catch(rethrowGitHub) });
       }
 
       case 'GET /review-requests':
-        return send(res, 200, { pulls: await app.listReviewRequests() });
+        return send(res, 200, { pulls: await app.listReviewRequests().catch(rethrowGitHub) });
 
       case 'POST /sessions': {
         const body = await readJson(req);
@@ -283,6 +291,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         try {
           return send(res, 200, await s.submit(verdict, str(body.body ?? '', 'body')));
         } catch (error) {
+          if (error instanceof GitHubError) throw error;
           throw new HttpError(422, (error as Error).message);
         }
       }
@@ -342,8 +351,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const handle = url.pathname.startsWith('/api/') ? api(req, res, url) : asset(res, url.pathname);
     handle.catch((error: unknown) => {
       if (res.headersSent) { res.end(); return; }
-      if (error instanceof HttpError) send(res, error.status, { error: error.message });
-      else send(res, 500, { error: error instanceof Error ? error.message : String(error) });
+      if (error instanceof HttpError) { send(res, error.status, { error: error.message }); return; }
+      if (error instanceof GitHubError) {
+        return explainGitHubFailure(error.failure, app.githubStatus ?? (async () => null))
+          .then((github) => send(res, 502, { error: error.message, github }));
+      }
+      send(res, 500, { error: (error instanceof Error ? error.message.trim() : String(error)) || 'marrow failed without an error message.' });
     });
   });
 

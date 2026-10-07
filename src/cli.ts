@@ -9,6 +9,7 @@ import { parseUnifiedDiff } from './core/diff/parse.js';
 import { resolveGitHubToken } from './core/github/auth.js';
 import { GitHubClient } from './core/github/client.js';
 import { readContent } from './core/github/contents.js';
+import { fetchGitHubStatus } from './core/github/status.js';
 import type { ReviewSubmitter } from './core/github/submit.js';
 import { parseGeneratedPaths } from './core/git/gitattributes.js';
 import { detectRepo, type RepoContext } from './core/git/repo.js';
@@ -175,6 +176,7 @@ async function main(): Promise<number> {
       listPulls: (owner, repo, filter) => client.listPulls(owner, repo, filter),
       listReviewRequests: () => client.listReviewRequests(),
       extras: octokit,
+      githubStatus: () => fetchGitHubStatus(),
       createSession: (id, owner, repo, number, passes) => new ReviewSession(id, owner, repo, number, {
         client,
         graphql: (query, vars) => octokit.graphql(query, vars),
@@ -187,6 +189,7 @@ async function main(): Promise<number> {
         findingsCache: new FileFindingsCache(`${owner}/${repo}`),
         repo: sameRepo(clone, owner, repo),
         viewer,
+        githubStatus: () => fetchGitHubStatus(),
         config: { model: args.model, meatModel: args.meatModel, reviewModel: args.reviewModel, verifyModel: args.verifyModel, effort: args.effort, standards, source: args.source, passes },
       }),
     },

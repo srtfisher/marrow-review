@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, type AppInfo } from '../api.js';
+import { api, githubProblem, type AppInfo } from '../api.js';
 import { parseTarget, relativeTime } from '../lib/format.js';
 import { type Reviewed, withoutReviewed } from '../lib/reviewed.js';
-import type { PullFilter, PullRequestSummary, RequestedPull } from '../lib/types.js';
+import type { GitHubProblem, PullFilter, PullRequestSummary, RequestedPull } from '../lib/types.js';
 import type { SubmittedReview } from './Review.js';
+import { GitHubNotice } from './GitHubNotice.js';
 import { Settings } from './Settings.js';
 import { Icon } from './icons.js';
 import { Avatar, Kbd, Label, Spinner } from './ui.js';
@@ -28,7 +29,7 @@ export function Picker({ app, repo, submitted, reviewed, onDismiss, onOpen, onRe
   const [filter, setFilter] = useState<PullFilter>(app.filter);
   const [pulls, setPulls] = useState<PullRequestSummary[] | null>(null);
   const [requested, setRequested] = useState<RequestedPull[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; github: GitHubProblem | null } | null>(null);
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement>(null);
@@ -36,7 +37,7 @@ export function Picker({ app, repo, submitted, reviewed, onDismiss, onOpen, onRe
   const load = () => {
     if (!repo) return;
     setError(null);
-    api.pulls(filter, repo.owner, repo.repo).then(setPulls, (e: Error) => setError(e.message));
+    api.pulls(filter, repo.owner, repo.repo).then(setPulls, (e: Error) => setError({ message: e.message, github: githubProblem(e) }));
   };
   useEffect(() => { setPulls(null); load(); }, [filter, repo?.owner, repo?.repo]);
   useEffect(() => { input.current?.focus(); }, []);
@@ -144,7 +145,13 @@ export function Picker({ app, repo, submitted, reviewed, onDismiss, onOpen, onRe
           </div>
           <span className="text-xs text-fg-muted"><Kbd>⇥</Kbd></span>
         </div>
-        {error && <p className="px-4 py-6 text-sm text-danger">Could not list pull requests: {error} <button type="button" className="text-accent underline" onClick={load}>Retry</button></p>}
+        {error && (
+          <div className="px-4 py-4">
+            <GitHubNotice message={`Could not list pull requests: ${error.message}`} github={error.github}>
+              <button type="button" className="text-sm text-accent underline" onClick={load}>Retry</button>
+            </GitHubNotice>
+          </div>
+        )}
         {repo && !pulls && !error && <p className="flex items-center gap-2 px-4 py-6 text-sm text-fg-muted"><Spinner />Asking GitHub…</p>}
         {pulls && shown.length === 0 && <p className="px-4 py-6 text-sm text-fg-muted">No pull requests match.</p>}
         <ul role="listbox" aria-label="Pull requests">

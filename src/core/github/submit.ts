@@ -1,3 +1,4 @@
+import { GitHubError } from './errors.js';
 import type { ReviewPayload } from '../review/payload.js';
 
 /** The slice of Octokit needed to submit, so tests can supply a fake. */
@@ -18,14 +19,17 @@ export async function submitReview(
   pull_number: number,
   payload: ReviewPayload,
 ): Promise<{ id: number; htmlUrl: string }> {
-  const { data } = await octokit.rest.pulls.createReview({
-    owner,
-    repo,
-    pull_number,
-    event: payload.event,
-    body: payload.body,
-    comments: payload.comments,
-  });
-
-  return { id: data.id, htmlUrl: data.html_url };
+  try {
+    const { data } = await octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number,
+      event: payload.event,
+      body: payload.body,
+      comments: payload.comments,
+    });
+    return { id: data.id, htmlUrl: data.html_url };
+  } catch (error) {
+    throw new GitHubError(error);
+  }
 }

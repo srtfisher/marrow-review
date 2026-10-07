@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { isShown } from '../lib/findings.js';
 import { SHORTCUTS } from '../lib/keymap.js';
-import type { SessionSnapshot, Verdict } from '../lib/types.js';
+import { githubProblem } from '../api.js';
+import type { GitHubProblem, SessionSnapshot, Verdict } from '../lib/types.js';
 import { Composer } from './Composer.js';
+import { GitHubNotice } from './GitHubNotice.js';
 import { Icon } from './icons.js';
 import { Button, Kbd } from './ui.js';
 
@@ -78,7 +80,7 @@ export function SubmitDialog({
 }) {
   const [verdict, setVerdict] = useState<Verdict>(snapshot.draft.verdict ?? 'COMMENT');
   const [body, setBody] = useState(snapshot.draft.body);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; github: GitHubProblem | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const isAuthor = snapshot.pr?.viewerIsAuthor === true;
   const pendingFindings = snapshot.findings.items.filter((f) => f.state === 'pending' && isShown(f, snapshot.scoreThreshold)).length;
@@ -89,7 +91,7 @@ export function SubmitDialog({
     try {
       await onSubmit(verdict, body);
     } catch (e) {
-      setError((e as Error).message);
+      setError({ message: (e as Error).message, github: githubProblem(e) });
     } finally {
       setBusy(false);
     }
@@ -131,10 +133,20 @@ export function SubmitDialog({
           {pendingFindings > 0 && <p className="text-attention">{pendingFindings} finding{pendingFindings === 1 ? ' is' : 's are'} still untriaged and will not be posted.</p>}
           <p className="text-xs text-fg-muted">A comment on a line GitHub cannot anchor moves into the summary instead of being lost.</p>
         </div>
-        {error && <p className="rounded-md border border-danger/40 bg-danger-subtle px-3 py-2 text-sm text-danger">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button tone="primary" onClick={() => void submit()} disabled={busy}>{busy ? 'Submitting…' : 'Submit review'}<Kbd>⌘↵</Kbd></Button>
+        {/* Sticky, because a failure otherwise lands below the fold of a short window and looks like nothing happened. */}
+        <div className="sticky bottom-0 -mx-4 -mb-3 space-y-3 border-t border-border bg-overlay px-4 py-3">
+          {error && (
+            <GitHubNotice message={error.message} github={error.github}>
+              {/* With no response, GitHub may have created the review before the connection dropped. */}
+              {error.github && error.github.status === null
+                ? <p className="text-fg">GitHub may have received it anyway. <a href={snapshot.pr?.htmlUrl} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">Check the pull request</a> before submitting again; your draft is kept.</p>
+                : error.github && <p className="text-fg">Nothing was posted; your draft is kept.</p>}
+            </GitHubNotice>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button onClick={onClose}>Cancel</Button>
+            <Button tone="primary" onClick={() => void submit()} disabled={busy}>{busy ? 'Submitting…' : 'Submit review'}<Kbd>⌘↵</Kbd></Button>
+          </div>
         </div>
       </div>
     </Dialog>

@@ -60,6 +60,19 @@ describe('ReviewSession.load', () => {
     expect(session.snapshot().loadError).toContain('Not Found');
   });
 
+  test('a load that fails on GitHub\'s side carries githubstatus.com\'s account and fails the step it was on', async () => {
+    const outage = { description: 'Partial System Outage', incidents: [], degraded: ['Pull Requests: major outage'] };
+    const session = new ReviewSession('s1', 'o', 'r', 42, deps({
+      client: { getPull: async () => { throw Object.assign(new Error(''), { status: 503, response: { status: 503, headers: {} } }); }, listCommitSubjects: async () => [] },
+      githubStatus: async () => outage,
+    }));
+    await session.load();
+    const s = session.snapshot();
+    expect(s.loadError).toBe('Could not load #42: GitHub answered HTTP 503 without saying why.');
+    expect(s.loadProblem).toMatchObject({ status: 503, onGitHubsSide: true, report: outage });
+    expect(s.steps.find((st) => st.id === 'pull')!.state).toBe('failed');
+  });
+
   test('a degraded source is said out loud', async () => {
     const session = new ReviewSession('s1', 'o', 'r', 42, deps({
       resolveSource: async () => ({ ...resolved, degraded: 'could not prepare a local checkout' }),

@@ -1,5 +1,5 @@
 import type {
-  PassSettings, PullFilter, PullRequestSummary, RequestedPull, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
+  GitHubProblem, PassSettings, PullFilter, PullRequestSummary, RequestedPull, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
 } from './lib/types.js';
 
 const params = new URLSearchParams(window.location.search);
@@ -9,10 +9,13 @@ const token = params.get('token') ?? sessionStorage.getItem(STORED) ?? '';
 if (token) sessionStorage.setItem(STORED, token);
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly github: GitHubProblem | null = null) {
     super(message);
   }
 }
+
+/** The GitHub failure behind an error from `api`, if there was one. */
+export const githubProblem = (error: unknown): GitHubProblem | null => (error instanceof ApiError ? error.github : null);
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`./api${path}`, {
@@ -20,8 +23,8 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     headers: { 'x-marrow-token': token, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `${res.status} ${res.statusText}`);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; github?: GitHubProblem };
+  if (!res.ok) throw new ApiError(res.status, data.error?.trim() || `${res.status} ${res.statusText}`.trim(), data.github ?? null);
   return data as T;
 }
 
