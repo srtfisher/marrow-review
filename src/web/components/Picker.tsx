@@ -181,17 +181,23 @@ function PullRow({ pull: p, where, active, onHover, onOpen }: {
 }) {
   return (
     <li role="option" aria-selected={active}>
-      <button
-        type="button"
+      <a
+        href={p.htmlUrl}
+        target="_blank"
+        rel="noreferrer"
         onMouseEnter={onHover}
-        onClick={onOpen}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+          e.preventDefault();
+          onOpen();
+        }}
         className={`flex w-full items-start gap-3 border-b border-border-muted px-4 py-2.5 text-left last:border-b-0 ${active ? 'bg-accent-subtle' : 'hover:bg-canvas-subtle'}`}
       >
         <Icon name="pr" className={`mt-0.5 ${p.isDraft ? 'text-fg-muted' : p.state === 'merged' ? 'text-done' : p.state === 'closed' ? 'text-danger' : 'text-success'}`} />
         <div className="min-w-0 flex-1">
           <p className="font-semibold">{p.title} {p.isDraft && <Label>Draft</Label>}</p>
           <p className="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-xs text-fg-muted">
-            {where && <span className="shrink-0 font-semibold text-fg">{where}</span>}
+            {where && <span className="min-w-0 truncate font-semibold text-fg" title={where}>{where}</span>}
             <span className="flex shrink-0 items-center gap-1.5">
               #{p.number} · <Avatar login={p.author} size={14} />{p.author} · updated {relativeTime(p.updatedAt)} ·
             </span>
@@ -199,7 +205,7 @@ function PullRow({ pull: p, where, active, onHover, onOpen }: {
           </p>
         </div>
         {active && <span className="self-center text-xs text-fg-muted"><Kbd>⏎</Kbd></span>}
-      </button>
+      </a>
     </li>
   );
 }
