@@ -190,9 +190,10 @@ function openExternal(url: string): void {
   if (/^https?:\/\//.test(url)) void shell.openExternal(url);
 }
 
-function createWindow(): void {
+function createWindow(asTab = false): void {
+  const focused = BrowserWindow.getFocusedWindow();
   // Offset from the window it was opened over, or it lands exactly on top and looks like nothing happened.
-  const over = BrowserWindow.getFocusedWindow()?.getPosition();
+  const over = asTab ? undefined : focused?.getPosition();
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -200,6 +201,7 @@ function createWindow(): void {
     minHeight: 480,
     ...(over ? { x: over[0]! + 24, y: over[1]! + 24 } : {}),
     title: windowTitle('marrow', settings.clone),
+    tabbingIdentifier: 'marrow',
     show: false,
     webPreferences: {
       preload: join(here, 'preload.cjs'),
@@ -209,6 +211,8 @@ function createWindow(): void {
     },
   });
   windows.add(win);
+  if (asTab && focused) focused.addTabbedWindow(win);
+  win.on('new-window-for-tab', () => createWindow(true));
   win.once('ready-to-show', () => win.show());
   win.on('page-title-updated', (event, title) => {
     event.preventDefault();
@@ -310,7 +314,8 @@ function buildMenu(): void {
     {
       label: 'File',
       submenu: [
-        { id: 'new-window', label: 'New Window', accelerator: 'CmdOrCtrl+N', click: createWindow },
+        { id: 'new-window', label: 'New Window', accelerator: 'CmdOrCtrl+N', click: () => createWindow() },
+        { id: 'new-tab', label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => createWindow(true) },
         { type: 'separator' },
         { label: 'Open Local Checkout…', accelerator: 'CmdOrCtrl+O', click: () => void openClone() },
         { label: 'Close Local Checkout', click: closeClone },

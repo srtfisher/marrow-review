@@ -93,3 +93,11 @@ request, and the page keeps its review in the hash.
 | Title | The page's title (`o/r#42 · marrow`), then the checkout's name | Every window called "marrow — clone" made the Window menu useless. |
 | Notifications | From any window; skipped when that window is focused; a click focuses that window | The window that finished is the one you want. |
 | Quitting | Closing the last window still quits | The server lives for the windows. |
+
+## Revision 2026-10-07: tabs
+
+File › New Tab (⌘T) opens a review in a tab of the current window, and the tab bar's + does
+the same. These are macOS's own window tabs (`tabbingIdentifier`), so each tab is still one
+of the windows above, with everything the windows revision says, and Merge All Windows,
+Move Tab to New Window, and dragging a tab out come from the system. ⌘N still opens a
+separate window, unless the system's "Prefer tabs when opening documents" says otherwise.

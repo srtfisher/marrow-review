@@ -140,3 +140,22 @@ test('restarting the server returns every window to its own page', async () => {
   expect(new URL(second.url()).hash).toBe('');
   await expect(second.getByText('Handle server errors')).toBeVisible();
 });
+
+test('a new tab opens in the same window frame, on the pull requests', async () => {
+  test.skip(process.platform !== 'darwin', 'window tabs are macOS');
+  const { app, page } = await started();
+  await page.getByText('Handle server errors').click();
+  await page.waitForURL(/#\/o\/r\/\d+$/);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 60, width: 1000, height: 700 }));
+
+  const opened = app.waitForEvent('window');
+  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('new-tab')?.click());
+  const tab = await opened;
+  await expect(tab.getByText('Handle server errors')).toBeVisible();
+  expect(new URL(tab.url()).hash).toBe('');
+
+  // A tab takes its group's frame. Off center, so a window opened beside it would not match by chance.
+  const frames = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => JSON.stringify(w.getBounds())));
+  await expect.poll(async () => new Set(await frames()).size).toBe(1);
+  expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.tabbingIdentifier))).toEqual(['marrow', 'marrow']);
+});

@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The Mac app opens reviews in tabs too: File › New Tab (⌘T), or the tab bar's +, opens one
+  in the current window. They are macOS's own tabs, so Merge All Windows and dragging a tab
+  out into its own window work as in any other app.
+
 ## [0.4.6] - 2026-10-07
 
 ### Added

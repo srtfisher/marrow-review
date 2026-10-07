@@ -86,7 +86,7 @@ header says so rather than letting you trust a half-evidenced review.
 
 There is also an optional Mac app: the same page in a window of its own, with a Dock icon
 and a notification when Claude's review lands, so you can switch away while it runs.
-⌘N opens another window, for a second review alongside the first.
+⌘N opens another window and ⌘T another tab, for a second review alongside the first.
 Install it with Homebrew:
 
 ```bash
