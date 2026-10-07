@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-10-07
+
 ### Added
 
 - The Mac app opens reviews in tabs too: File › New Tab (⌘T), or the tab bar's +, opens one
