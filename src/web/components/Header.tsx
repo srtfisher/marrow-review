@@ -209,10 +209,10 @@ export function Header({
           <h1 className="truncate text-lg leading-tight font-semibold">
             {pr?.htmlUrl ? (
               <a href={pr.htmlUrl} target="_blank" rel="noreferrer" className="hover:text-accent hover:underline" title="Open on GitHub">
-                {pr.title} <span className="font-normal text-fg-muted">#{snapshot.number}</span>
+                {pr.title} <span className="font-normal text-fg-muted">{snapshot.owner}/{snapshot.repo}#{snapshot.number}</span>
               </a>
             ) : (
-              <>{pr?.title ?? `Pull request #${snapshot.number}`} <span className="font-normal text-fg-muted">#{snapshot.number}</span></>
+              <>{pr?.title ?? `Pull request #${snapshot.number}`} <span className="font-normal text-fg-muted">{snapshot.owner}/{snapshot.repo}#{snapshot.number}</span></>
             )}
           </h1>
         </div>

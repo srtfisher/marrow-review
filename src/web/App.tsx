@@ -39,8 +39,8 @@ export function App() {
   }, [route.owner, route.repo, route.number]);
 
   useEffect(() => {
-    document.title = route.number !== null ? `#${route.number} · marrow` : 'marrow';
-  }, [route.number]);
+    document.title = route.number !== null ? `${route.owner}/${route.repo}#${route.number} · marrow` : 'marrow';
+  }, [route.owner, route.repo, route.number]);
 
   if (error) {
     return (
