@@ -156,6 +156,6 @@ test('a new tab opens in the same window frame, on the pull requests', async () 
 
   // A tab takes its group's frame. Off center, so a window opened beside it would not match by chance.
   const frames = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => JSON.stringify(w.getBounds())));
-  await expect.poll(async () => new Set(await frames()).size).toBe(1);
+  await expect.poll(async () => [...new Set(await frames())]).toHaveLength(1);
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.tabbingIdentifier))).toEqual(['marrow', 'marrow']);
 });
