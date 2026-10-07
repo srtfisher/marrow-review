@@ -89,8 +89,13 @@ async function warnNoClaude(): Promise<void> {
   if (response === 0) void shell.openExternal('https://claude.com/claude-code');
 }
 
+/** `windows` is kept in focus order, so with nothing focused (a menu clicked from the dock) this is the last one used. */
+function frontmost(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? [...windows].at(-1) ?? null;
+}
+
 function dialogParent(): BrowserWindow | null {
-  return BrowserWindow.getFocusedWindow() ?? windows.values().next().value ?? null;
+  return frontmost();
 }
 
 function loadStatus(w: BrowserWindow): void {
@@ -191,7 +196,7 @@ function openExternal(url: string): void {
 }
 
 function createWindow(asTab = false): void {
-  const focused = BrowserWindow.getFocusedWindow();
+  const focused = frontmost();
   // Offset from the window it was opened over, or it lands exactly on top and looks like nothing happened.
   const over = asTab ? undefined : focused?.getPosition();
   const win = new BrowserWindow({
@@ -218,7 +223,11 @@ function createWindow(asTab = false): void {
     event.preventDefault();
     win.setTitle(windowTitle(title, settings.clone));
   });
-  win.on('focus', () => app.dock?.setBadge(''));
+  win.on('focus', () => {
+    app.dock?.setBadge('');
+    windows.delete(win);
+    windows.add(win);
+  });
   win.on('closed', () => { windows.delete(win); });
 
   const remember = (_event: unknown, url: string) => { if (/^https?:/.test(url)) pages.set(win, url); };
