@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-10-07
+
 ### Added
 
 - The Mac app opens more than one window: File › New Window (⌘N) starts on the pull
