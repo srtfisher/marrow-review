@@ -6,6 +6,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-07
+
+### Added
+
+- **GitHub failures explain themselves.** When submitting, listing pull requests, or loading
+  one fails, marrow says why — never a blank message — and when the fault is GitHub's (a
+  5xx, a rate limit, or no response at all) it quotes githubstatus.com: the overall status,
+  each incident with its latest update, and the degraded components. GitHub's request id is
+  shown for support. A failed submit says whether anything was posted.
+- Command- or Ctrl-click a pull request in the picker to open it in a new tab.
+
+### Changed
+
+- The review header and the tab title name the repository beside the number, as
+  `org/repo#N`.
+- The picker refreshes every few minutes, and a pull request you just reviewed leaves
+  "Review requested" without waiting for GitHub's search index.
+- A pull request's details in the picker stay on one line, truncating the branch name.
+
+### Fixed
+
+- **Submitting during a GitHub outage looked like nothing happened.** The button spun and
+  reset with no message, because GitHub's empty error response became a blank error the
+  page did not show. The submit dialog's error and buttons are now pinned in view.
+- A pull request that fails to load marks the step it was on as failed instead of leaving
+  it running.
+
 ## [0.4.3] - 2026-10-06
 
 ### Added
