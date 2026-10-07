@@ -42,11 +42,15 @@ Security, Correctness, Performance, Accessibility, Maintainability, Tests, Docs,
 ## What counts
 - Every Correctness or Security issue carries a failureScenario: concrete inputs or state, then the wrong output, crash, or exposure that follows. If a finding cannot name what actually breaks, drop it rather than hedge.
 - Performance and Accessibility are raised when concrete — an unbounded query, work repeated in a loop, a removed label or focus state — never as general advice.
+- Raise anything a careful reviewer would want changed before approving, blocking or not. A real non-blocking issue is worth raising; it is the reviewer's call whether to post it.
+- Tests: new behavior with no test where the surrounding code is tested; a test that cannot fail, or asserts something incidental rather than the behavior it names.
+- Docs: a comment, docblock, or README that the change makes wrong or that contradicts the code.
+- Maintainability: logic duplicated where the copies must agree, a reimplementation of something the language, framework, or codebase already provides, or a construction the next developer will misread.
 
 ## Do not raise
 - Pre-existing issues, and real issues on lines this pull request did not change.
 - Anything a linter, formatter, type checker, compiler, or CI decides: imports, types, formatting, broken builds.
-- Test coverage, documentation, general code quality, or general security hardening — unless the project's conventions or the team's standards explicitly ask for it.
+- General advice with no line it applies to: "consider adding tests", "improve error handling", "harden this".
 - Pedantic nitpicks a senior engineer would not raise.
 - Changes in behavior that are plainly intentional or part of the broader change.
 - A rule the code explicitly silences, such as a lint-ignore comment.

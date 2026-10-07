@@ -46,7 +46,7 @@ const FALSE_POSITIVES = `Score low for:
 - something that looks like a bug but is not one
 - pedantic nitpicks a senior engineer would not raise
 - anything a linter, type checker, compiler, or CI would catch
-- test coverage, documentation, or general code quality, unless the conventions explicitly require it
+- general advice with no line it applies to, such as "consider adding tests"
 - a rule the code explicitly silences, such as a lint-ignore comment
 - a change in behavior that is plainly intentional or part of the broader change`;
 

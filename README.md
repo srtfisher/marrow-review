@@ -241,7 +241,7 @@ and only the material that angle needs:
 | Reviewer | Looks for | Reads |
 |---|---|---|
 | conventions | departures from a specific rule in `CLAUDE.md`, `AGENTS.md`, or your standards, quoted | the diff and the conventions |
-| bugs | large, obvious bugs in the change itself, with no reaching beyond it | the diff and the changed files |
+| bugs | bugs in the change itself, small as well as large: edge cases, failure paths, untrusted input, missing authorization, cost that grows with data | the diff and the changed files |
 | history | bugs in light of the code's history: a fix undone, an invariant an earlier commit set up | the diff and the commit history |
 | prior comments | review comments on earlier pull requests to these files that apply again | the diff and those comments |
 | code comments | changes that break what the code's own comments say must hold | the diff and the changed files |
@@ -265,10 +265,12 @@ Performance, Accessibility, Maintainability, Tests, Docs, Process — the earlie
 when two fit. Every correctness or security issue names a failure scenario: concrete
 inputs, then what goes wrong; a finding that cannot name what breaks is dropped rather than
 hedged. Real uncertainty is a **question** — never a blocker, never scored, raised only when
-the answer would change the review. Out of scope unless your conventions or standards ask
-for it: pre-existing issues and lines the pull request did not change, anything a linter,
-type checker, or CI decides, test coverage, documentation, general code quality, nitpicks,
-plainly intentional behavior changes, and rules the code explicitly silences.
+the answer would change the review. Non-blocking issues are raised too, including untested
+new behavior where the surrounding code is tested, tests that cannot fail, comments the change
+makes wrong, and duplicated or reimplemented logic. Out of scope: pre-existing issues and lines
+the pull request did not change, anything a linter, type checker, or CI decides, general
+advice with no line it applies to, nitpicks, plainly intentional behavior changes, and rules
+the code explicitly silences.
 
 `--standards <dir>` adds your team's own rules: every `.md` and `.yml` file in the
 directory goes to the conventions reviewer, and to the scorer of any finding raised

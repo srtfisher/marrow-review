@@ -32,7 +32,7 @@ export const LENS_SPECS: Record<ReviewLens, LensSpec> = {
   bugs: {
     label: 'bugs',
     applies: () => true,
-    instruction: 'Scan the changes for obvious bugs. Work from the change itself and do not reach for context beyond it. Focus on large bugs; skip small issues and nitpicks, and ignore likely false positives.',
+    instruction: 'Review the changes for bugs: logic errors, unhandled edge cases and empty inputs, failure paths that leave state wrong or are silently swallowed, untrusted input reaching output, queries, or the filesystem unchecked, missing authorization, and work that grows with the data. Work from the change and the changed files. Raise small issues as well as large ones, and skip only what you can show is not a problem.',
     sections: changedFiles,
   },
   history: {

@@ -20,11 +20,19 @@ describe('buildRubric', () => {
     expect(buildRubric(base)).toContain('failureScenario');
   });
 
-  test('rules out what /code-review rules out', () => {
+  test('rules out pre-existing issues, tooling-decided issues, and unanchored advice', () => {
     const rubric = buildRubric(base);
     expect(rubric).toContain('Pre-existing issues');
-    expect(rubric).toContain('Test coverage, documentation, general code quality');
+    expect(rubric).toContain('General advice with no line it applies to');
     expect(rubric).toContain('drop it rather than hedge');
+  });
+
+  test('asks for non-blocking, test, and docs findings rather than ruling them out', () => {
+    const rubric = buildRubric(base);
+    expect(rubric).toContain('blocking or not');
+    expect(rubric).toContain('Tests: new behavior with no test');
+    expect(rubric).toContain('Docs: a comment');
+    expect(rubric).not.toContain('Test coverage, documentation, general code quality');
   });
 
   test('effort changes what is asked for', () => {
