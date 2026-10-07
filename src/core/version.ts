@@ -1,1 +1,1 @@
-export const MARROW_VERSION = '0.4.7';
+export const MARROW_VERSION = '0.4.8';

@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-10-07
+
+### Changed
+
+- Reviewers raise small and non-blocking issues, not only large bugs. The bugs reviewer
+  looks for edge cases, swallowed failures, unchecked input, missing authorization, and
+  work that grows with the data, and the rubric now asks for untested new behavior where
+  the surrounding code is tested, tests that cannot fail, comments the change makes wrong,
+  and duplicated or reimplemented logic. Only general advice with no line it applies to is
+  ruled out.
+
 ## [0.4.7] - 2026-10-07
 
 ### Added
