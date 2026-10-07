@@ -1,6 +1,6 @@
 {
   "name": "marrow-review",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Review large pull requests in a local web app: the diff abridged to what carries meaning, grouped by intent, findings anchored to lines, one GitHub review.",
   "license": "MIT",
   "author": "Sean Fisher",
