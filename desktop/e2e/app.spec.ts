@@ -93,3 +93,50 @@ test('links off the server open in the browser, never in a second window', async
   await expect.poll(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened)).toEqual(['https://github.com/o/r/pull/42']);
   expect(app.windows()).toHaveLength(1);
 });
+
+test('a new window opens on the pull requests while the first keeps its review', async () => {
+  const { app, page } = await started();
+  await page.getByText('Handle server errors').click();
+  await page.waitForURL(/#\/o\/r\/\d+$/);
+  const review = page.url();
+
+  const opened = app.waitForEvent('window');
+  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('new-window')?.click());
+  const second = await opened;
+  await second.waitForURL(/^http:\/\/127\.0\.0\.1:\d+\//);
+  await expect(second.getByText('Handle server errors')).toBeVisible();
+  expect(new URL(second.url()).hash).toBe('');
+  expect(page.url()).toBe(review);
+  expect(app.windows()).toHaveLength(2);
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => w.getTitle()).sort()))
+    .toEqual(['marrow', 'o/r#42 · marrow']);
+});
+
+test('restarting the server returns every window to its own page', async () => {
+  const { app, page } = await started();
+  await page.getByText('Handle server errors').click();
+  await page.waitForURL(/#\/o\/r\/\d+$/);
+  const route = new URL(page.url()).hash;
+
+  const opened = app.waitForEvent('window');
+  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('new-window')?.click());
+  const second = await opened;
+  await expect(second.getByText('Handle server errors')).toBeVisible();
+
+  // A mark the reload wipes, so the assertions below cannot pass on the pages from before the restart.
+  for (const p of [page, second]) await p.evaluate(() => { (window as { stale?: boolean }).stale = true; });
+  await app.evaluate(({ Menu }) => Menu.getApplicationMenu()?.getMenuItemById('restart-server')?.click());
+
+  const reloaded = (p: Page) => expect.poll(async () => {
+    try {
+      return await p.evaluate(() => /^http/.test(location.href) && !(window as { stale?: boolean }).stale && document.readyState === 'complete');
+    } catch {
+      return false;
+    }
+  }, { timeout: 15_000 }).toBe(true);
+  await reloaded(page);
+  await reloaded(second);
+  expect(new URL(page.url()).hash).toBe(route);
+  expect(new URL(second.url()).hash).toBe('');
+  await expect(second.getByText('Handle server errors')).toBeVisible();
+});

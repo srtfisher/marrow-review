@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell, utilityProcess, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell, utilityProcess, type IpcMainEvent, type UtilityProcess } from 'electron';
 import { execFile } from 'node:child_process';
 import { accessSync, constants, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findExecutable, loginShellPath, osascriptNotice, parseServerUrl, passFlags, tail, toNotice, toPasses, type Passes } from './child.js';
+import { findExecutable, loginShellPath, osascriptNotice, parseServerUrl, passFlags, tail, toNotice, toPasses, windowTitle, withRoute, type Passes } from './child.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // Packaged, marrow is staged into Resources outside the asar: the Claude SDK
@@ -48,9 +48,14 @@ function saveSettings(settings: Settings): void {
 }
 
 let settings = loadSettings();
-let win: BrowserWindow | null = null;
+// Every window is a page on the one server, which already holds a session per pull request.
+const windows = new Set<BrowserWindow>();
+// The last server page each window showed, read back when a restarted server has a new URL.
+const pages = new WeakMap<BrowserWindow, string>();
+let status: { state: 'starting' | 'error'; detail: string } = { state: 'starting', detail: '' };
 let child: UtilityProcess | null = null;
 let serverOrigin: string | null = null;
+let serverUrl: string | null = null;
 let pathPromise: Promise<string> | null = null;
 let warnedNoClaude = false;
 
@@ -78,30 +83,35 @@ async function warnNoClaude(): Promise<void> {
     cancelId: 1,
   };
   // A sheet asked for on a window not yet shown is never drawn.
-  const target = win;
+  const target = dialogParent();
   if (target && !target.isVisible()) await new Promise<void>((resolve) => { target.once('show', () => resolve()); });
   const { response } = target ? await dialog.showMessageBox(target, options) : await dialog.showMessageBox(options);
   if (response === 0) void shell.openExternal('https://claude.com/claude-code');
 }
 
-function showStatus(state: 'starting' | 'error', detail = ''): void {
-  void win?.loadFile(join(here, '..', 'static', 'loading.html'), { query: { state, detail } });
+function dialogParent(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? windows.values().next().value ?? null;
 }
 
-function setTitle(): void {
-  win?.setTitle(settings.clone ? `marrow — ${basename(settings.clone)}` : 'marrow');
+function loadStatus(w: BrowserWindow): void {
+  void w.loadFile(join(here, '..', 'static', 'loading.html'), { query: status });
+}
+
+function showStatus(state: 'starting' | 'error', detail = ''): void {
+  status = { state, detail };
+  for (const w of windows) loadStatus(w);
 }
 
 function stopServer(): void {
   const running = child;
   child = null;
   serverOrigin = null;
+  serverUrl = null;
   running?.kill();
 }
 
 async function startServer(): Promise<void> {
   stopServer();
-  setTitle();
   showStatus('starting');
   pathPromise ??= loginShellPath(process.env);
   const path = await pathPromise;
@@ -140,11 +150,12 @@ async function startServer(): Promise<void> {
       if (url && child === proc) {
         const parsed = new URL(url);
         serverOrigin = parsed.origin;
+        serverUrl = url;
         if (Number(parsed.port) !== settings.port) {
           settings = { ...settings, port: Number(parsed.port) };
           saveSettings(settings);
         }
-        void win?.loadURL(url);
+        for (const w of windows) void w.loadURL(withRoute(url, pages.get(w)));
         return;
       }
     }
@@ -155,6 +166,7 @@ async function startServer(): Promise<void> {
     if (child !== proc) return;
     child = null;
     serverOrigin = null;
+    serverUrl = null;
     // The remembered port may be taken by now; one more try on any port.
     if (port !== null && /EADDRINUSE/.test(stderr)) {
       settings = { ...settings, port: null };
@@ -179,11 +191,15 @@ function openExternal(url: string): void {
 }
 
 function createWindow(): void {
-  win = new BrowserWindow({
+  // Offset from the window it was opened over, or it lands exactly on top and looks like nothing happened.
+  const over = BrowserWindow.getFocusedWindow()?.getPosition();
+  const win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 720,
     minHeight: 480,
+    ...(over ? { x: over[0]! + 24, y: over[1]! + 24 } : {}),
+    title: windowTitle('marrow', settings.clone),
     show: false,
     webPreferences: {
       preload: join(here, 'preload.cjs'),
@@ -192,11 +208,18 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   });
-  win.once('ready-to-show', () => win?.show());
-  // The page names itself "marrow"; the title is ours, to show the clone.
-  win.on('page-title-updated', (event) => event.preventDefault());
+  windows.add(win);
+  win.once('ready-to-show', () => win.show());
+  win.on('page-title-updated', (event, title) => {
+    event.preventDefault();
+    win.setTitle(windowTitle(title, settings.clone));
+  });
   win.on('focus', () => app.dock?.setBadge(''));
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { windows.delete(win); });
+
+  const remember = (_event: unknown, url: string) => { if (/^https?:/.test(url)) pages.set(win, url); };
+  win.webContents.on('did-navigate', remember);
+  win.webContents.on('did-navigate-in-page', remember);
 
   // Links leave for the browser: a GitHub page inside the review window has no way back.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -209,7 +232,7 @@ function createWindow(): void {
     openExternal(url);
   });
 
-  void startServer();
+  if (serverUrl) void win.loadURL(serverUrl); else loadStatus(win);
 }
 
 function gitTopLevel(folder: string, path: string): Promise<string | null> {
@@ -228,6 +251,7 @@ async function openClone(): Promise<void> {
     properties: ['openDirectory' as const],
     defaultPath: settings.clone ?? home,
   };
+  const win = dialogParent();
   const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
   const folder = result.filePaths[0];
   if (result.canceled || !folder) return;
@@ -261,6 +285,7 @@ async function showAbout(): Promise<void> {
     defaultId: 0,
     cancelId: 0,
   };
+  const win = dialogParent();
   const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
   if (response === 1) openExternal(REPO_URL);
 }
@@ -285,10 +310,12 @@ function buildMenu(): void {
     {
       label: 'File',
       submenu: [
+        { id: 'new-window', label: 'New Window', accelerator: 'CmdOrCtrl+N', click: createWindow },
+        { type: 'separator' },
         { label: 'Open Local Checkout…', accelerator: 'CmdOrCtrl+O', click: () => void openClone() },
         { label: 'Close Local Checkout', click: closeClone },
         { type: 'separator' },
-        { label: 'Restart Server', click: () => void startServer() },
+        { id: 'restart-server', label: 'Restart Server', click: () => void startServer() },
         { type: 'separator' },
         { role: 'close' },
       ],
@@ -300,8 +327,14 @@ function buildMenu(): void {
   ]));
 }
 
+/** The window a message came from, if it is one of ours showing the server's page; the page is untrusted. */
+function senderWindow(event: IpcMainEvent): BrowserWindow | null {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win && windows.has(win) && isServerUrl(event.senderFrame?.url ?? '') ? win : null;
+}
+
 ipcMain.on('marrow:passes', (event, raw: unknown) => {
-  if (!win || event.sender !== win.webContents || !isServerUrl(event.senderFrame?.url ?? '')) return;
+  if (!senderWindow(event)) return;
   const passes = toPasses(raw);
   if (!passes) return;
   settings = { ...settings, passes };
@@ -309,14 +342,15 @@ ipcMain.on('marrow:passes', (event, raw: unknown) => {
 });
 
 ipcMain.on('marrow:notify', (event, raw: unknown) => {
-  if (!win || event.sender !== win.webContents || !isServerUrl(event.senderFrame?.url ?? '')) return;
+  const win = senderWindow(event);
+  if (!win) return;
   const notice = toNotice(raw);
   // Looking at the page, the page is the notification.
   if (!notice || win.isFocused()) return;
   app.dock?.setBadge('•');
   const note = new Notification({ title: notice.title, body: notice.body });
   note.on('click', () => {
-    if (!win) return;
+    if (win.isDestroyed()) return;
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
@@ -338,9 +372,10 @@ app.setName('marrow');
 app.whenReady().then(() => {
   buildMenu();
   createWindow();
-  app.on('activate', () => { if (!win) createWindow(); });
+  void startServer();
+  app.on('activate', () => { if (windows.size === 0) createWindow(); });
 });
 
-// One window, and closing it is quitting: the server lives for the window.
+// Closing the last window is quitting: the server lives for the windows.
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', stopServer);

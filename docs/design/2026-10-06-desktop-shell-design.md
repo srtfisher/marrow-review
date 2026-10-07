@@ -76,5 +76,20 @@ renders every iconset size and builds `icon.icns`. The page's favicon stays as i
 
 ## Not in scope
 
-Developer ID signing and notarization, auto-update, Windows and Linux builds, more than one window,
-and a native PR picker — the page's picker is the picker.
+Developer ID signing and notarization, auto-update, Windows and Linux builds, and a native PR
+picker — the page's picker is the picker.
+
+## Revision 2026-10-07: more than one window
+
+File › New Window (⌘N) opens another window, so two pull requests can be reviewed side by
+side. It needed no change below the shell: the server already keeps a session per pull
+request, and the page keeps its review in the hash.
+
+| Decision | Choice | Why |
+|---|---|---|
+| Servers | One, shared by every window | A server per window means a token, caches, and a port each, and only one of them could keep the remembered port the theme depends on. The checkout and the passes stay app-wide, as they already were. |
+| A new window | Opens on the server's URL with no route, so the picker; offset from the window it was opened over | Exactly on top, it looks like nothing happened. |
+| Restart, or a new checkout | Every window reloads on the new URL with the route it was on | Each comes back to its own review, and the draft is restored from disk. |
+| Title | The page's title (`o/r#42 · marrow`), then the checkout's name | Every window called "marrow — clone" made the Window menu useless. |
+| Notifications | From any window; skipped when that window is focused; a click focuses that window | The window that finished is the one you want. |
+| Quitting | Closing the last window still quits | The server lives for the windows. |

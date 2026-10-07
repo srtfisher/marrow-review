@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { findExecutable, loginShellPath, osascriptNotice, parseServerUrl, passFlags, tail, toNotice, toPasses } from '../src/child.js';
+import { findExecutable, loginShellPath, osascriptNotice, parseServerUrl, passFlags, tail, toNotice, toPasses, windowTitle, withRoute } from '../src/child.js';
 
 describe('parseServerUrl', () => {
   test('reads the URL from the line the CLI prints', () => {
@@ -81,5 +81,29 @@ describe('findExecutable', () => {
 
   test('is null when no directory has it', () => {
     expect(findExecutable('claude', ['/a', ''], () => false)).toBeNull();
+  });
+});
+
+describe('withRoute', () => {
+  test('carries the review a window was on to the restarted server', () => {
+    expect(withRoute('http://127.0.0.1:5001/?token=new', 'http://127.0.0.1:5000/?token=old#/o/r/42')).toBe('http://127.0.0.1:5001/?token=new#/o/r/42');
+  });
+
+  test('carries no route from the loading page', () => {
+    expect(withRoute('http://127.0.0.1:5001/?token=new', 'file:///app/static/loading.html?state=starting')).toBe('http://127.0.0.1:5001/?token=new');
+  });
+
+  test('opens a window that has been nowhere on the picker', () => {
+    expect(withRoute('http://127.0.0.1:5001/?token=new', undefined)).toBe('http://127.0.0.1:5001/?token=new');
+  });
+});
+
+describe('windowTitle', () => {
+  test('adds the checkout to the page title', () => {
+    expect(windowTitle('o/r#42 · marrow', '/Users/me/code/r')).toBe('o/r#42 · marrow — r');
+  });
+
+  test('is the page title alone without a checkout', () => {
+    expect(windowTitle('o/r#42 · marrow', null)).toBe('o/r#42 · marrow');
   });
 });

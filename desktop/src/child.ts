@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { basename } from 'node:path';
 
 /** The one line the CLI prints for other programs to read. */
 export function parseServerUrl(line: string): string | null {
@@ -89,4 +90,21 @@ export function findExecutable(name: string, dirs: string[], isExecutable: (path
     if (isExecutable(candidate)) return candidate;
   }
   return null;
+}
+
+/**
+ * The server's URL carrying the route a window was on, so a restarted server
+ * puts each window back on its own review. The loading page is a `file:` URL
+ * and has no route to carry.
+ */
+export function withRoute(serverUrl: string, pageUrl: string | undefined): string {
+  if (!pageUrl || !/^https?:/.test(pageUrl)) return serverUrl;
+  const url = new URL(serverUrl);
+  url.hash = new URL(pageUrl).hash;
+  return url.toString();
+}
+
+/** The page's own title names the pull request; the checkout is the shell's to add. */
+export function windowTitle(pageTitle: string, clone: string | null): string {
+  return clone ? `${pageTitle} — ${basename(clone)}` : pageTitle;
 }

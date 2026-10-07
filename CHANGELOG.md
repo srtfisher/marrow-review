@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The Mac app opens more than one window: File › New Window (⌘N) starts on the pull
+  request list, so two reviews can run side by side. Each window is titled with its pull
+  request, and restarting the server or changing the checkout returns every window to its
+  own review.
+
 ## [0.4.5] - 2026-10-07
 
 ### Changed
