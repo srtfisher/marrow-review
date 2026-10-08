@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-10-07
+
+### Added
+
+- PHP suggestions are checked before they post. Opening the finish dialog runs `php -l`
+  over every suggestion on a `.php` file, Claude's and your own, applied to the file at
+  the head commit. One that would not parse is listed with PHP's error, and the submit
+  button becomes **Submit anyway**. Without `php` on your PATH the check is skipped, and a
+  file that already failed before the suggestion is not blamed on it.
+
 ## [0.4.8] - 2026-10-07
 
 ### Changed
