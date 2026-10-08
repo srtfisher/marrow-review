@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { isShown } from '../lib/findings.js';
 import { SHORTCUTS } from '../lib/keymap.js';
-import { githubProblem } from '../api.js';
-import type { GitHubProblem, SessionSnapshot, Verdict } from '../lib/types.js';
+import { githubProblem, syntaxProblems } from '../api.js';
+import type { GitHubProblem, SessionSnapshot, SyntaxProblem, Verdict } from '../lib/types.js';
 import { Composer } from './Composer.js';
 import { GitHubNotice } from './GitHubNotice.js';
 import { Icon } from './icons.js';
@@ -68,7 +68,7 @@ const VERDICT_TEXT: Record<Verdict, { label: string; help: string; digit: string
 const VERDICTS = Object.keys(VERDICT_TEXT) as Verdict[];
 
 export function SubmitDialog({
-  open, onClose, snapshot, context, comments, onSubmit,
+  open, onClose, snapshot, context, comments, onSubmit, onCheck,
 }: {
   open: boolean;
   onClose: () => void;
@@ -76,12 +76,23 @@ export function SubmitDialog({
   context: string;
   /** How many inline comments will post: the reviewer's plus accepted findings. */
   comments: { mine: number; findings: number };
-  onSubmit: (verdict: Verdict, body: string) => Promise<void>;
+  onSubmit: (verdict: Verdict, body: string, ignoreSyntax: boolean) => Promise<void>;
+  /** Lints the suggestions that would post; submit checks again, so this is only an early warning. */
+  onCheck: () => Promise<SyntaxProblem[]>;
 }) {
   const [verdict, setVerdict] = useState<Verdict>(snapshot.draft.verdict ?? 'COMMENT');
   const [body, setBody] = useState(snapshot.draft.body);
   const [error, setError] = useState<{ message: string; github: GitHubProblem | null } | null>(null);
+  const [problems, setProblems] = useState<SyntaxProblem[] | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    setProblems(null);
+    // A check that fails to run says nothing; submit checks again anyway.
+    onCheck().then((found) => { if (current && found.length > 0) setProblems(found); }, () => {});
+    return () => { current = false; };
+  }, [open]);
   const isAuthor = snapshot.pr?.viewerIsAuthor === true;
   const pendingFindings = snapshot.findings.items.filter((f) => f.state === 'pending' && isShown(f, snapshot.scoreThreshold)).length;
 
@@ -89,9 +100,11 @@ export function SubmitDialog({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(verdict, body);
+      await onSubmit(verdict, body, problems !== null);
     } catch (e) {
-      setError({ message: (e as Error).message, github: githubProblem(e) });
+      const found = syntaxProblems(e);
+      if (found) setProblems(found);
+      else setError({ message: (e as Error).message, github: githubProblem(e) });
     } finally {
       setBusy(false);
     }
@@ -135,6 +148,19 @@ export function SubmitDialog({
         </div>
         {/* Sticky, because a failure otherwise lands below the fold of a short window and looks like nothing happened. */}
         <div className="sticky bottom-0 -mx-4 -mb-3 space-y-3 border-t border-border bg-overlay px-4 py-3">
+          {problems && (
+            <div role="alert" className="space-y-1.5 rounded-md border border-attention/40 px-3 py-2 text-sm">
+              <p className="text-attention">{problems.length === 1 ? 'A suggestion does' : `${problems.length} suggestions do`} not parse as PHP once applied.</p>
+              <ul className="space-y-1">
+                {problems.map((p) => (
+                  <li key={`${p.commentId}:${p.message}`}>
+                    <span className="font-mono text-xs">{p.path}:{p.startLine === null ? p.line : `${p.startLine}-${p.line}`}</span>
+                    <span className="block text-xs text-fg-muted">{p.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {error && (
             <GitHubNotice message={error.message} github={error.github}>
               {/* With no response, GitHub may have created the review before the connection dropped. */}
@@ -145,7 +171,7 @@ export function SubmitDialog({
           )}
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
-            <Button tone="primary" onClick={() => void submit()} disabled={busy}>{busy ? 'Submitting…' : 'Submit review'}<Kbd>⌘↵</Kbd></Button>
+            <Button tone="primary" onClick={() => void submit()} disabled={busy}>{busy ? 'Submitting…' : problems ? 'Submit anyway' : 'Submit review'}<Kbd>⌘↵</Kbd></Button>
           </div>
         </div>
       </div>

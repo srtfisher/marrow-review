@@ -30,6 +30,7 @@ import type { GroupingResult } from '../group/types.js';
 import type { VerdictCache } from '../meat/cache.js';
 import { computeMeat, type MeatResult } from '../meat/index.js';
 import { demoteUnanchorable } from '../review/anchors.js';
+import { checkSuggestions, PHP_LINTER, SuggestionSyntaxError, type SyntaxLinter, type SyntaxProblem } from '../review/lint.js';
 import { buildReviewPayload } from '../review/payload.js';
 import { readConventions, SCORE_THRESHOLD, type Effort } from '../review/rubric.js';
 import type { ReviewDraft, Side, StagedComment, Verdict } from '../review/types.js';
@@ -68,6 +69,8 @@ export interface SessionDeps {
   viewer: string;
   config: SessionConfig;
   resolveSource?: typeof resolveSource;
+  /** Checks suggestions at submit; defaults to `php -l`, so tests pass a fake. */
+  linter?: SyntaxLinter;
   /** githubstatus.com, asked only after a GitHub failure; tests pass a fake. */
   githubStatus?: () => Promise<GitHubStatus | null>;
   now?: () => number;
@@ -549,8 +552,19 @@ export class ReviewSession {
     return readContent(this.deps.contents, owner, repo, file?.oldPath ?? path, pr.baseSha || pr.baseRef);
   }
 
+  /** The suggestions in what would be submitted now that would not parse once applied. */
+  async checkSuggestions(): Promise<SyntaxProblem[]> {
+    const draft = fullDraft(this.state.draft, this.state.findings.items);
+    return this.lintSuggestions(demoteUnanchorable(draft, this.files).draft.comments);
+  }
+
+  private lintSuggestions(comments: StagedComment[]): Promise<SyntaxProblem[]> {
+    const source = this.source;
+    return checkSuggestions(comments, async (path) => (source ? source.readHead(path) : null), this.deps.linter ?? PHP_LINTER);
+  }
+
   /** Throws with a message fit to show: GitHub rejects a bad review atomically, so it is checked here first. */
-  async submit(verdict: Verdict, body: string): Promise<{ url: string; demoted: StagedComment[] }> {
+  async submit(verdict: Verdict, body: string, opts: { ignoreSyntax?: boolean } = {}): Promise<{ url: string; demoted: StagedComment[] }> {
     const { pr, owner, repo } = this.state;
     if (!pr) throw new Error('The pull request has not loaded yet.');
     if (blockedForAuthor(verdict, pr.viewerIsAuthor)) throw new Error(authorBlockReason(verdict));
@@ -559,6 +573,10 @@ export class ReviewSession {
     // A comment GitHub will not anchor is still worth telling the author, so it
     // moves into the review body rather than being discarded.
     const { draft: adjusted, demoted } = demoteUnanchorable(draft, this.files);
+    if (!opts.ignoreSyntax) {
+      const problems = await this.lintSuggestions(adjusted.comments);
+      if (problems.length > 0) throw new SuggestionSyntaxError(problems);
+    }
     const payload = buildReviewPayload(adjusted, this.files);
     const result = await submitReview(this.deps.submitter, owner, repo, pr.number, payload);
     // On GitHub now; keeping it on disk would resurrect it next time.

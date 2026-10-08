@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { ALL_PASSES, type PassSettings } from '../../src/core/session/passes.js';
 import { ReviewSession } from '../../src/core/session/session.js';
 import { startServer, type AppContext, type RunningServer } from '../../src/server/index.js';
-import { deps } from '../core/session/fixtures.js';
+import { deps, resolved } from '../core/session/fixtures.js';
 
 let running: RunningServer | null = null;
 afterEach(async () => { await running?.close(); running = null; });
@@ -131,6 +131,28 @@ describe('startServer', () => {
     const res = await call(`/api/sessions/${id}/submit`, { method: 'POST', body: JSON.stringify({ verdict: 'COMMENT', body: '' }) });
     expect(res.status).toBe(422);
     expect(((await res.json()) as { error: string }).error).toContain('nothing to say');
+  });
+
+  test('a suggestion that does not parse is listed by check, refused by submit with a 409, and posted with ignoreSyntax', async () => {
+    const linter = { handles: () => true, lint: async (_p: string, code: string) => (code.includes('BROKEN') ? { kind: 'error' as const, message: 'bad' } : { kind: 'ok' as const }) };
+    const d = deps({ linter, resolveSource: async () => ({ ...resolved, source: { ...resolved.source, readHead: async () => 'x\n'.repeat(20) } }) });
+    const { call } = await start(app({ createSession: (id, owner, repo, number) => new ReviewSession(id, owner, repo, number, d) }));
+    const { id } = await (await call('/api/sessions', { method: 'POST', body: JSON.stringify({ number: 42 }) })).json() as { id: string };
+    await new Promise((r) => setTimeout(r, 20));
+    const comment = { id: 'c', path: 'src/app.ts', line: 13, side: 'RIGHT', startLine: null, body: 'Fix.', suggestion: 'BROKEN' };
+    await call(`/api/sessions/${id}/draft`, { method: 'PUT', body: JSON.stringify({ verdict: null, body: '', comments: [comment] }) });
+
+    const check = await call(`/api/sessions/${id}/check`, { method: 'POST' });
+    expect(((await check.json()) as { problems: unknown[] }).problems).toEqual([expect.objectContaining({ commentId: 'c' })]);
+
+    const res = await call(`/api/sessions/${id}/submit`, { method: 'POST', body: JSON.stringify({ verdict: 'COMMENT', body: '' }) });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { problems: unknown[] }).problems).toEqual([expect.objectContaining({ commentId: 'c', message: 'bad' })]);
+    expect(d.submitted).toHaveLength(0);
+
+    const anyway = await call(`/api/sessions/${id}/submit`, { method: 'POST', body: JSON.stringify({ verdict: 'COMMENT', body: '', ignoreSyntax: true }) });
+    expect(anyway.status).toBe(200);
+    expect(d.submitted).toHaveLength(1);
   });
 
   test('streams a snapshot, then patches, over server-sent events', async () => {

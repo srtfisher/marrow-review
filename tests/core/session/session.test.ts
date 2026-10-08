@@ -3,6 +3,7 @@ import { SCORE_SCHEMA } from '../../../src/core/findings/score.js';
 import { FINDINGS_SCHEMA } from '../../../src/core/findings/schema.js';
 import { GROUPING_SCHEMA } from '../../../src/core/group/index.js';
 import { CLASSIFY_SCHEMA } from '../../../src/core/meat/classify.js';
+import { SuggestionSyntaxError } from '../../../src/core/review/lint.js';
 import { ALL_PASSES } from '../../../src/core/session/passes.js';
 import { absorbAccepted, fullDraft, mergeTriage, ReviewSession, type SessionConfig } from '../../../src/core/session/session.js';
 import type { PersistedReview } from '../../../src/core/store/review.js';
@@ -135,6 +136,44 @@ describe('reviewer state', () => {
     expect(payload.comments).toHaveLength(2);
     expect(payload.body).toBe('Looks close.');
     expect((d.store as unknown as MemoryStore).cleared).toBe(1);
+  });
+
+  test('a suggestion that does not parse stops the submit until the reviewer submits anyway', async () => {
+    const linter = {
+      handles: (path: string) => path === 'src/app.ts',
+      lint: async (_path: string, code: string) => (code.includes('BROKEN') ? { kind: 'error' as const, message: 'syntax error (line 13)' } : { kind: 'ok' as const }),
+    };
+    const d = deps({ linter, resolveSource: async () => ({ ...resolved, source: { ...resolved.source, readHead: async () => 'a\nb\nc\n'.repeat(10) } }) });
+    const session = new ReviewSession('s1', 'o', 'r', 42, d);
+    await session.load();
+    session.updateDraft({ verdict: null, body: '', comments: [
+      { id: 'mine', path: 'src/app.ts', line: 13, side: 'RIGHT', startLine: null, body: 'Try:\n```suggestion\nBROKEN\n```', suggestion: null },
+    ] });
+    const refused = await session.submit('COMMENT', '').catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(SuggestionSyntaxError);
+    expect((refused as SuggestionSyntaxError).problems).toEqual([
+      { commentId: 'mine', path: 'src/app.ts', line: 13, startLine: null, message: 'syntax error (line 13)' },
+    ]);
+    expect(d.submitted).toHaveLength(0);
+
+    await session.submit('COMMENT', '', { ignoreSyntax: true });
+    expect(d.submitted).toHaveLength(1);
+  });
+
+  test('suggestions can be checked before submitting, without posting anything', async () => {
+    const linter = {
+      handles: () => true,
+      lint: async (_path: string, code: string) => (code.includes('BROKEN') ? { kind: 'error' as const, message: 'bad' } : { kind: 'ok' as const }),
+    };
+    const d = deps({ linter, resolveSource: async () => ({ ...resolved, source: { ...resolved.source, readHead: async () => 'x\n'.repeat(20) } }) });
+    const session = new ReviewSession('s1', 'o', 'r', 42, d);
+    await session.load();
+    expect(await session.checkSuggestions()).toEqual([]);
+    session.updateDraft({ verdict: null, body: '', comments: [
+      { id: 'mine', path: 'src/app.ts', line: 13, side: 'RIGHT', startLine: null, body: 'Fix.', suggestion: 'BROKEN' },
+    ] });
+    expect(await session.checkSuggestions()).toEqual([expect.objectContaining({ commentId: 'mine', message: 'bad' })]);
+    expect(d.submitted).toHaveLength(0);
   });
 
   test('approving your own pull request is refused before GitHub sees it', async () => {

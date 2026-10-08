@@ -1,5 +1,5 @@
 import type {
-  GitHubProblem, PassSettings, PullFilter, PullRequestSummary, RequestedPull, ReviewDraft, SessionSnapshot, Side, TriageAction, Verdict,
+  GitHubProblem, PassSettings, PullFilter, PullRequestSummary, RequestedPull, ReviewDraft, SessionSnapshot, Side, SyntaxProblem, TriageAction, Verdict,
 } from './lib/types.js';
 
 const params = new URLSearchParams(window.location.search);
@@ -9,7 +9,12 @@ const token = params.get('token') ?? sessionStorage.getItem(STORED) ?? '';
 if (token) sessionStorage.setItem(STORED, token);
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string, readonly github: GitHubProblem | null = null) {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly github: GitHubProblem | null = null,
+    readonly problems: SyntaxProblem[] | null = null,
+  ) {
     super(message);
   }
 }
@@ -17,14 +22,17 @@ export class ApiError extends Error {
 /** The GitHub failure behind an error from `api`, if there was one. */
 export const githubProblem = (error: unknown): GitHubProblem | null => (error instanceof ApiError ? error.github : null);
 
+/** The suggestions that stopped a submit, if that is why it was refused. */
+export const syntaxProblems = (error: unknown): SyntaxProblem[] | null => (error instanceof ApiError ? error.problems : null);
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`./api${path}`, {
     method,
     headers: { 'x-marrow-token': token, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; github?: GitHubProblem };
-  if (!res.ok) throw new ApiError(res.status, data.error?.trim() || `${res.status} ${res.statusText}`.trim(), data.github ?? null);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; github?: GitHubProblem; problems?: SyntaxProblem[] };
+  if (!res.ok) throw new ApiError(res.status, data.error?.trim() || `${res.status} ${res.statusText}`.trim(), data.github ?? null, data.problems ?? null);
   return data as T;
 }
 
@@ -54,8 +62,9 @@ export const api = {
   chat: (id: string, question: string, context?: string, fresh?: boolean) =>
     call('POST', `/sessions/${id}/chat`, { question, context, fresh }),
   retry: (id: string) => call('POST', `/sessions/${id}/retry`),
-  submit: (id: string, verdict: Verdict, body: string) =>
-    call<{ url: string; demoted: unknown[] }>('POST', `/sessions/${id}/submit`, { verdict, body }),
+  check: (id: string) => call<{ problems: SyntaxProblem[] }>('POST', `/sessions/${id}/check`).then((r) => r.problems),
+  submit: (id: string, verdict: Verdict, body: string, ignoreSyntax = false) =>
+    call<{ url: string; demoted: unknown[] }>('POST', `/sessions/${id}/submit`, { verdict, body, ignoreSyntax }),
   file: (id: string, path: string, side: Side) =>
     call<{ text: string }>('GET', `/sessions/${id}/file?${qs({ path, side })}`).then((r) => r.text),
   markdown: (text: string, context?: string) => call<{ html: string }>('POST', '/markdown', { text, context }).then((r) => r.html),

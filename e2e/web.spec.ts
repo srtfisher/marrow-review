@@ -100,3 +100,19 @@ test('in a browser a submitted review lands on its own page', async ({ page }) =
   await page.getByLabel('Review summary').press('ControlOrMeta+Enter');
   await expect(page.getByRole('heading', { name: 'Review submitted' })).toBeVisible();
 });
+
+test('a suggestion that does not parse is flagged when the finish dialog opens', async ({ page }) => {
+  await page.goto(fixture.url);
+  await page.getByText('Handle server errors').click();
+  await expect(page.getByText('Errors reach nothing').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Post as suggestion' }).first().click();
+
+  await page.keyboard.press('!');
+  const alert = page.getByRole('alert');
+  await expect(alert).toContainText('A suggestion does not parse as PHP once applied.');
+  await expect(alert).toContainText('src/app.ts:14');
+  await expect(alert).toContainText('unexpected end of file');
+
+  await page.getByRole('button', { name: /Submit anyway/ }).click();
+  await expect(page.getByRole('heading', { name: 'Review submitted' })).toBeVisible();
+});

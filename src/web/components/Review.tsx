@@ -507,8 +507,9 @@ export function Review({
           snapshot={snapshot}
           context={context}
           comments={{ mine: snapshot.draft.comments.length, findings: accepted }}
-          onSubmit={async (verdict: Verdict, body: string) => {
-            const result = await api.submit(sessionId, verdict, body);
+          onCheck={() => api.check(sessionId)}
+          onSubmit={async (verdict: Verdict, body: string, ignoreSyntax: boolean) => {
+            const result = await api.submit(sessionId, verdict, body, ignoreSyntax);
             setSubmitOpen(false);
             onReviewed(snapshot.owner, snapshot.repo, snapshot.number);
             // The Mac app goes straight back to the picker; a browser tab keeps a page to land on.

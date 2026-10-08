@@ -561,6 +561,15 @@ components, and GitHub's request id in mono. A failed submit says whether anythi
 "nothing was posted" only when GitHub answered; with no answer, check the pull request first.
 The submit dialog's actions are a sticky footer so the box can never land below the fold.
 
+## Revision: suggestions that do not parse (0.4.9)
+
+**A PHP suggestion that would break the file is flagged when the finish dialog opens, in
+`attention`, not `danger`.** Nothing has failed: the reviewer may know better than `php -l`.
+The box sits in the dialog's sticky footer above the actions, names each comment by
+`path:line` in mono with PHP's own message under it, and the primary button becomes
+**Submit anyway** on the same `⌘↵`. Closing the dialog to fix a comment clears it; reopening
+checks again, and so does submit.
+
 ## Rejected defaults, recorded so they stay rejected
 
 - Hardcoded truecolor palette → ANSI semantic slots that inherit the user's theme. The one

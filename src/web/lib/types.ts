@@ -8,6 +8,7 @@ export type { LayoutFile, LayoutSection } from '../../core/group/layout.js';
 export type { GroupCategory } from '../../core/group/types.js';
 export type { DiffLine } from '../../core/diff/types.js';
 export type { ReviewDraft, Side, StagedComment, Verdict } from '../../core/review/types.js';
+export type { SyntaxProblem } from '../../core/review/lint.js';
 export type { TriagedFinding } from '../../core/findings/triage.js';
 export type { ChatSession, ChatTurn } from '../../core/findings/chat.js';
 export type { CheckRun, PullFilter, PullRequestSummary, RequestedPull, ReviewThread } from '../../core/github/types.js';

@@ -8,6 +8,7 @@ import type { GitHubStatus } from '../core/github/status.js';
 import { listAssignees, listEmoji, renderMarkdown, type ExtrasApi } from '../core/github/extras.js';
 import type { PullFilter, PullRequestSummary, RequestedPull } from '../core/github/types.js';
 import type { RepoContext } from '../core/git/repo.js';
+import { SuggestionSyntaxError } from '../core/review/lint.js';
 import type { Side, StagedComment, Verdict } from '../core/review/types.js';
 import { VERDICTS } from '../core/review/verdicts.js';
 import { parsePassSettings, type PassSettings } from '../core/session/passes.js';
@@ -289,12 +290,16 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const verdict = body.verdict as Verdict;
         if (!VERDICTS.includes(verdict)) throw new HttpError(400, 'Choose a verdict.');
         try {
-          return send(res, 200, await s.submit(verdict, str(body.body ?? '', 'body')));
+          return send(res, 200, await s.submit(verdict, str(body.body ?? '', 'body'), { ignoreSyntax: body.ignoreSyntax === true }));
         } catch (error) {
           if (error instanceof GitHubError) throw error;
+          if (error instanceof SuggestionSyntaxError) return send(res, 409, { error: error.message, problems: error.problems });
           throw new HttpError(422, (error as Error).message);
         }
       }
+
+      case 'POST /sessions/:id/check':
+        return send(res, 200, { problems: await session(parts[1]!).checkSuggestions() });
 
       case 'GET /sessions/:id/file': {
         const s = session(parts[1]!);

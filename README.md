@@ -45,6 +45,8 @@ reimplements both in TypeScript and builds a review workflow around them.
 - A Claude Code subscription. Claude Code itself ships with marrow, so there is nothing
   else to install; if it cannot start or cannot authenticate, marrow says so and carries
   on without the model passes — the diff, your comments, and submitting all still work.
+- Optional: `php` on your PATH, to check PHP suggestions before they post. Without it the
+  check is skipped.
 
 ## Use
 
@@ -145,6 +147,12 @@ The page is GitHub's files view with two additions: a sidebar of groups, and Cla
   by pass — abridge, group, review, score, ask — with turns, files read, cache reads, time, and the SDK's
   API-equivalent cost estimate.
 - **Submit.** `!` opens the finish dialog: summary, verdict, and what will post.
+- **Catch a broken suggestion.** Opening the finish dialog runs `php -l` over every PHP
+  suggestion about to post — Claude's and the ones you wrote — applied to the file at the
+  head commit, the way GitHub's **Commit suggestion** would leave it. One that would not
+  parse is listed with PHP's error, and submitting is checked again on the way out; the
+  button becomes **Submit anyway** for when you know better. A file that already failed
+  before the suggestion is not blamed on it, and without `php` installed nothing is checked.
 
 Every button shows its key; `?` lists them all. Submit is `!` rather than a letter on
 purpose: during triage the most-pressed keys are `a` and `x`, and approving someone's pull
